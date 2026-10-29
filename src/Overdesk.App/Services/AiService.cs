@@ -410,7 +410,8 @@ internal sealed class AiService
     {
         if (thread.AllowAll)
         {
-            Dispatcher.UIThread.Post(() => answer.Actions.Add("Allowed for this chat: " + question));
+            var firstLine = question.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? question;
+            Dispatcher.UIThread.Post(() => answer.Actions.Add("Allowed for this chat: " + firstLine.Replace("`", "")));
             return true;
         }
         var approval = new AiApproval { Text = question };

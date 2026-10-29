@@ -30,6 +30,7 @@ public partial class MainWindow
         tools.AddRange(DeskTools());
         tools.AddRange(LayoutTools());
         tools.AddRange(AssistantTools());
+        if (OperatingSystem.IsMacOS() || OperatingSystem.IsWindows()) tools.Add(AutomateAppTool());
         if (_webFactory.IsSupported) tools.AddRange(WebTools());
         tools.AddRange(PluginAiTools(tools.Select(t => t.Name).ToHashSet()));
         if (_settings.AiFolder is { } folder && Directory.Exists(folder)) tools.Add(RunCommandTool(folder));

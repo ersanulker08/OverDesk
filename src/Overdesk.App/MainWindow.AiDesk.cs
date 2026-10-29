@@ -229,6 +229,59 @@ public partial class MainWindow
         };
     }
 
+    /// <summary>
+    /// Scripting other programs: AppleScript on macOS (Calendar, Reminders, Notes, Mail, Safari, Finder, Music... all
+    /// answer to it), PowerShell on Windows. The user sees and approves every script; macOS also asks once per target app.
+    /// </summary>
+    private AiTool AutomateAppTool()
+    {
+        var mac = OperatingSystem.IsMacOS();
+        return new AiTool
+        {
+            Name = "automate_app",
+            Description = mac
+                ? "Run an AppleScript to make another Mac program do something: add a Calendar event or a Reminder, create a Note, " +
+                  "read or send Mail drafts, get Safari's open tabs, control Finder or Music, show a dialog... Returns the script's result. " +
+                  "The user approves each script (and macOS asks once per app). Prefer OverDesk's own tools when one fits."
+                : "Run a PowerShell script to make another Windows program or the system do something (e.g. open files, read settings, " +
+                  "automate apps via COM). Returns its output. The user approves each script. Prefer OverDesk's own tools when one fits.",
+            Schema = AiTool.Object(("script", "string", mac ? "AppleScript source." : "PowerShell script.", true),
+                                   ("purpose", "string", "One short sentence for the user: what the script does.", true)),
+            Label = a => AiToolbox.Str(a, "purpose") ?? "Automating a program",
+            Approval = a => $"{AiToolbox.Str(a, "purpose") ?? "Run a script"}\n\n```{(mac ? "applescript" : "powershell")}\n{AiToolbox.Str(a, "script")}\n```",
+            Run = async (a, ct) =>
+            {
+                var script = AiToolbox.Str(a, "script") ?? "";
+                var info = mac
+                    ? new System.Diagnostics.ProcessStartInfo("/usr/bin/osascript") { ArgumentList = { "-e", script } }
+                    : new System.Diagnostics.ProcessStartInfo("powershell.exe") { ArgumentList = { "-NoProfile", "-NonInteractive", "-Command", script } };
+                info.RedirectStandardOutput = info.RedirectStandardError = true;
+                info.UseShellExecute = false;
+                info.CreateNoWindow = true;
+                using var process = System.Diagnostics.Process.Start(info) ?? throw new InvalidOperationException("Could not start the script.");
+                using var kill = ct.Register(() => { try { process.Kill(entireProcessTree: true); } catch (Exception) { } });
+                var output = process.StandardOutput.ReadToEndAsync(ct);
+                var errors = process.StandardError.ReadToEndAsync(ct);
+                // A script can wait on a dialog; give up after two minutes.
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(TimeSpan.FromMinutes(2));
+                try { await process.WaitForExitAsync(timeout.Token); }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    try { process.Kill(entireProcessTree: true); } catch (Exception) { }
+                    return AiToolResult.Error("The script took longer than two minutes and was stopped.");
+                }
+                var text = (await output).Trim();
+                var error = (await errors).Trim();
+                if (process.ExitCode != 0)
+                    return AiToolResult.Error(error.Contains("-1743") || error.Contains("Not authorized")
+                        ? "macOS did not allow OverDesk to control that app. The user can allow it in System Settings → Privacy & Security → Automation."
+                        : $"The script failed: {(error.Length > 0 ? error : "exit code " + process.ExitCode)}");
+                return new AiToolResult(text.Length > 0 ? (text.Length > 20000 ? text[..20000] + "…" : text) : "(done, no output)");
+            },
+        };
+    }
+
     /// <summary>The visible text of a web tab (its title, address and up to 40,000 characters of text).</summary>
     private async Task<AiToolResult> ReadWebPageAsync(WebTab tab)
     {

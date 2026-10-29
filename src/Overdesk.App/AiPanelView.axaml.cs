@@ -982,7 +982,8 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         title.Children.Add(new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small" }, Data = Res.Icon("IconShield"), Stroke = Res.Brush("WarningBrush"), VerticalAlignment = VerticalAlignment.Center });
         title.Children.Add(new TextBlock { Text = "Allow this?", FontWeight = FontWeight.SemiBold, FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center });
         stack.Children.Add(title);
-        stack.Children.Add(ChatMarkdown.Inline(approval.Text, 12.5));
+        // The question may carry a code block (a script to run): full Markdown, not just one line.
+        foreach (var part in ChatMarkdown.Render(approval.Text, CopyAsync)) stack.Children.Add(part);
 
         var buttons = new WrapPanel();
         Button Choice(string text, string classes, bool allow, bool always)

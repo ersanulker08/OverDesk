@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Overdesk.App.Controls;
 using Overdesk.App.Services;
@@ -630,6 +631,7 @@ internal sealed class WorkEditorView : UserControl
                 BuildDrawer();
             }),
             Entry("Copy as Markdown", "IconCopy", CopyMarkdown),
+            Entry("Export…", "IconDownload", () => _ = ExportAsync()),
             Entry("Duplicate", "IconCopy", () =>
             {
                 var copy = _svc.Library.Duplicate(_work);
@@ -645,6 +647,59 @@ internal sealed class WorkEditorView : UserControl
         };
         ((MenuItem)items[^1]).Classes.Add("danger");
         new ContextMenu { ItemsSource = items }.Open(anchor);
+    }
+
+    /// <summary>Save the work as Markdown or a web page; on macOS also Word or RTF (through textutil).</summary>
+    private async Task ExportAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
+        var types = new List<FilePickerFileType>
+        {
+            new("Markdown") { Patterns = new[] { "*.md" } },
+            new("Web page") { Patterns = new[] { "*.html" } },
+        };
+        if (OperatingSystem.IsMacOS())
+        {
+            types.Add(new FilePickerFileType("Word document") { Patterns = new[] { "*.docx" } });
+            types.Add(new FilePickerFileType("Rich text") { Patterns = new[] { "*.rtf" } });
+        }
+        var title = string.IsNullOrWhiteSpace(_work.Title) ? "Untitled" : _work.Title;
+        var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export the work", SuggestedFileName = string.Concat(title.Split(Path.GetInvalidFileNameChars())), DefaultExtension = "md",
+            FileTypeChoices = types,
+        });
+        if (file?.TryGetLocalPath() is not { } path) return;
+        try
+        {
+            var markdown = _work.ToMarkdown();
+            var html = Overdesk.Core.Text.Markdown.ToHtmlPage(markdown, title);
+            switch (Path.GetExtension(path).ToLowerInvariant())
+            {
+                case ".html" or ".htm":
+                    await File.WriteAllTextAsync(path, html);
+                    break;
+                case ".docx" or ".rtf" or ".odt" when OperatingSystem.IsMacOS():
+                    var temp = Path.Combine(Path.GetTempPath(), $"overdesk-{Guid.NewGuid():N}.html");
+                    await File.WriteAllTextAsync(temp, html);
+                    try
+                    {
+                        using var process = System.Diagnostics.Process.Start("/usr/bin/textutil", new[] { "-convert", Path.GetExtension(path).TrimStart('.').ToLowerInvariant(), temp, "-output", path });
+                        if (process is not null) await process.WaitForExitAsync();
+                        if (process?.ExitCode != 0) throw new IOException("textutil could not write the document.");
+                    }
+                    finally { File.Delete(temp); }
+                    break;
+                default:
+                    await File.WriteAllTextAsync(path, markdown);
+                    break;
+            }
+            _saved.Text = $"Exported {Path.GetFileName(path)}";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            _saved.Text = "Export failed: " + ex.Message;
+        }
     }
 
     private async void CopyMarkdown()

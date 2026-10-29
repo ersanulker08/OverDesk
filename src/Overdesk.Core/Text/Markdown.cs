@@ -2,7 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Overdesk.Tool.Converter;
+namespace Overdesk.Core.Text;
 
 /// <summary>
 /// Markdown to a clean standalone HTML page (headings, paragraphs, lists, task lists, quotes, code, tables, links,

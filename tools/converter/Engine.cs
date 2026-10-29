@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Overdesk.Core.Text;
 using SkiaSharp;
 
 namespace Overdesk.Tool.Converter;

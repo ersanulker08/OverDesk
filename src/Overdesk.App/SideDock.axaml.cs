@@ -96,6 +96,13 @@ public partial class SideDock : UserControl
     /// <summary>Short confirmation text for the host to show (e.g. "Copied").</summary>
     public event Action<string, string>? Toast;
 
+    /// <summary>Change the scratchpad from outside (the AI); the text box saves it like a typed edit.</summary>
+    internal void SetNotes(string text)
+    {
+        _settings.Notes = text;
+        Notes.Text = text;
+    }
+
     internal void Initialize(AppSettings settings, NowPlayingService media, SystemStatsService stats, ClipboardHistory clips)
     {
         _settings = settings;

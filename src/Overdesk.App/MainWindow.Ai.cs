@@ -32,6 +32,7 @@ public partial class MainWindow
             BuiltIn = () => new BuiltInTool(() => AiPanel()),
         });
         _ai.AppTools = BuildAiTools;
+        _ai.StageInfo = StageSummary;
         _ai.FolderChanged += OnAiFolderChanged;
     }
 

@@ -96,6 +96,9 @@ internal sealed class AiService
     /// <summary>OverDesk's own tools (works, tabs, programs...), supplied by the main window.</summary>
     public Func<IReadOnlyList<AiTool>>? AppTools { get; set; }
 
+    /// <summary>A line about what is on stage, included with every message while tools are on.</summary>
+    public Func<string>? StageInfo { get; set; }
+
     /// <summary>The project folder chats work in (chosen at the bottom of the panel), or null.</summary>
     public string? Folder => _settings.AiFolder is { } f && Directory.Exists(f) ? f : null;
 
@@ -396,6 +399,11 @@ internal sealed class AiService
                   .Append("game variable sheets), program and web tabs, installed programs, panel tools, the clipboard and a screenshot of the ")
                   .Append("program on stage. When the user asks for something in OverDesk, do it with the tools instead of explaining how. ")
                   .Append("Read a work before changing it. Delete or close things only when the user asked. Afterwards, say briefly what you did.");
+        if (_settings.AiTools && StageInfo is not null)
+        {
+            try { prompt.Append("\n\n").Append(Dispatcher.UIThread.CheckAccess() ? StageInfo() : await Dispatcher.UIThread.InvokeAsync(StageInfo)); }
+            catch (Exception) { /* the window is closing */ }
+        }
         if (context.Folder is { } folder)
         {
             prompt.Append("\n\nThe user chose a project folder for this chat: answer about this project. Before answering about specific ")

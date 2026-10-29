@@ -26,6 +26,7 @@ public partial class MainWindow
         var tools = new List<AiTool>();
         tools.AddRange(AppTools());
         tools.AddRange(WorkTools());
+        tools.AddRange(DeskTools());
         if (_settings.AiFolder is { } folder && Directory.Exists(folder)) tools.Add(RunCommandTool(folder));
         return tools;
     }
@@ -155,9 +156,10 @@ public partial class MainWindow
             Run = async (_, _) =>
             {
                 var png = await Ui(CaptureStagePngAsync);
-                return png is null
-                    ? AiToolResult.Error("No program is on stage, or OverDesk lacks the Screen Recording permission.")
-                    : new AiToolResult("Screenshot of the program on stage.", png);
+                if (png is not null) return new AiToolResult("Screenshot of the program on stage.", png);
+                return await Ui(() => AiToolResult.Error(_tabs.Active is { Status: TabStatus.Running, IsInternal: false } && _activeWeb is null
+                    ? "Could not capture the program: OverDesk needs the Screen Recording permission (System Settings → Privacy & Security)."
+                    : "There is no program window on stage to capture (" + StageSummary() + ") Use overdesk_state, read_work or the other tools instead."));
             },
         };
         yield return new AiTool

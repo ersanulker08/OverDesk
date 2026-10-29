@@ -222,7 +222,7 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
             var scale = Math.Min(1.0, 1568.0 / Math.Max(bitmap.PixelSize.Width, bitmap.PixelSize.Height));
             using var scaled = bitmap.CreateScaledBitmap(new PixelSize(Math.Max(1, (int)(bitmap.PixelSize.Width * scale)), Math.Max(1, (int)(bitmap.PixelSize.Height * scale))));
             using var ms = new MemoryStream();
-            scaled.Save(ms);
+            scaled.Save(ms, new PngBitmapEncoderOptions());
             return ms.ToArray();
         }
         catch (Exception) { return null; }

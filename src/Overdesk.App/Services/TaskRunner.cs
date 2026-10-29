@@ -49,7 +49,7 @@ internal sealed class TaskRunner
     {
         var task = new RunningTask { Name = name, Command = command, Folder = folder, ProjectId = projectId };
         var info = OperatingSystem.IsWindows()
-            ? new ProcessStartInfo("cmd.exe") { ArgumentList = { "/d", "/s", "/c", command } }
+            ? CmdStartInfo(command)
             // A login shell so the user's PATH (node, cargo, dotnet, homebrew...) is there, like in their terminal.
             : new ProcessStartInfo(Environment.GetEnvironmentVariable("SHELL") is { Length: > 0 } sh ? sh : "/bin/zsh") { ArgumentList = { "-l", "-c", command } };
         info.WorkingDirectory = Directory.Exists(folder) ? folder : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -91,6 +91,12 @@ internal sealed class TaskRunner
         return task;
     }
 
+    /// <summary>
+    /// cmd.exe with the command line verbatim. ArgumentList would escape inner quotes as \" (which cmd does not
+    /// understand); with /s, cmd removes just the outer pair of quotes added here.
+    /// </summary>
+    private static ProcessStartInfo CmdStartInfo(string command) => new("cmd.exe") { Arguments = $"/d /s /c \"{command}\"" };
+
     public void Stop(RunningTask task)
     {
         try { if (task.Process is { HasExited: false } p) p.Kill(entireProcessTree: true); }
@@ -113,7 +119,7 @@ internal sealed class TaskRunner
     public static async Task<string?> CaptureAsync(string command, string folder, CancellationToken cancellation = default)
     {
         var info = OperatingSystem.IsWindows()
-            ? new ProcessStartInfo("cmd.exe") { ArgumentList = { "/d", "/s", "/c", command } }
+            ? CmdStartInfo(command)
             : new ProcessStartInfo(Environment.GetEnvironmentVariable("SHELL") is { Length: > 0 } sh ? sh : "/bin/zsh") { ArgumentList = { "-l", "-c", command } };
         info.WorkingDirectory = Directory.Exists(folder) ? folder : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         info.RedirectStandardOutput = true;

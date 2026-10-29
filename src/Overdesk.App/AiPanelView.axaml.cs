@@ -21,7 +21,7 @@ namespace Overdesk.App;
 /// and cloud ones (Claude, OpenAI, Gemini), with the clipboard or a screenshot of the program on stage as context,
 /// a prompt library and quick actions.
 /// </summary>
-public partial class AiPanelView : UserControl
+public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropTarget
 {
     private readonly List<(string Label, byte[] Png)> _pendingImages = new();
     private readonly List<(string Name, string Text)> _pendingFiles = new();
@@ -174,6 +174,10 @@ public partial class AiPanelView : UserControl
     /// <summary>
     /// Dropped files: images and text files are attached to the next message; a folder becomes the project folder.
     /// </summary>
+    public string DropHint => "Images and text files are attached to your message. A folder becomes the chat's project folder.";
+
+    public void FilesDropped(IReadOnlyList<string> paths) => _ = AttachPathsAsync(paths);
+
     internal async Task AttachPathsAsync(IEnumerable<string> paths)
     {
         var skipped = new List<string>();

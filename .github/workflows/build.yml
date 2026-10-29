@@ -22,5 +22,9 @@ jobs:
         run: dotnet build src/Overdesk.App -c Release
       - name: Build the sample plugin
         run: dotnet build samples/HelloTool -c Release
+      - name: Build the bundled tools
+        run: |
+          dotnet build tools/devkit -c Release
+          dotnet build tools/converter -c Release
       - name: Run the tests
         run: dotnet test tests/Overdesk.Tests -c Release

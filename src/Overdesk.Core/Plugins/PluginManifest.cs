@@ -36,6 +36,9 @@ public sealed class PluginManifest
     /// <summary>InProcess mode: assembly file (relative to the manifest folder).</summary>
     public string? Assembly { get; set; }
 
+    /// <summary>InProcess mode: the plugin also implements <see cref="IAiToolSource"/> and gives the AI tools.</summary>
+    public bool Ai { get; set; }
+
     /// <summary>InProcess mode: class implementing <see cref="IToolPlugin"/>.</summary>
     public string? TypeName { get; set; }
 

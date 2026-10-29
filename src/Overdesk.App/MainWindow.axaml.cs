@@ -993,13 +993,11 @@ public partial class MainWindow : Window
         {
             // Over the tool strip the drop adds a tool instead of a tab; say so.
             var onTools = ToolStrip.IsPointerOver || ReferenceEquals(sender, ToolStrip);
-            var onAi = !onTools && OverAiPanel(e);
-            DropTitle.Text = onTools ? "Drop to add a tool" : onAi ? "Drop to give it to the AI" : "Drop to open as a tab";
+            var target = onTools ? null : PanelDropTarget(e);
+            DropTitle.Text = onTools ? "Drop to add a tool" : target is not null ? $"Drop on {_activeTool!.Name}" : "Drop to open as a tab";
             DropText.Text = onTools
                 ? "It will sit in the tools strip on the right and open in the side panel."
-                : onAi
-                    ? "Images and text files are attached to your message. A folder becomes the chat's project folder."
-                    : "Any program works: it will live in OverDesk's top bar.";
+                : target?.DropHint ?? "Any program works: it will live in OverDesk's top bar.";
         }
         e.Handled = true;
     }
@@ -1024,7 +1022,7 @@ public partial class MainWindow : Window
     private void OnDropProgram(object? sender, DragEventArgs e)
     {
         ShowDropOverlay(false);
-        if (OverAiPanel(e)) _ = AiPanel().AttachPathsAsync(DroppedPaths(e));
+        if (PanelDropTarget(e) is { } target) target.FilesDropped(DroppedPaths(e).ToList());
         else foreach (var path in DroppedPaths(e)) OpenProgram(path);
         e.Handled = true;
     }
@@ -1036,9 +1034,23 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    /// <summary>Files dropped on the open AI panel go to the chat instead of becoming tabs.</summary>
-    private bool OverAiPanel(DragEventArgs e)
-        => _toolPanelOpen && _activeTool?.Id == AiToolId && ToolPanel.IsVisible && new Rect(ToolPanel.Bounds.Size).Contains(e.GetPosition(ToolPanel));
+    /// <summary>
+    /// Files dropped on the side panel go to the open tool when it takes files (the AI chat, the Converter...)
+    /// instead of becoming tabs.
+    /// </summary>
+    private IFileDropTarget? PanelDropTarget(DragEventArgs e)
+        => _toolPanelOpen && _activeTool is { } tool && ToolPanel.IsVisible && new Rect(ToolPanel.Bounds.Size).Contains(e.GetPosition(ToolPanel))
+           && _toolViews.TryGetValue(ToolKey(tool), out var view) ? view as IFileDropTarget : null;
+
+    private readonly Dictionary<string, IToolPlugin> _pluginInstances = new();
+
+    /// <summary>One instance per in-process tool, shared by its panel view and the AI tools it offers.</summary>
+    private IToolPlugin PluginInstance(PluginManifest tool)
+    {
+        var key = ToolKey(tool);
+        if (!_pluginInstances.TryGetValue(key, out var plugin)) _pluginInstances[key] = plugin = PluginRegistry.LoadInProcess(tool);
+        return plugin;
+    }
 
     private static IEnumerable<string> DroppedPaths(DragEventArgs e)
         => (e.DataTransfer.TryGetFiles() ?? Array.Empty<Avalonia.Platform.Storage.IStorageItem>())
@@ -1166,7 +1178,13 @@ public partial class MainWindow : Window
                     },
             };
             button.Classes.Set("active", _toolPanelOpen && _activeTool == tool);
-            if (tool.Id == AiToolId) button.Content = WithBusyDot(button.Content as Control);
+            if (tool.Id == AiToolId)
+            {
+                // The icon has to leave the button before it can move into the panel with the dot.
+                var icon = button.Content as Control;
+                button.Content = null;
+                button.Content = WithBusyDot(icon);
+            }
             ToolTip.SetTip(button, tool.Name);
             button.Click += (_, _) => ToggleTool(tool);
             button.PointerReleased += (_, e) =>
@@ -1294,7 +1312,7 @@ public partial class MainWindow : Window
             {
                 if (!_toolViews.TryGetValue(key, out var view))
                 {
-                    view = PluginRegistry.LoadInProcess(tool).CreateView() as Control
+                    view = PluginInstance(tool).CreateView() as Control
                            ?? throw new InvalidOperationException("The plugin did not return an Avalonia control.");
                     _toolViews[key] = view;
                 }

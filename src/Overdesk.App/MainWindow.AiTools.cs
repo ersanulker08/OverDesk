@@ -6,6 +6,7 @@ using Avalonia.Threading;
 using Overdesk.AI;
 using Overdesk.App.Services;
 using Overdesk.App.Theme;
+using Overdesk.Core.Plugins;
 using Overdesk.Core.Tabs;
 using Overdesk.Core.Works;
 using Overdesk.Core.Settings;
@@ -27,8 +28,41 @@ public partial class MainWindow
         tools.AddRange(AppTools());
         tools.AddRange(WorkTools());
         tools.AddRange(DeskTools());
+        tools.AddRange(PluginAiTools(tools.Select(t => t.Name).ToHashSet()));
         if (_settings.AiFolder is { } folder && Directory.Exists(folder)) tools.Add(RunCommandTool(folder));
         return tools;
+    }
+
+    /// <summary>Tools that plugins give the AI (manifest "ai": true, plugin implements IAiToolSource).</summary>
+    private IEnumerable<AiTool> PluginAiTools(HashSet<string> taken)
+    {
+        var result = new List<AiTool>();
+        foreach (var tool in _plugins.Tools.Where(t => t is { Ai: true, Run: PluginRunMode.InProcess, BuiltIn: null }))
+        {
+            IReadOnlyList<PluginAiTool> offered;
+            try { offered = (PluginInstance(tool) as IAiToolSource)?.AiTools ?? Array.Empty<PluginAiTool>(); }
+            catch (Exception) { continue; /* a broken plugin must not break the chat */ }
+            foreach (var p in offered)
+            {
+                if (!taken.Add(p.Name)) continue;
+                var schema = (JsonNode.Parse(p.Parameters) as JsonObject) ?? AiTool.Object();
+                var owner = tool.Name;
+                result.Add(new AiTool
+                {
+                    Name = p.Name,
+                    Description = $"{p.Description} (Provided by the {owner} tool.)",
+                    Schema = schema,
+                    Label = _ => $"{owner}: {p.Name.Replace('_', ' ')}",
+                    Approval = p.Approval is { } ask ? a => ask(a.ToJsonString()) : null,
+                    Run = async (a, ct) =>
+                    {
+                        try { return new AiToolResult(await p.Run(a.ToJsonString(), ct)); }
+                        catch (Exception ex) when (ex is not OperationCanceledException) { return AiToolResult.Error(ex.Message); }
+                    },
+                });
+            }
+        }
+        return result;
     }
 
     // ---------------------------------------------------------------- OverDesk itself

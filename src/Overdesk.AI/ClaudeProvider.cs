@@ -23,8 +23,14 @@ public sealed class ClaudeProvider : IChatProvider
     };
 
     private readonly IApiKeySource _keys;
+    private readonly string? _baseUrl;
 
-    public ClaudeProvider(IApiKeySource keys) => _keys = keys;
+    /// <param name="baseUrl">Another API address (tests use a local fake); null for Anthropic's.</param>
+    public ClaudeProvider(IApiKeySource keys, string? baseUrl = null)
+    {
+        _keys = keys;
+        _baseUrl = baseUrl;
+    }
 
     public string Id => "claude";
     public string Name => "Claude";
@@ -32,7 +38,7 @@ public sealed class ClaudeProvider : IChatProvider
 
     private string? Key => _keys.Get("anthropic") is { Length: > 0 } k ? k : Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
 
-    private AnthropicClient Client() => new() { ApiKey = Key };
+    private AnthropicClient Client() => _baseUrl is null ? new() { ApiKey = Key } : new() { ApiKey = Key, BaseUrl = _baseUrl };
 
     public Task<string?> CheckAsync(CancellationToken cancellation)
         => Task.FromResult(string.IsNullOrEmpty(Key) ? "Add your Anthropic API key in OverDesk settings → AI." : null);
@@ -75,6 +81,8 @@ public sealed class ClaudeProvider : IChatProvider
                 // A side-panel chat: answer quickly, still think when the question needs it.
                 Thinking = new ThinkingConfigAdaptive(),
                 OutputConfig = new OutputConfig { Effort = Effort.Medium },
+                // Tool rounds resend the whole conversation: cache it, so each round pays only for what is new.
+                CacheControl = new CacheControlEphemeral(),
             };
             if (!string.IsNullOrWhiteSpace(system)) parameters = parameters with { System = system };
             if (tools is { Count: > 0 }) parameters = parameters with { Tools = tools };

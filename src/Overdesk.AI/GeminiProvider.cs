@@ -9,11 +9,16 @@ namespace Overdesk.AI;
 /// <summary>Google Gemini through the Generative Language REST API (needs an API key). Streams server-sent events.</summary>
 public sealed class GeminiProvider : IChatProvider
 {
-    private const string BaseUrl = "https://generativelanguage.googleapis.com/v1beta";
+    private readonly string BaseUrl;
     private readonly HttpClient _http = new() { Timeout = Timeout.InfiniteTimeSpan };
     private readonly IApiKeySource _keys;
 
-    public GeminiProvider(IApiKeySource keys) => _keys = keys;
+    /// <param name="baseUrl">Another API address (tests use a local fake); null for Google's.</param>
+    public GeminiProvider(IApiKeySource keys, string? baseUrl = null)
+    {
+        _keys = keys;
+        BaseUrl = (baseUrl ?? "https://generativelanguage.googleapis.com/v1beta").TrimEnd('/');
+    }
 
     public string Id => "gemini";
     public string Name => "Gemini";

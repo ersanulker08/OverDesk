@@ -899,7 +899,8 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         var bubbles = new List<Control>(turns.Count);
         foreach (var turn in turns)
         {
-            var signature = $"{turn.Text.Length}|{turn.Text.GetHashCode()}|{turn.Error}|{turn.IsStreaming}|{turn.Actions.Count}|{turn.Pending?.GetHashCode()}|{turn.Images.Count}";
+            var last = ReferenceEquals(turn, turns[^1]) && !_ai.IsBusy;
+            var signature = $"{turn.Text.Length}|{turn.Text.GetHashCode()}|{turn.Error}|{turn.IsStreaming}|{turn.Actions.Count}|{turn.Pending?.GetHashCode()}|{turn.Images.Count}|{last}";
             if (!_bubbles.TryGetValue(turn, out var cached) || cached.Signature != signature)
                 _bubbles[turn] = cached = (signature, Bubble(turn));
             bubbles.Add(cached.Bubble);
@@ -948,14 +949,25 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         else
             foreach (var part in user ? new Control[] { new SelectableTextBlock { Classes = { "msg" }, Text = Shortened(turn.Text) } } : ChatMarkdown.Render(turn.Text, CopyAsync)) content.Children.Add(part);
 
-        if (!user && !turn.IsStreaming && turn.Error is null && turn.Text.Length > 0)
+        if (!user && !turn.IsStreaming)
         {
-            var copy = new Button { Classes = { "icon" }, Width = 24, Height = 24, HorizontalAlignment = HorizontalAlignment.Left, Content = new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small" }, Data = Res.Icon("IconCopy") } };
-            ToolTip.SetTip(copy, "Copy answer");
-            copy.Click += async (_, _) => await CopyAsync(turn.Text);
-            content.Children.Add(copy);
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+            if (turn.Error is null && turn.Text.Length > 0)
+                row.Children.Add(BubbleButton("IconCopy", "Copy answer", async () => await CopyAsync(turn.Text)));
+            // The last answer can be asked again (after an error, or for a different answer).
+            if (_ai?.Conversation.LastOrDefault() == turn && _ai.IsBusy == false)
+                row.Children.Add(BubbleButton("IconRefresh", turn.Error is null ? "Answer again" : "Try again", () => { _ = _ai.RetryLastAsync(); return Task.CompletedTask; }));
+            if (row.Children.Count > 0) content.Children.Add(row);
         }
         return new Border { Classes = { "bubble", user ? "user" : "assistant" }, Child = content };
+    }
+
+    private static Button BubbleButton(string icon, string tip, Func<Task> click)
+    {
+        var button = new Button { Classes = { "icon" }, Width = 24, Height = 24, HorizontalAlignment = HorizontalAlignment.Left, Content = new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small" }, Data = Res.Icon(icon) } };
+        ToolTip.SetTip(button, tip);
+        button.Click += async (_, _) => await click();
+        return button;
     }
 
     /// <summary>Your own long messages (attached files, pasted logs) are shown cut; the AI still gets all of it.</summary>

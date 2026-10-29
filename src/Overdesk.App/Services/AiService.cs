@@ -294,6 +294,23 @@ internal sealed class AiService
     }
 
     /// <summary>
+    /// Ask the last question again: the last answer (and its question) leave the conversation and the question is sent
+    /// anew. A provider session is not resumed, since it already holds the old answer; the history is folded in instead.
+    /// </summary>
+    public async Task RetryLastAsync()
+    {
+        if (IsBusy) return;
+        var turns = Current.Turns;
+        var questionIndex = turns.FindLastIndex(t => t.Role == ChatMessage.User);
+        if (questionIndex < 0) return;
+        var question = turns[questionIndex];
+        turns.RemoveRange(questionIndex, turns.Count - questionIndex);
+        Current.SessionId = null;
+        Changed?.Invoke();
+        await SendAsync(question.Text, question.Images.Count > 0 ? question.Images.ToList() : null);
+    }
+
+    /// <summary>
     /// Session providers (Claude Code) get only the new message and continue their own session. When the conversation
     /// started elsewhere, the earlier turns are folded into that first message so nothing is lost.
     /// </summary>

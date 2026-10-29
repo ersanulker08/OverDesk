@@ -243,6 +243,19 @@ public partial class MainWindow : Window
                $"ERROR: {answer?.Error}\nANSWER:\n{answer?.Text}\nWORKS:\n{works}\nTABS: {string.Join(", ", _tabs.Tabs.Select(t => t.Title))}";
     }
 
+    /// <summary>Open a web tab, wait for it, and return what read_web_page would see.</summary>
+    internal async Task<string> DevReadWebAsync(string url)
+    {
+        OpenWeb(url, "Snapshot page");
+        for (var i = 0; i < 40; i++)
+        {
+            await Task.Delay(250);
+            if (_activeWeb is { } tab && _webHosts.TryGetValue(tab.Id, out var host) && host.View is { IsLoading: false }) break;
+        }
+        await Task.Delay(500);
+        return _activeWeb is { } web ? (await ReadWebPageAsync(web)).Text : "no web tab";
+    }
+
     internal void DevAiDemo(string folder)
     {
         OpenAi();

@@ -83,6 +83,30 @@ internal sealed unsafe class MacWebView : IWebView
     private string? ReadString(string selector)
         => _view == IntPtr.Zero ? null : ObjC.ReadNSString(ObjC.Call(_view, selector));
 
+    public Task<string?> ExecuteScriptAsync(string script)
+    {
+        var done = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (_view == IntPtr.Zero)
+        {
+            done.SetException(new ObjectDisposedException(nameof(MacWebView)));
+            return done.Task;
+        }
+        var block = ObjC.CompletionBlock((result, error) =>
+        {
+            if (error != IntPtr.Zero)
+            {
+                done.TrySetException(new InvalidOperationException(ObjC.ReadNSString(ObjC.Call(error, "localizedDescription")) ?? "The script failed."));
+                return;
+            }
+            if (result == IntPtr.Zero) { done.TrySetResult(null); return; }
+            // Strings come back as NSString; numbers, arrays and objects are described.
+            var isString = ObjC.CallBool(result, "isKindOfClass:", ObjC.Class("NSString"));
+            done.TrySetResult(ObjC.ReadNSString(isString ? result : ObjC.Call(result, "description")));
+        });
+        ObjC.Call(_view, "evaluateJavaScript:completionHandler:", ObjC.NSString(script), block);
+        return done.Task;
+    }
+
     public void Navigate(string url)
     {
         if (_view == IntPtr.Zero) return;

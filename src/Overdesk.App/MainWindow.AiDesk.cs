@@ -1,6 +1,9 @@
 using System.Text;
+using System.Text.Json.Nodes;
 using Overdesk.AI;
 using Overdesk.App.Services;
+using Overdesk.Core.Platform;
+using Overdesk.Core.Tabs;
 
 namespace Overdesk.App;
 
@@ -132,6 +135,51 @@ public partial class MainWindow
                         break;
                 }
                 return new AiToolResult(_settings.Notes.Length == 0 ? "(the scratchpad is empty)" : _settings.Notes);
+            }),
+        };
+    }
+
+    /// <summary>The visible text of a web tab (its title, address and up to 40,000 characters of text).</summary>
+    private async Task<AiToolResult> ReadWebPageAsync(WebTab tab)
+    {
+        // A tab opened a moment ago (open_website, then read) may still be creating its view or loading.
+        IWebView? view = null;
+        for (var i = 0; i < 40; i++)
+        {
+            if (_webHosts.TryGetValue(tab.Id, out var host) && host.View is { } v)
+            {
+                view = v;
+                if (!v.IsLoading) break;
+            }
+            await Task.Delay(250);
+        }
+        if (view is null) return AiToolResult.Error($"“{tab.Title}” has not loaded yet: switch to it once, then try again.");
+        const string script = "(() => JSON.stringify({ title: document.title, url: location.href, " +
+                              "text: (document.body ? document.body.innerText : '').slice(0, 40000) }))()";
+        var json = await view.ExecuteScriptAsync(script);
+        if (json is null) return AiToolResult.Error("The page returned nothing.");
+        var page = JsonNode.Parse(json);
+        var text = page?["text"]?.GetValue<string>() ?? "";
+        return new AiToolResult($"{page?["title"]} ({page?["url"]})\n\n{(text.Length > 0 ? text : "(no text on the page)")}");
+    }
+
+    private IEnumerable<AiTool> WebTools()
+    {
+        yield return new AiTool
+        {
+            Name = "read_web_page",
+            Description = "Read the text of a web tab open in OverDesk (the one on stage, or the one whose title you give), " +
+                          "e.g. to summarize an article, answer questions about a page or pick data out of it.",
+            Schema = AiTool.Object(("title", "string", "Title or address of the web tab (a part is enough); empty for the one on stage.", false)),
+            Label = a => AiToolbox.Str(a, "title") is { } t ? $"Reading the page {t}" : "Reading the web page",
+            Run = (a, _) => Ui(async () =>
+            {
+                var title = AiToolbox.Str(a, "title");
+                var tab = title is null ? _activeWeb : _webTabs.FirstOrDefault(w => w.Title.Contains(title, StringComparison.OrdinalIgnoreCase)
+                                                                                 || w.Url.Contains(title, StringComparison.OrdinalIgnoreCase));
+                if (tab is null)
+                    return AiToolResult.Error(title is null ? "No web page is on stage. Open one with open_website, or name a web tab." : $"No web tab matches “{title}”.");
+                return await ReadWebPageAsync(tab);
             }),
         };
     }

@@ -29,6 +29,7 @@ public partial class MainWindow
         tools.AddRange(WorkTools());
         tools.AddRange(DeskTools());
         tools.AddRange(LayoutTools());
+        if (_webFactory.IsSupported) tools.AddRange(WebTools());
         tools.AddRange(PluginAiTools(tools.Select(t => t.Name).ToHashSet()));
         if (_settings.AiFolder is { } folder && Directory.Exists(folder)) tools.Add(RunCommandTool(folder));
         return tools;
@@ -161,8 +162,9 @@ public partial class MainWindow
                 if (!url.Contains("://")) url = "https://" + url;
                 if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != "https" && uri.Scheme != "http"))
                     return AiToolResult.Error("Only http and https addresses can be opened.");
-                OpenWeb(uri.ToString(), AiToolbox.Str(a, "title") ?? uri.Host);
-                return new AiToolResult($"Opened {uri.Host}.");
+                var title = AiToolbox.Str(a, "title") ?? uri.Host;
+                OpenWeb(uri.ToString(), title);
+                return new AiToolResult($"Opened {uri} as the web tab “{title}”, now on stage." + (_webFactory.IsSupported ? " read_web_page reads it." : ""));
             }),
         };
         yield return new AiTool

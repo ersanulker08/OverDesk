@@ -111,6 +111,15 @@ internal sealed class WinWebView : IWebView
         else _pendingUrl = url;
     }
 
+    /// <summary>WebView2 answers with JSON; a JSON string is unwrapped to its text.</summary>
+    public async Task<string?> ExecuteScriptAsync(string script)
+    {
+        if (await Ready is not { } core) throw new InvalidOperationException("The web view is not ready.");
+        var json = await core.ExecuteScriptAsync(script);
+        if (json is null or "null" or "undefined") return null;
+        return json.StartsWith('"') ? System.Text.Json.JsonSerializer.Deserialize<string>(json) : json;
+    }
+
     public void Reload() => _controller?.CoreWebView2?.Reload();
     public void GoBack() { if (_controller?.CoreWebView2 is { CanGoBack: true } c) c.GoBack(); }
     public void GoForward() { if (_controller?.CoreWebView2 is { CanGoForward: true } c) c.GoForward(); }

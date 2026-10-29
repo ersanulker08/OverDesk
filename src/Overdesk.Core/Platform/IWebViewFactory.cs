@@ -22,6 +22,12 @@ public interface IWebView : IDisposable
     void GoBack();
     void GoForward();
 
+    /// <summary>
+    /// Run JavaScript in the page and get its result as text (strings as they are, other values as JSON or their
+    /// description); null for undefined. Must be called on the UI thread.
+    /// </summary>
+    Task<string?> ExecuteScriptAsync(string script);
+
     /// <summary>Called when the host area changes size (physical pixels). A no-op where the OS sizes the view itself.</summary>
     void Resize(int width, int height);
 

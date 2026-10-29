@@ -841,9 +841,41 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
 
         EmptyState.IsVisible = _ai.Conversation.Count == 0;
         var stickToBottom = Scroller.Offset.Y >= Scroller.Extent.Height - Scroller.Viewport.Height - 40;
-        Messages.Children.Clear();
-        foreach (var turn in _ai.Conversation) Messages.Children.Add(Bubble(turn));
+        RenderMessages();
         if (stickToBottom) Dispatcher.UIThread.Post(() => Scroller.ScrollToEnd(), DispatcherPriority.Background);
+    }
+
+    private readonly Dictionary<AiTurn, (string Signature, Control Bubble)> _bubbles = new();
+
+    /// <summary>
+    /// Only bubbles whose content changed are rebuilt: while an answer streams that is the last one, so long chats
+    /// with tables and code stay smooth.
+    /// </summary>
+    private void RenderMessages()
+    {
+        var turns = _ai!.Conversation;
+        foreach (var gone in _bubbles.Keys.Where(t => !turns.Contains(t)).ToList()) _bubbles.Remove(gone);
+        var bubbles = new List<Control>(turns.Count);
+        foreach (var turn in turns)
+        {
+            var signature = $"{turn.Text.Length}|{turn.Text.GetHashCode()}|{turn.Error}|{turn.IsStreaming}|{turn.Actions.Count}|{turn.Pending?.GetHashCode()}|{turn.Images.Count}";
+            if (!_bubbles.TryGetValue(turn, out var cached) || cached.Signature != signature)
+                _bubbles[turn] = cached = (signature, Bubble(turn));
+            bubbles.Add(cached.Bubble);
+        }
+        if (Messages.Children.Count == bubbles.Count && Messages.Children.Zip(bubbles).All(p => ReferenceEquals(p.First, p.Second))) return;
+        // Patch in place when bubbles only changed or were added at the end (streaming); otherwise start over.
+        var canPatch = Messages.Children.Count <= bubbles.Count
+                       && bubbles.Select((b, i) => b.Parent is null || (i < Messages.Children.Count && ReferenceEquals(Messages.Children[i], b))).All(ok => ok);
+        if (!canPatch)
+        {
+            Messages.Children.Clear();
+            Messages.Children.AddRange(bubbles);
+            return;
+        }
+        for (var i = 0; i < Messages.Children.Count; i++)
+            if (!ReferenceEquals(Messages.Children[i], bubbles[i])) Messages.Children[i] = bubbles[i];
+        for (var i = Messages.Children.Count; i < bubbles.Count; i++) Messages.Children.Add(bubbles[i]);
     }
 
     /// <summary>The friendly name of a model when the picker already knows it ("Your plan's default" for Claude Code).</summary>

@@ -14,4 +14,7 @@ internal static class Res
 
     public static Geometry Icon(string key) => Get<Geometry>(key);
     public static IBrush Brush(string key) => Get<IBrush>(key);
+
+    /// <summary>The monospace family of TextBlock.mono, for runs inside other text.</summary>
+    public static readonly FontFamily Mono = new("Menlo, Consolas, Cascadia Mono, monospace");
 }

@@ -388,7 +388,7 @@ internal sealed class AiService
         {
             Role = ChatMessage.Assistant,
             Actions = { "Reading “Release to-dos”", "Adding to “Release to-dos”", "Reading README.md", "Editing README.md", "Opening README.md in the editor" },
-            Text = "Done. I added 4 steps to **Release to-dos** (tag, build, notes, upload) and fixed “recieve” → “receive” in README.md, now open in VS Code.",
+            Text = "Done. Here is what changed:\n\n## Release to-dos\n1. **Tag** the version (`v0.2.0`)\n2. Build with `scripts/package-macos.sh`\n3. Write the _release notes_\n4. Upload to [GitHub releases](https://github.com)\n\n> README.md: fixed ~~recieve~~ → receive, now open in VS Code.\n\n| File | Change |\n|---|---|\n| README.md | 1 line |\n| Release to-dos | +4 rows |\n\n```bash\ngit tag v0.2.0\n```",
         });
         Changed?.Invoke();
     }

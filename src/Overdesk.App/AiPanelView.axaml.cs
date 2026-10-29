@@ -781,7 +781,7 @@ public partial class AiPanelView : UserControl
         else if (turn.Text.Length == 0 && turn.IsStreaming)
             content.Children.Add(new TextBlock { Text = turn.Actions.Count > 0 ? "Working…" : "Thinking…", Classes = { "muted" }, FontSize = 12.5 });
         else
-            foreach (var part in MarkdownParts(turn.Text)) content.Children.Add(part);
+            foreach (var part in user ? new Control[] { new SelectableTextBlock { Classes = { "msg" }, Text = turn.Text } } : ChatMarkdown.Render(turn.Text, CopyAsync)) content.Children.Add(part);
 
         if (!user && !turn.IsStreaming && turn.Error is null && turn.Text.Length > 0)
         {
@@ -832,41 +832,6 @@ public partial class AiPanelView : UserControl
         stack.Children.Add(toggle);
         stack.Children.Add(lines);
         return stack;
-    }
-
-    /// <summary>Plain paragraphs, plus fenced code blocks drawn as dark mono boxes with a copy button.</summary>
-    private IEnumerable<Control> MarkdownParts(string text)
-    {
-        var parts = text.Split("```");
-        for (var i = 0; i < parts.Length; i++)
-        {
-            var chunk = parts[i];
-            if (i % 2 == 0)
-            {
-                var trimmed = chunk.Trim('\n');
-                if (trimmed.Length > 0) yield return new SelectableTextBlock { Classes = { "msg" }, Text = trimmed.Replace("**", "") };
-                continue;
-            }
-            var newline = chunk.IndexOf('\n');
-            var language = newline > 0 ? chunk[..newline].Trim() : "";
-            var code = (newline >= 0 ? chunk[(newline + 1)..] : chunk).TrimEnd('\n');
-            var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(10, 4, 4, 0) };
-            header.Children.Add(new TextBlock { Text = language.Length > 0 ? language : "code", Classes = { "faint", "mono" }, FontSize = 10.5, VerticalAlignment = VerticalAlignment.Center });
-            var copy = new Button { Classes = { "icon" }, Width = 22, Height = 22, Content = new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small" }, Data = Res.Icon("IconCopy"), Height = 10 } };
-            ToolTip.SetTip(copy, "Copy code");
-            copy.Click += async (_, _) => await CopyAsync(code);
-            Grid.SetColumn(copy, 1);
-            header.Children.Add(copy);
-            var body = new SelectableTextBlock
-            {
-                Text = code, Classes = { "mono" }, FontSize = 12, TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(10, 2, 10, 10), SelectionBrush = Res.Brush("AccentSoftBrush"),
-            };
-            var stack = new StackPanel();
-            stack.Children.Add(header);
-            stack.Children.Add(body);
-            yield return new Border { Classes = { "codeblock" }, Child = stack };
-        }
     }
 
     private async Task CopyAsync(string text)

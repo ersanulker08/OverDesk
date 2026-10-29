@@ -28,6 +28,7 @@ public partial class MainWindow
         tools.AddRange(AppTools());
         tools.AddRange(WorkTools());
         tools.AddRange(DeskTools());
+        tools.AddRange(LayoutTools());
         tools.AddRange(PluginAiTools(tools.Select(t => t.Name).ToHashSet()));
         if (_settings.AiFolder is { } folder && Directory.Exists(folder)) tools.Add(RunCommandTool(folder));
         return tools;

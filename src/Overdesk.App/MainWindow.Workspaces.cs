@@ -169,12 +169,8 @@ public partial class MainWindow
         {
             var text = name.Text?.Trim();
             if (string.IsNullOrEmpty(text)) return;
-            var used = _settings.Workspaces.Select(w => w.Color).ToHashSet();
-            var color = AccentThemes.All.FirstOrDefault(t => !used.Contains(t.Name))?.Name ?? AccentThemes.All[_settings.Workspaces.Count % AccentThemes.All.Count].Name;
-            var ws = new Workspace { Name = text, Color = color };
-            _settings.Workspaces.Add(ws);
             flyout?.Hide();
-            SwitchWorkspace(ws);
+            SwitchWorkspace(NewWorkspace(text));
         }
         name.KeyDown += (_, e) => { if (e.Key == Key.Enter) Create(); };
         var add = new Button { Classes = { "accent" }, Content = "Create", Margin = new Thickness(8, 0, 0, 0) };
@@ -188,6 +184,16 @@ public partial class MainWindow
 
         flyout = new Flyout { Content = panel, Placement = PlacementMode.BottomEdgeAlignedLeft };
         flyout.ShowAt(WorkspaceButton);
+    }
+
+    /// <summary>A new, empty workspace with a color no other workspace uses yet.</summary>
+    private Workspace NewWorkspace(string name)
+    {
+        var used = _settings.Workspaces.Select(w => w.Color).ToHashSet();
+        var color = AccentThemes.All.FirstOrDefault(t => !used.Contains(t.Name))?.Name ?? AccentThemes.All[_settings.Workspaces.Count % AccentThemes.All.Count].Name;
+        var ws = new Workspace { Name = name, Color = color };
+        _settings.Workspaces.Add(ws);
+        return ws;
     }
 
     private ContextMenu WorkspaceItemMenu(Workspace ws, Action closeFlyout)

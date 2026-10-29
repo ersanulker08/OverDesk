@@ -132,6 +132,71 @@ public partial class MainWindow
         };
     }
 
+    private IEnumerable<AiTool> LayoutTools()
+    {
+        yield return new AiTool
+        {
+            Name = "workspace",
+            Description = "OverDesk's workspaces: named sets of tabs (e.g. \"Coding\", \"Music\"). List them, switch to one, or create a new " +
+                          "empty one and switch to it (then open programs into it). Programs of other workspaces keep running hidden.",
+            Schema = AiTool.Object(("action", "string", "list (default), switch or create.", false), ("name", "string", "Workspace name.", false)),
+            Label = a => (AiToolbox.Str(a, "action") ?? "list") switch
+            {
+                "switch" => $"Switching to the {AiToolbox.Str(a, "name")} workspace",
+                "create" => $"Creating the {AiToolbox.Str(a, "name")} workspace",
+                _ => "Looking at workspaces",
+            },
+            Run = (a, _) => Ui(() =>
+            {
+                var name = AiToolbox.Str(a, "name")?.Trim();
+                var existing = name is null ? null
+                    : _settings.Workspaces.FirstOrDefault(w => w.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                      ?? _settings.Workspaces.FirstOrDefault(w => w.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
+                switch (AiToolbox.Str(a, "action") ?? "list")
+                {
+                    case "switch" when existing is not null:
+                        SwitchWorkspace(existing);
+                        return new AiToolResult($"Switched to {existing.Name}.");
+                    case "switch":
+                        return AiToolResult.Error($"No workspace is called “{name}”.");
+                    case "create" when name is { Length: > 0 }:
+                        var ws = existing?.Name.Equals(name, StringComparison.OrdinalIgnoreCase) == true ? existing : NewWorkspace(name);
+                        SwitchWorkspace(ws);
+                        return new AiToolResult($"Now in the {ws.Name} workspace{(ws == existing ? " (it already existed)" : " (new and empty)")}.");
+                    case "create":
+                        return AiToolResult.Error("A name is needed.");
+                    default:
+                        return new AiToolResult(string.Join('\n', _settings.Workspaces.Select(w =>
+                            $"- {w.Name}{(w == CurrentWorkspace ? " (current)" : "")}: {w.Tabs.Count} tab(s)")));
+                }
+            }),
+        };
+        yield return new AiTool
+        {
+            Name = "split_view",
+            Description = "Show two program tabs side by side on the stage (left and right), or end the split view.",
+            Schema = AiTool.Object(("left", "string", "Title of the program tab on the left.", false),
+                                   ("right", "string", "Title of the program tab on the right.", false),
+                                   ("end", "boolean", "true to end the split view.", false)),
+            Label = a => AiToolbox.Bool(a, "end") == true ? "Ending the split view" : $"Splitting {AiToolbox.Str(a, "left")} | {AiToolbox.Str(a, "right")}",
+            Run = (a, _) => Ui(() =>
+            {
+                if (AiToolbox.Bool(a, "end") == true)
+                {
+                    EndSplit();
+                    return new AiToolResult("Split view ended.");
+                }
+                if (FindTab(AiToolbox.Str(a, "left") ?? "") is not { IsInternal: false } left || FindTab(AiToolbox.Str(a, "right") ?? "") is not { IsInternal: false } right)
+                    return AiToolResult.Error("Both need to be open program tabs (not works or settings). Open them with open_program first.");
+                if (left == right) return AiToolResult.Error("Pick two different tabs.");
+                _activeWeb = null;
+                _tabs.Activate(left);
+                SplitWith(right);
+                return new AiToolResult($"{left.Title} | {right.Title} side by side.");
+            }),
+        };
+    }
+
     /// <summary>One line about what the user is looking at, added to every message so "this" makes sense.</summary>
     private string StageSummary()
     {

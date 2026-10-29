@@ -61,3 +61,41 @@ public class ToolboxTests
         Assert.True((await Box().RunAsync("nope", null, CancellationToken.None)).IsError);
     }
 }
+
+public class AiMemoryTests
+{
+    [Fact]
+    public void Notes_are_kept_per_project_and_survive_a_reload()
+    {
+        using var dir = new TempFolder();
+        var memory = new AiMemory(dir.Path);
+        memory.Add(null, "Prefers Turkish replies");
+        var note = memory.Add("/work/game", "Uses Unity 6");
+        memory.Add("/work/game", "Uses Unity 6"); // duplicates are ignored
+
+        var again = new AiMemory(dir.Path);
+        Assert.Single(again.Notes(null));
+        Assert.Single(again.Notes("/work/game"));
+        Assert.Empty(again.Notes("/work/other"));
+        var prompt = again.PromptSection("/work/game");
+        Assert.Contains("Prefers Turkish replies", prompt);
+        Assert.Contains($"[{note.Id}] Uses Unity 6", prompt);
+
+        Assert.True(again.Remove("/work/game", note.Id));
+        Assert.Empty(again.Notes("/work/game"));
+    }
+
+    [Fact]
+    public async Task The_tool_remembers_and_forgets()
+    {
+        using var dir = new TempFolder();
+        var memory = new AiMemory(dir.Path);
+        var box = new AiToolbox(new[] { memory.Tool(() => "/p") });
+        var saved = await box.RunAsync("memory", new JsonObject { ["action"] = "remember", ["text"] = "Tabs over spaces", ["scope"] = "project" }, CancellationToken.None);
+        Assert.False(saved.IsError);
+        var id = memory.Notes("/p").Single().Id;
+        var forgot = await box.RunAsync("memory", new JsonObject { ["action"] = "forget", ["id"] = id }, CancellationToken.None);
+        Assert.False(forgot.IsError);
+        Assert.Empty(memory.Notes("/p"));
+    }
+}

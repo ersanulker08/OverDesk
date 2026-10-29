@@ -73,10 +73,14 @@ internal sealed class AiService
             new GeminiProvider(keys),
         };
         Threads = _store.LoadAll();
+        Memory = new AiMemory(Path.Combine(dataFolder, "ai-memory"));
         Current = new ChatThread();
     }
 
     public OllamaProvider Ollama { get; }
+
+    /// <summary>Notes the AI keeps between chats (about the user, and per project folder).</summary>
+    public AiMemory Memory { get; }
     public IReadOnlyList<IChatProvider> Providers { get; }
 
     /// <summary>Saved conversations, newest first (the current one only once it has a message).</summary>
@@ -326,7 +330,11 @@ internal sealed class AiService
     private AiContext? BuildContext(IChatProvider provider, string? folder, ChatThread thread, AiTurn answer, CancellationToken stop)
     {
         var tools = new List<AiTool>();
-        if (_settings.AiTools && AppTools is not null) tools.AddRange(AppTools());
+        if (_settings.AiTools && AppTools is not null)
+        {
+            tools.AddRange(AppTools());
+            tools.Add(Memory.Tool(() => folder));
+        }
         if (folder is not null) tools.AddRange(ProjectTools.Create(folder, _settings.AiAllowEdits));
         if (tools.Count == 0 && folder is null) return null;
 
@@ -393,6 +401,8 @@ internal sealed class AiService
     private async Task<string> SystemPromptAsync(AiContext? context, CancellationToken cancellation)
     {
         var prompt = new StringBuilder(_settings.AiSystemPrompt);
+        var memory = Memory.PromptSection(context?.Folder);
+        if (memory.Length > 0) prompt.Append("\n\n").Append(memory);
         if (context is null) return prompt.ToString();
         if (context.Tools.Tools.Any(t => !t.IsFileTool))
             prompt.Append("\n\nYou are part of OverDesk and can act in it with your tools: the user's works (notes, to-do lists, stories, ")

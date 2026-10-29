@@ -183,6 +183,19 @@
                             </Grid>
                         </Border>
                         <Border Classes="pagecard" Padding="18,14">
+                            <StackPanel Spacing="10">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel>
+                                        <TextBlock Text="What the AI remembers" FontWeight="SemiBold"/>
+                                        <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                                   Text="Notes it saved between chats, about you and about each project. Say “remember …” in a chat to add one."/>
+                                    </StackPanel>
+                                    <Button x:Name="ClearMemoryButton" Grid.Column="1" Classes="ghost" Content="Forget all" VerticalAlignment="Top"/>
+                                </Grid>
+                                <StackPanel x:Name="MemoryRows" Spacing="6"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="pagecard" Padding="18,14">
                             <StackPanel Spacing="12">
                                 <TextBlock Text="Cloud API keys" FontWeight="SemiBold"/>
                                 <StackPanel x:Name="KeyRows" Spacing="10"/>

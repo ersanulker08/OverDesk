@@ -56,6 +56,8 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
         var edits = inProject && context!.AllowEdits;
 
         var info = CliTools.StartInfo(exe, folder);
+        // OverDesk keeps its own memory (the memory tool); Claude Code's would write notes into ~/.claude for OverDesk's workspace.
+        info.Environment["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1";
         foreach (var arg in new[] { "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages" }) info.ArgumentList.Add(arg);
         if (model is { Length: > 0 } && model != "default") { info.ArgumentList.Add("--model"); info.ArgumentList.Add(model); }
         if (sessionId is { Length: > 0 }) { info.ArgumentList.Add("--resume"); info.ArgumentList.Add(sessionId); }
@@ -168,7 +170,15 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
     {
         var name = block["name"]?.GetValue<string>() ?? "";
         var input = block["input"];
-        string File(string key) => input?[key]?.GetValue<string>() is { } p ? Path.GetRelativePath(folder, p) : "a file";
+        string File(string key)
+        {
+            if (input?[key]?.GetValue<string>() is not { } path) return "a file";
+            var relative = Path.GetRelativePath(folder, path);
+            if (!relative.StartsWith("..", StringComparison.Ordinal)) return relative;
+            // Outside the project (an attached screenshot...): the name says enough.
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            return path.StartsWith(home, StringComparison.Ordinal) ? "~" + path[home.Length..] : Path.GetFileName(path);
+        }
         return name switch
         {
             "Read" => $"Reading {File("file_path")}",

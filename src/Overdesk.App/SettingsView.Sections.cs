@@ -32,6 +32,13 @@ public partial class SettingsView
         SystemPrompt.LostFocus += (_, _) => Update(s => s.AiSystemPrompt = SystemPrompt.Text ?? "");
         AiToolsToggle.IsCheckedChanged += (_, _) => Update(s => s.AiTools = AiToolsToggle.IsChecked == true);
         AiEditsToggle.IsCheckedChanged += (_, _) => Update(s => s.AiAllowEdits = AiEditsToggle.IsChecked == true);
+        ClearMemoryButton.Click += (_, _) =>
+        {
+            if (Ai is null) return;
+            Ai.Memory.Clear(null);
+            foreach (var folder in MemoryFolders()) Ai.Memory.Clear(folder);
+            BuildMemory();
+        };
         AddPromptButton.Click += (_, _) =>
         {
             _settings.Prompts.Add(new SavedPrompt { Name = "New prompt", Text = "{{clipboard}}" });
@@ -62,9 +69,51 @@ public partial class SettingsView
         BuildWebPins();
         BuildWorks();
         BuildKeys();
+        BuildMemory();
         BuildPrompts();
         BuildProjects();
         BuildCardChips();
+    }
+
+    // ---------------------------------------------------------------- AI memory
+
+    private IEnumerable<string> MemoryFolders()
+        => _settings.AiRecentFolders.Concat(_settings.Projects.Select(p => p.Folder)).Distinct(StringComparer.OrdinalIgnoreCase);
+
+    private void BuildMemory()
+    {
+        MemoryRows.Children.Clear();
+        if (Ai is null) return;
+        var groups = new List<(string Title, string? Folder, IReadOnlyList<Overdesk.AI.MemoryNote> Notes)> { ("About you", null, Ai.Memory.Notes(null)) };
+        foreach (var folder in MemoryFolders())
+            if (Ai.Memory.Notes(folder) is { Count: > 0 } notes) groups.Add(($"Project {Path.GetFileName(folder.TrimEnd('/', '\\'))}", folder, notes));
+        if (groups.All(g => g.Notes.Count == 0))
+        {
+            MemoryRows.Children.Add(new TextBlock { Text = "Nothing yet.", Classes = { "faint" }, FontSize = 12 });
+            ClearMemoryButton.IsVisible = false;
+            return;
+        }
+        ClearMemoryButton.IsVisible = true;
+        foreach (var (title, folder, notes) in groups.Where(g => g.Notes.Count > 0))
+        {
+            MemoryRows.Children.Add(new TextBlock { Text = title.ToUpperInvariant(), Classes = { "eyebrow" }, FontSize = 9.5, Margin = new Thickness(0, 6, 0, 0) });
+            foreach (var note in notes)
+            {
+                var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+                row.Children.Add(new TextBlock { Text = note.Text, TextWrapping = TextWrapping.Wrap, FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center });
+                var delete = new Button { Classes = { "icon" }, Width = 26, Height = 26, Content = new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small" }, Data = Res.Icon("IconTrash"), Height = 11 } };
+                ToolTip.SetTip(delete, "Forget this");
+                var id = note.Id;
+                delete.Click += (_, _) =>
+                {
+                    Ai.Memory.Remove(folder, id);
+                    BuildMemory();
+                };
+                Grid.SetColumn(delete, 1);
+                row.Children.Add(delete);
+                MemoryRows.Children.Add(row);
+            }
+        }
     }
 
     // ---------------------------------------------------------------- web strip

@@ -63,6 +63,7 @@ public partial class MainWindow
         _aiPanel.Initialize(_ai, _settings);
         _aiPanel.Copied += () => ShowToast("Copied to clipboard", "IconCopy");
         _aiPanel.SettingsChanged += SaveSettings;
+        _aiPanel.SaveAsWork += SaveChatAsWork;
         _aiPanel.OpenAiSettings += () =>
         {
             OpenSettings();
@@ -128,6 +129,18 @@ public partial class MainWindow
     {
         if (!IsActive) _desktop.Notify("OverDesk · " + title, text);
         else if (!AiPanelVisible) ShowToast($"{title}: {text}", "IconSparkle");
+    }
+
+    /// <summary>A conversation kept as a work: headings for who spoke, the answers as text rows, opened in a tab.</summary>
+    private void SaveChatAsWork(string title, string markdown)
+    {
+        var work = _works.Library.Create(Overdesk.Core.Works.WorkTemplates.Find("blank"));
+        work.Title = title;
+        work.Icon = "IconSparkle";
+        work.Blocks = Overdesk.Core.Works.WorkText.FromMarkdown(markdown);
+        _works.Library.Touch(work, listChanged: true);
+        OpenWorkTab(work);
+        ShowToast($"Saved “{title}” as a work", "IconNote");
     }
 
     /// <summary>⌘J: open the AI panel with the cursor in the message box, or close it when it already has the focus.</summary>

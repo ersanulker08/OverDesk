@@ -4,7 +4,7 @@
   <Grid ColumnDefinitions="40,*">
     <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*,Auto">
         <!-- Provider / model picker -->
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="12,2,12,8">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="12,2,12,8">
             <Button x:Name="ModelButton" Classes="modelpicker" HorizontalAlignment="Stretch">
                 <Grid ColumnDefinitions="Auto,*,Auto">
                     <Border x:Name="KindBadge" Classes="chip" Padding="5,1" VerticalAlignment="Center">
@@ -19,6 +19,9 @@
             </Button>
             <Button x:Name="NewChatButton" Grid.Column="1" Classes="icon" Margin="6,0,0,0" ToolTip.Tip="New chat">
                 <Path Classes="icon" Data="{StaticResource IconPlus}"/>
+            </Button>
+            <Button x:Name="ChatMenuButton" Grid.Column="2" Classes="icon" Margin="2,0,0,0" ToolTip.Tip="This chat">
+                <Path Classes="icon" Data="{StaticResource IconMore}"/>
             </Button>
         </Grid>
 

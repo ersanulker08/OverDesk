@@ -35,6 +35,7 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         ModelButton.Click += (_, _) => ToggleModelSheet();
         CloseSheet.Click += (_, _) => HideModelSheet();
         NewChatButton.Click += (_, _) => StartNewChat();
+        ChatMenuButton.Click += (_, _) => ShowChatMenu();
         RailNewChat.Click += (_, _) => StartNewChat();
         HistoryRail.PointerEntered += (_, _) => SetRail(true);
         HistoryRail.PointerExited += (_, _) => SetRail(false);
@@ -263,6 +264,46 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         x.Click += (_, _) => remove();
         row.Children.Add(x);
         return new Border { Classes = { "chip" }, Padding = new Thickness(8, 3, 3, 3), Margin = new Thickness(0, 0, 6, 0), Child = row };
+    }
+
+    // ---------------------------------------------------------------- chat menu
+
+    /// <summary>Asks the host to keep the conversation as a work (title, markdown).</summary>
+    public event Action<string, string>? SaveAsWork;
+
+    private void ShowChatMenu()
+    {
+        if (_ai is null || _ai.Conversation.Count == 0) return;
+        var thread = _ai.Current;
+        var menu = new ContextMenu
+        {
+            ItemsSource = new[]
+            {
+                MenuEntry("Save as a work", "IconNote", () => SaveAsWork?.Invoke(thread.Title, ChatMarkdownText(thread))),
+                MenuEntry("Copy as Markdown", "IconCopy", () => _ = CopyAsync(ChatMarkdownText(thread))),
+                MenuEntry("Delete this chat", "IconTrash", () => _ai.Delete(thread)),
+            },
+        };
+        menu.Open(ChatMenuButton);
+    }
+
+    private static MenuItem MenuEntry(string text, string icon, Action click)
+    {
+        var item = new MenuItem { Header = text, Icon = new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small" }, Data = Res.Icon(icon) } };
+        item.Click += (_, _) => click();
+        return item;
+    }
+
+    private static string ChatMarkdownText(ChatThread thread)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var turn in thread.Turns)
+        {
+            sb.AppendLine(turn.Role == ChatMessage.User ? "### You" : "### AI");
+            if (turn.Actions.Count > 0) sb.AppendLine(string.Join("\n", turn.Actions.Select(a => "- _" + a + "_"))).AppendLine();
+            sb.AppendLine(turn.Error is { } error ? "⚠ " + error : turn.Text).AppendLine();
+        }
+        return sb.ToString().TrimEnd() + "\n";
     }
 
     // ---------------------------------------------------------------- project folder

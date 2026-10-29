@@ -57,6 +57,71 @@ public static class WorkText
         var other => Enum.TryParse<BlockKind>(other, ignoreCase: true, out var k) && Enum.IsDefined(k) ? k : null,
     };
 
+    /// <summary>
+    /// Rows from Markdown text: headings, to-dos, bullets, quotes and rules become their own rows; paragraphs (and
+    /// code blocks, kept as they are) become text rows.
+    /// </summary>
+    public static List<WorkBlock> FromMarkdown(string markdown)
+    {
+        var rows = new List<WorkBlock>();
+        var paragraph = new List<string>();
+        void Flush()
+        {
+            if (paragraph.Count == 0) return;
+            rows.Add(new WorkBlock { Kind = BlockKind.Text, Text = string.Join("\n", paragraph).Trim() });
+            paragraph.Clear();
+        }
+        var lines = markdown.Replace("\r\n", "\n").Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i].TrimEnd();
+            var t = line.TrimStart();
+            if (t.StartsWith("```", StringComparison.Ordinal))
+            {
+                Flush();
+                var code = new List<string> { line };
+                while (++i < lines.Length)
+                {
+                    code.Add(lines[i]);
+                    if (lines[i].TrimStart().StartsWith("```", StringComparison.Ordinal)) break;
+                }
+                rows.Add(new WorkBlock { Kind = BlockKind.Text, Text = string.Join("\n", code) });
+                continue;
+            }
+            if (t.Length == 0) { Flush(); continue; }
+            var heading = t.TakeWhile(c => c == '#').Count();
+            if (heading is > 0 and <= 6 && t.Length > heading && t[heading] == ' ')
+            {
+                Flush();
+                rows.Add(new WorkBlock { Kind = BlockKind.Heading, Text = t[(heading + 1)..].Trim(), Level = Math.Min(heading, 3) });
+            }
+            else if (t.StartsWith("- [ ] ", StringComparison.Ordinal) || t.StartsWith("- [x] ", StringComparison.OrdinalIgnoreCase))
+            {
+                Flush();
+                rows.Add(new WorkBlock { Kind = BlockKind.Todo, Text = t[6..].Trim(), Checked = t[3] != ' ' });
+            }
+            else if (t.Length > 2 && (t[0] is '-' or '*' or '+') && t[1] == ' ')
+            {
+                Flush();
+                rows.Add(new WorkBlock { Kind = BlockKind.Bullet, Text = t[2..].Trim() });
+            }
+            else if (t.StartsWith('>'))
+            {
+                Flush();
+                rows.Add(new WorkBlock { Kind = BlockKind.Quote, Text = t[1..].Trim() });
+            }
+            else if (t is "---" or "***" or "___")
+            {
+                Flush();
+                rows.Add(new WorkBlock { Kind = BlockKind.Divider });
+            }
+            else paragraph.Add(line);
+        }
+        Flush();
+        if (rows.Count == 0) rows.Add(new WorkBlock());
+        return rows;
+    }
+
     /// <summary>Rows from [{kind, text, value, checked, number, level}, ...]; plain strings become text rows.</summary>
     public static List<WorkBlock> ParseBlocks(JsonArray blocks)
     {

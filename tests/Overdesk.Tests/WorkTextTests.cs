@@ -68,3 +68,16 @@ public class WorkTextTests
         Assert.Equal(work.Blocks.Count, again.Find(work.Id)!.Blocks.Count);
     }
 }
+
+public class WorkMarkdownTests
+{
+    [Fact]
+    public void Markdown_becomes_rows()
+    {
+        var rows = WorkText.FromMarkdown("### You\nPlan it\n\n### AI\n- [x] book flights\n- pack\n> remember\n---\n```\ncode\n\nmore\n```\nlast line");
+        Assert.Equal(new[] { BlockKind.Heading, BlockKind.Text, BlockKind.Heading, BlockKind.Todo, BlockKind.Bullet, BlockKind.Quote, BlockKind.Divider, BlockKind.Text, BlockKind.Text },
+            rows.Select(r => r.Kind));
+        Assert.True(rows[3].Checked);
+        Assert.Equal("```\ncode\n\nmore\n```", rows[7].Text);
+    }
+}

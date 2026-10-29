@@ -37,6 +37,8 @@
   - focus timer;
   - projects, git and Docker cards.
 - **Workspaces, split view, command palette (⌘P), themes**: six accent colors that recolor everything live.
+- **Converter.** Drop files on it: images (PNG, JPG, WebP, HEIC, TIFF, PDF; resize), data (JSON, CSV, TSV, XML),
+  Markdown to HTML or Word, documents, audio and video. Results go next to the originals. The AI can use it too.
 - **Tools panel + plugins.** The right side hosts tools. A tool is a folder with an `overdesk.plugin.json`; it can be a
   C# plugin or any program in any language. See [docs/PLUGINS.md](docs/PLUGINS.md).
 
@@ -50,6 +52,7 @@ The AI panel can act, not just answer. It has tools for everything under OverDes
 | "Open Spotify and skip this song" | open **programs**, switch and close **tabs**, open **sites** and panel **tools**, control **media** |
 | "Why is my dev server crashing?" | read the **logs** of running tasks, list local **dev servers**, check **CPU / memory** |
 | "What am I looking at?" | take a **screenshot** of the program on stage, read and write the **clipboard** and the scratchpad |
+| "Make these photos WebP, max 1600 px" | **convert files** with the Converter tool (and any plugin that gives the AI tools) |
 | "Fix the failing test" | read, search and edit files in your **project folder** and run commands, then open the result in VS Code |
 
 **Project folder.** Pick a folder with the 📁 chip under the message box (or drop a folder on the panel). The AI gets an

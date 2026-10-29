@@ -47,6 +47,44 @@ cp -R samples/HelloTool/plugin "<settings folder>/plugins/hello"
 Any executable. OverDesk starts it and places its window inside the panel. It cannot crash OverDesk, but window
 placement follows the same platform rules as program tabs: reparented on Windows, glued on macOS.
 
+## Give the AI new abilities
+
+An in-process tool can let OverDesk's AI use it. Set `"ai": true` in the manifest and implement
+`Overdesk.Core.Plugins.IAiToolSource` next to `IToolPlugin`:
+
+```csharp
+public sealed class ConverterPlugin : IToolPlugin, IAiToolSource
+{
+    public object CreateView() => new ConverterView();
+
+    public IReadOnlyList<PluginAiTool> AiTools { get; } = new[]
+    {
+        new PluginAiTool(
+            "convert_files",                       // letters, digits, _ and -
+            "Convert files to another format…",    // tell the model when to use it
+            Schema,                                // a JSON Schema object, as text
+            async (json, cancellation) => "…text for the model…")
+        {
+            Label = json => "Converting 2 files to PNG",   // optional: the line shown in the chat
+            Approval = json => "Delete these files?",      // optional: ask the user before every call
+        },
+    };
+}
+```
+
+Every AI provider gets the tool: the API ones call it directly, Claude Code and Gemini CLI through OverDesk's local MCP
+server. Throw to report an error; the model sees the message. The same plugin instance serves the panel and the AI.
+
+## Take dropped files
+
+When the user drops files on the side panel while your tool is open, OverDesk hands them to your view if it implements
+`Overdesk.Core.Plugins.IFileDropTarget` (`DropHint` is the line on the drop overlay). Otherwise the files open as tabs.
+
+## Bundled tools
+
+`tools/devkit` (JSON, Base64, hashes…) and `tools/converter` (images, data, documents, audio, video, with an AI tool)
+ship with OverDesk and are good examples. `scripts/package-*` copies every `tools/*` folder into the app.
+
 ## Rules of thumb
 
 - Keep in-process tools light: they run on OverDesk's UI thread. Do slow work with `Task.Run`.

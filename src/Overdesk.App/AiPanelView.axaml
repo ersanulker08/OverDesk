@@ -39,7 +39,7 @@
                 </Border>
                 <TextBlock Text="Ask anything" FontSize="17" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                 <TextBlock Classes="muted" FontSize="12" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="260"
-                           Text="Local models stay on this computer. Attach the clipboard or a screenshot of the program you are using."/>
+                           Text="Ask, or tell it what to do: it can open programs, write in your works and, with a project folder chosen below, read and change your code."/>
                 <WrapPanel x:Name="QuickActions" HorizontalAlignment="Center" Margin="0,6,0,0"/>
             </StackPanel>
         </Panel>
@@ -71,6 +71,22 @@
                     </Grid>
                 </Grid>
             </Border>
+            <!-- Project folder the chat works in, and whether the AI may change its files -->
+            <Grid ColumnDefinitions="*,Auto" Margin="0,-2,0,0">
+                <Button x:Name="FolderButton" Classes="footchip" HorizontalAlignment="Left" MaxWidth="240">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Path x:Name="FolderIcon" Classes="icon small" Data="{StaticResource IconFolder}" Height="11"/>
+                        <TextBlock x:Name="FolderText" Text="No project folder" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                        <Path Classes="icon small" Data="{StaticResource IconChevronDown}" Height="7" Opacity="0.7"/>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="EditModeButton" Grid.Column="1" Classes="footchip" IsVisible="False">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <Ellipse x:Name="EditModeDot" Width="6" Height="6" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="EditModeText" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </Grid>
         </StackPanel>
     </Grid>
 

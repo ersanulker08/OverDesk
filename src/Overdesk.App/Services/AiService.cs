@@ -14,6 +14,9 @@ internal sealed class AiTurn
     public string Text { get; set; } = "";
     public string? Error { get; set; }
 
+    /// <summary>What the AI did while answering ("Created “Groceries”", "Editing src/App.cs"), in order.</summary>
+    public List<string> Actions { get; set; } = new();
+
     [JsonIgnore] public List<byte[]> Images { get; } = new();
     [JsonIgnore] public bool IsStreaming { get; set; }
 }
@@ -37,6 +40,9 @@ internal sealed class AiService
     private readonly ChatStore _store;
     private readonly Dictionary<string, IReadOnlyList<AiModel>> _models = new();
     private CancellationTokenSource? _running;
+    private McpServer? _mcp;
+    private AiToolbox? _activeTools;
+    private (string Folder, DateTime When, string Text)? _overview;
 
     public AiService(AppSettings settings, ISecretStore secrets, string dataFolder)
     {
@@ -76,6 +82,31 @@ internal sealed class AiService
 
     /// <summary>Raised on the UI thread whenever the conversation or status changes.</summary>
     public event Action? Changed;
+
+    /// <summary>OverDesk's own tools (works, tabs, programs...), supplied by the main window.</summary>
+    public Func<IReadOnlyList<AiTool>>? AppTools { get; set; }
+
+    /// <summary>The project folder chats work in (chosen at the bottom of the panel), or null.</summary>
+    public string? Folder => _settings.AiFolder is { } f && Directory.Exists(f) ? f : null;
+
+    public IReadOnlyList<string> RecentFolders => _settings.AiRecentFolders;
+
+    /// <summary>Raised when the user picks a project folder, or none (the window remembers it as a project and saves).</summary>
+    public event Action<string?>? FolderChanged;
+
+    public void SetFolder(string? folder)
+    {
+        folder = folder?.TrimEnd('/', '\\');
+        _settings.AiFolder = folder;
+        if (folder is not null)
+        {
+            _settings.AiRecentFolders.RemoveAll(f => string.Equals(f, folder, StringComparison.OrdinalIgnoreCase));
+            _settings.AiRecentFolders.Insert(0, folder);
+            if (_settings.AiRecentFolders.Count > 8) _settings.AiRecentFolders.RemoveRange(8, _settings.AiRecentFolders.Count - 8);
+        }
+        FolderChanged?.Invoke(folder);
+        Changed?.Invoke();
+    }
 
     public static AiSourceKind KindOf(IChatProvider provider)
         => provider is ISessionChatProvider or GeminiCliProvider ? AiSourceKind.App : provider.IsLocal ? AiSourceKind.Local : AiSourceKind.Cloud;
@@ -141,6 +172,7 @@ internal sealed class AiService
     {
         Stop();
         Current = thread;
+        if (thread.Folder is { } folder && Directory.Exists(folder)) _settings.AiFolder = folder;
         // Continue with the model the conversation used, when it still exists.
         if (thread.ProviderId is { } id && Providers.Any(p => p.Id == id))
         {
@@ -195,8 +227,12 @@ internal sealed class AiService
             }
             thread.ProviderId = provider.Id;
             thread.Model = model;
+            var folder = Folder;
+            thread.Folder = folder;
 
-            var stream = Stream(provider, model, thread, answer, cts.Token);
+            var context = BuildContext(provider, folder, answer);
+            var system = await SystemPromptAsync(context, cts.Token);
+            var stream = Stream(provider, model, system, context, thread, answer, cts.Token);
             var lastUpdate = DateTime.MinValue;
             await foreach (var chunk in stream.ConfigureAwait(false))
             {
@@ -206,7 +242,9 @@ internal sealed class AiService
                 {
                     thread.SessionId = session;
                     thread.SessionProvider = provider.Id;
+                    thread.SessionFolder = folder;
                 }
+                if (chunk.Activity is { } activity) Dispatcher.UIThread.Post(() => answer.Actions.Add(activity));
                 // Repaint at most ~20 times a second, however fast tokens arrive.
                 if (DateTime.UtcNow - lastUpdate > TimeSpan.FromMilliseconds(50))
                 {
@@ -228,8 +266,13 @@ internal sealed class AiService
             answer.IsStreaming = false;
             thread.Updated = DateTime.Now;
             if (ReferenceEquals(_running, cts)) _running = null;
-            _store.Save(thread);
-            Dispatcher.UIThread.Post(() => Changed?.Invoke());
+            _activeTools = null;
+            // Posted, so it runs after the tool lines that are still queued for the UI thread.
+            Dispatcher.UIThread.Post(() =>
+            {
+                _store.Save(thread);
+                Changed?.Invoke();
+            });
         }
     }
 
@@ -237,13 +280,15 @@ internal sealed class AiService
     /// Session providers (Claude Code) get only the new message and continue their own session. When the conversation
     /// started elsewhere, the earlier turns are folded into that first message so nothing is lost.
     /// </summary>
-    private IAsyncEnumerable<ChatChunk> Stream(IChatProvider provider, string model, ChatThread thread, AiTurn answer, CancellationToken cancellation)
+    private IAsyncEnumerable<ChatChunk> Stream(IChatProvider provider, string model, string system, AiContext? context, ChatThread thread, AiTurn answer,
+        CancellationToken cancellation)
     {
         var history = thread.Turns.Where(t => t != answer && t.Error is null)
-            .Select(t => new ChatMessage(t.Role, t.Text, t.Images.Count > 0 ? t.Images : null)).ToList();
-        if (provider is not ISessionChatProvider session) return provider.StreamAsync(model, _settings.AiSystemPrompt, history, cancellation);
+            .Select(t => new ChatMessage(t.Role, WithActions(t), t.Images.Count > 0 ? t.Images : null)).ToList();
+        if (provider is not ISessionChatProvider session) return provider.StreamAsync(model, system, history, context, cancellation);
 
-        var resume = thread.SessionProvider == provider.Id ? thread.SessionId : null;
+        // Claude Code keeps sessions per folder: a session started in another folder cannot be resumed from this one.
+        var resume = thread.SessionProvider == provider.Id && thread.SessionFolder == context?.Folder ? thread.SessionId : null;
         var last = history[^1];
         if (resume is null && history.Count > 1)
         {
@@ -252,13 +297,100 @@ internal sealed class AiService
             text.AppendLine().Append("New message: ").Append(last.Text);
             last = last with { Text = text.ToString() };
         }
-        return session.StreamTurnAsync(model, _settings.AiSystemPrompt, last, resume, cancellation);
+        return session.StreamTurnAsync(model, system, last, resume, context, cancellation);
+    }
+
+    /// <summary>Earlier answers carry a note of what was done, so the model remembers it without the tool calls.</summary>
+    private static string WithActions(AiTurn turn)
+        => turn.Actions.Count == 0 ? turn.Text : turn.Text + "\n\n(Actions taken: " + string.Join("; ", turn.Actions) + ")";
+
+    // ---------------------------------------------------------------- tools & project
+
+    /// <summary>
+    /// The tools of this turn: OverDesk's own (when allowed) plus the project folder's file tools. Every call shows up
+    /// in the answer as a line. Installed AI apps reach them over the local MCP server.
+    /// </summary>
+    private AiContext? BuildContext(IChatProvider provider, string? folder, AiTurn answer)
+    {
+        var tools = new List<AiTool>();
+        if (_settings.AiTools && AppTools is not null) tools.AddRange(AppTools());
+        if (folder is not null) tools.AddRange(ProjectTools.Create(folder, _settings.AiAllowEdits));
+        if (tools.Count == 0 && folder is null) return null;
+
+        var box = new AiToolbox(tools);
+        box.Activity += line => Dispatcher.UIThread.Post(() =>
+        {
+            answer.Actions.Add(line);
+            Changed?.Invoke();
+        });
+        box.Failed += line => Dispatcher.UIThread.Post(() => answer.Actions.Add("⚠ " + line));
+        _activeTools = box;
+
+        McpEndpoint? mcp = null;
+        if (tools.Count > 0 && provider is ClaudeCodeProvider or GeminiCliProvider)
+        {
+            try
+            {
+                _mcp ??= new McpServer(() => _activeTools);
+                _mcp.Start();
+                // Claude Code has its own file tools (and runs inside the folder); Gemini CLI uses OverDesk's.
+                mcp = _mcp.Endpoint(withFileTools: provider is GeminiCliProvider);
+            }
+            catch (Exception) { /* no local port: the app still chats, without OverDesk's tools */ }
+        }
+        return new AiContext(box, folder, _settings.AiAllowEdits, mcp);
+    }
+
+    private async Task<string> SystemPromptAsync(AiContext? context, CancellationToken cancellation)
+    {
+        var prompt = new StringBuilder(_settings.AiSystemPrompt);
+        if (context is null) return prompt.ToString();
+        if (context.Tools.Tools.Any(t => !t.IsFileTool))
+            prompt.Append("\n\nYou are part of OverDesk and can act in it with your tools: the user's works (notes, to-do lists, stories, ")
+                  .Append("game variable sheets), program and web tabs, installed programs, panel tools, the clipboard and a screenshot of the ")
+                  .Append("program on stage. When the user asks for something in OverDesk, do it with the tools instead of explaining how. ")
+                  .Append("Read a work before changing it. Delete or close things only when the user asked. Afterwards, say briefly what you did.");
+        if (context.Folder is { } folder)
+        {
+            prompt.Append("\n\nThe user chose a project folder for this chat: answer about this project. Before answering about specific ")
+                  .Append("code, look at the real files with your tools. ")
+                  .Append(context.AllowEdits
+                      ? "You may create and change files in this folder when the user asks for it: make focused changes, then use " +
+                        "open_in_editor (when available) to show the changed file. You cannot run shell commands."
+                      : "You can read its files but not change them (file changes are switched off in OverDesk's settings): show changes as code blocks.")
+                  .Append("\n\n").Append(await OverviewAsync(folder, cancellation));
+        }
+        return prompt.ToString();
+    }
+
+    /// <summary>The folder overview, refreshed at most once a minute.</summary>
+    private async Task<string> OverviewAsync(string folder, CancellationToken cancellation)
+    {
+        if (_overview is { } cached && cached.Folder == folder && DateTime.UtcNow - cached.When < TimeSpan.FromMinutes(1)) return cached.Text;
+        var text = await Task.Run(() => ProjectTools.Overview(folder), cancellation);
+        _overview = (folder, DateTime.UtcNow, text);
+        return text;
     }
 
     private static string Shorten(string text)
     {
         var line = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         return line.Length > 48 ? line[..47] + "…" : line;
+    }
+
+    /// <summary>Development snapshots: a finished exchange that used tools, without calling any model.</summary>
+    internal void DevShowDemo(string folder)
+    {
+        _settings.AiFolder = folder;
+        Current = new ChatThread { Title = "Plan the release", Folder = folder };
+        Current.Turns.Add(new AiTurn { Role = ChatMessage.User, Text = "Add the release steps to my to-do list and fix the typo in README" });
+        Current.Turns.Add(new AiTurn
+        {
+            Role = ChatMessage.Assistant,
+            Actions = { "Reading “Release to-dos”", "Adding to “Release to-dos”", "Reading README.md", "Editing README.md", "Opening README.md in the editor" },
+            Text = "Done. I added 4 steps to **Release to-dos** (tag, build, notes, upload) and fixed “recieve” → “receive” in README.md, now open in VS Code.",
+        });
+        Changed?.Invoke();
     }
 
     /// <summary>Fill a saved prompt's variables ("{{clipboard}}").</summary>

@@ -93,6 +93,9 @@ internal static class DevSnapshot
         await Task.Delay(2500);
         Save(main, Path.Combine(dir, "ai-models.png"));
         main.DevOpenAi(sheet: false, rail: false);
+        main.DevAiDemo(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../..")));
+        await Task.Delay(600);
+        Save(main, Path.Combine(dir, "ai-actions.png"));
         main.DevCloseTools();
         await Task.Delay(300);
 

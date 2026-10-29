@@ -217,6 +217,11 @@ public partial class MainWindow : Window
         OpenAi();
         AiPanel().DevShow(sheet, rail);
     }
+    internal void DevAiDemo(string folder)
+    {
+        OpenAi();
+        _ai.DevShowDemo(folder);
+    }
     internal void DevShowWorkspaces() => ShowWorkspaceMenu();
     internal void DevScrollDock(double y) => Dock.DevScroll(y);
     internal void DevCloseTools() => CloseToolPanel();

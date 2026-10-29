@@ -31,6 +31,26 @@ public partial class MainWindow
             Description = "Chat with local and cloud AI models",
             BuiltIn = () => new BuiltInTool(() => AiPanel()),
         });
+        _ai.AppTools = BuildAiTools;
+        _ai.FolderChanged += OnAiFolderChanged;
+    }
+
+    /// <summary>A folder picked for the AI becomes (or selects) one of the user's projects, so the dock knows it too.</summary>
+    private void OnAiFolderChanged(string? folder)
+    {
+        if (folder is not null)
+        {
+            var project = _settings.Projects.FirstOrDefault(p => string.Equals(p.Folder.TrimEnd('/', '\\'), folder, StringComparison.OrdinalIgnoreCase));
+            if (project is null)
+            {
+                project = DetectProject(folder);
+                _settings.Projects.Add(project);
+                ShowToast($"{project.Name} is now one of your projects", "IconRocket");
+            }
+            _settings.ActiveProject = project.Id;
+            Dock.RefreshDev();
+        }
+        SaveSettings();
     }
 
     private AiPanelView AiPanel()
@@ -39,6 +59,7 @@ public partial class MainWindow
         _aiPanel = new AiPanelView { CaptureStage = CaptureStagePngAsync };
         _aiPanel.Initialize(_ai, _settings);
         _aiPanel.Copied += () => ShowToast("Copied to clipboard", "IconCopy");
+        _aiPanel.SettingsChanged += SaveSettings;
         _aiPanel.OpenAiSettings += () =>
         {
             OpenSettings();

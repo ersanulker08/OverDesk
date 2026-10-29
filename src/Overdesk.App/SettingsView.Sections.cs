@@ -30,6 +30,8 @@ public partial class SettingsView
         OllamaUrl.LostFocus += (_, _) => Update(s => s.OllamaUrl = OllamaUrl.Text?.Trim() is { Length: > 0 } u ? u : s.OllamaUrl);
         LmStudioUrl.LostFocus += (_, _) => Update(s => s.LmStudioUrl = LmStudioUrl.Text?.Trim() is { Length: > 0 } u ? u : s.LmStudioUrl);
         SystemPrompt.LostFocus += (_, _) => Update(s => s.AiSystemPrompt = SystemPrompt.Text ?? "");
+        AiToolsToggle.IsCheckedChanged += (_, _) => Update(s => s.AiTools = AiToolsToggle.IsChecked == true);
+        AiEditsToggle.IsCheckedChanged += (_, _) => Update(s => s.AiAllowEdits = AiEditsToggle.IsChecked == true);
         AddPromptButton.Click += (_, _) =>
         {
             _settings.Prompts.Add(new SavedPrompt { Name = "New prompt", Text = "{{clipboard}}" });
@@ -52,6 +54,8 @@ public partial class SettingsView
         OllamaUrl.Text = _settings.OllamaUrl;
         LmStudioUrl.Text = _settings.LmStudioUrl;
         SystemPrompt.Text = _settings.AiSystemPrompt;
+        AiToolsToggle.IsChecked = _settings.AiTools;
+        AiEditsToggle.IsChecked = _settings.AiAllowEdits;
         FocusMinutes.Value = _settings.FocusMinutes;
         BreakMinutes.Value = _settings.BreakMinutes;
         _loading = false;

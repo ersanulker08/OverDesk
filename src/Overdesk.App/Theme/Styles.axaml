@@ -752,6 +752,30 @@
         <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
         <Setter Property="Foreground" Value="White"/>
     </Style>
+    <!-- Small chips under the AI composer: project folder, edit mode -->
+    <Style Selector="Button.footchip">
+        <Setter Property="Height" Value="24"/>
+        <Setter Property="Padding" Value="7,0"/>
+        <Setter Property="CornerRadius" Value="7"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="FontSize" Value="11.5"/>
+        <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+    </Style>
+    <Style Selector="Button.footchip:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{StaticResource Bg3Brush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+    </Style>
+    <Style Selector="Button.footchip.on /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+    </Style>
+    <!-- One line per thing the AI did while answering -->
+    <Style Selector="Border.actionline">
+        <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
+        <Setter Property="CornerRadius" Value="7"/>
+        <Setter Property="Padding" Value="8,4"/>
+    </Style>
     <Style Selector="Border.sourcecard">
         <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource StrokeBrush}"/>

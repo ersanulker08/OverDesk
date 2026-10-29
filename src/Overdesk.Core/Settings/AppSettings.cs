@@ -122,6 +122,16 @@ public sealed class AppSettings
     public string LmStudioUrl { get; set; } = "http://localhost:1234/v1";
     public string AiSystemPrompt { get; set; } = "You are a helpful assistant inside OverDesk, a desktop workspace. Be concise. Use Markdown code blocks for code.";
 
+    /// <summary>Let the AI act inside OverDesk: works, tabs, programs, the clipboard, the program on stage.</summary>
+    public bool AiTools { get; set; } = true;
+
+    /// <summary>Project folder the AI reads and answers about (chosen at the bottom of the AI panel); null = none.</summary>
+    public string? AiFolder { get; set; }
+    public List<string> AiRecentFolders { get; set; } = new();
+
+    /// <summary>The AI may create and change files inside the project folder (never outside it, never shell commands).</summary>
+    public bool AiAllowEdits { get; set; } = true;
+
     public List<SavedPrompt> Prompts { get; set; } = new()
     {
         new() { Name = "Summarize", Text = "Summarize this in a few bullet points:\n\n{{clipboard}}" },

@@ -6,6 +6,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Overdesk.AI;
 using Overdesk.App.Controls;
@@ -40,6 +41,13 @@ public partial class AiPanelView : UserControl
         AttachClipboard.Click += async (_, _) => await AttachClipboardAsync();
         AttachScreenshot.Click += async (_, _) => await AttachScreenshotAsync();
         PromptsButton.Click += (_, _) => ShowPrompts(PromptsButton);
+        FolderButton.Click += (_, _) => ShowFolderMenu();
+        EditModeButton.Click += (_, _) =>
+        {
+            _settings.AiAllowEdits = !_settings.AiAllowEdits;
+            SettingsChanged?.Invoke();
+            RenderFolder();
+        };
         Input.KeyDown += (_, e) =>
         {
             if (e.Key != Key.Enter || e.KeyModifiers.HasFlag(KeyModifiers.Shift)) return;
@@ -168,6 +176,101 @@ public partial class AiPanelView : UserControl
         x.Click += (_, _) => remove();
         row.Children.Add(x);
         return new Border { Classes = { "chip" }, Padding = new Thickness(8, 3, 3, 3), Margin = new Thickness(0, 0, 6, 0), Child = row };
+    }
+
+    // ---------------------------------------------------------------- project folder
+
+    /// <summary>Raised after the panel changed a setting itself (edit mode), so the host saves.</summary>
+    public event Action? SettingsChanged;
+
+    private void RenderFolder()
+    {
+        if (_ai is null) return;
+        var folder = _ai.Folder;
+        FolderText.Text = folder is null ? "No project folder" : FolderName(folder);
+        FolderIcon.Classes.Set("accent", folder is not null);
+        FolderButton.Classes.Set("on", folder is not null);
+        ToolTip.SetTip(FolderButton, folder ?? "Pick a folder: the AI then knows the project, reads its files and answers about it");
+        EditModeButton.IsVisible = folder is not null;
+        EditModeText.Text = _settings.AiAllowEdits ? "Can edit files" : "Read only";
+        EditModeDot.Fill = Res.Brush(_settings.AiAllowEdits ? "SuccessBrush" : "FaintBrush");
+        ToolTip.SetTip(EditModeButton, _settings.AiAllowEdits
+            ? "The AI may create and change files in this folder (never outside it, never shell commands). Click for read only."
+            : "The AI only reads this folder. Click to let it change files.");
+    }
+
+    private static string FolderName(string folder) => Path.GetFileName(folder.TrimEnd('/', '\\')) is { Length: > 0 } name ? name : folder;
+
+    private void ShowFolderMenu()
+    {
+        if (_ai is null) return;
+        var panel = new StackPanel { Spacing = 2, Width = 300 };
+        var flyout = new Flyout { Content = panel, Placement = PlacementMode.TopEdgeAlignedLeft };
+        panel.Children.Add(new TextBlock { Text = "PROJECT FOLDER", Classes = { "eyebrow" }, FontSize = 9.5, Margin = new Thickness(6, 0, 0, 2) });
+        panel.Children.Add(new TextBlock
+        {
+            Text = "The AI learns the project, reads its files and answers about it. It is also added to your projects.",
+            Classes = { "faint" }, FontSize = 10.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(6, 0, 6, 6),
+        });
+
+        var current = _ai.Folder;
+        var shown = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void Add(string folder)
+        {
+            folder = folder.TrimEnd('/', '\\');
+            if (!Directory.Exists(folder) || !shown.Add(folder)) return;
+            panel.Children.Add(FolderRow("IconFolder", FolderName(folder), folder, string.Equals(folder, current, StringComparison.OrdinalIgnoreCase), () =>
+            {
+                flyout.Hide();
+                _ai.SetFolder(folder);
+            }));
+        }
+        if (current is not null) Add(current);
+        foreach (var folder in _ai.RecentFolders) Add(folder);
+        foreach (var project in _settings.Projects) Add(project.Folder);
+
+        panel.Children.Add(FolderRow("IconPlus", "Choose a folder…", null, false, () =>
+        {
+            flyout.Hide();
+            _ = ChooseFolderAsync();
+        }));
+        if (current is not null)
+            panel.Children.Add(FolderRow("IconClose", "No folder", "Chat without a project", false, () =>
+            {
+                flyout.Hide();
+                _ai.SetFolder(null);
+            }));
+        flyout.ShowAt(FolderButton);
+    }
+
+    private Control FolderRow(string icon, string title, string? detail, bool selected, Action click)
+    {
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(new TextBlock { Text = title, FontWeight = FontWeight.SemiBold, FontSize = 12.5, TextTrimming = TextTrimming.CharacterEllipsis });
+        if (detail is not null) text.Children.Add(new TextBlock { Text = detail, Classes = { "faint" }, FontSize = 10.5, TextTrimming = TextTrimming.PrefixCharacterEllipsis });
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+        var glyph = new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small" }, Data = Res.Icon(icon), Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center };
+        glyph.Classes.Set("accent", selected || icon != "IconFolder");
+        row.Children.Add(glyph);
+        Grid.SetColumn(text, 1);
+        row.Children.Add(text);
+        if (selected)
+        {
+            var check = new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small", "accent" }, Data = Res.Icon("IconCheck"), VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(check, 2);
+            row.Children.Add(check);
+        }
+        var button = new Button { Classes = { "result" }, Content = row, Padding = new Thickness(8, 6), HorizontalAlignment = HorizontalAlignment.Stretch };
+        button.Click += (_, _) => click();
+        return button;
+    }
+
+    private async Task ChooseFolderAsync()
+    {
+        if (_ai is null || TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
+        var folders = await storage.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Choose a project folder for the AI", AllowMultiple = false });
+        if (folders.FirstOrDefault()?.TryGetLocalPath() is { } folder) _ai.SetFolder(folder);
+        FocusInput();
     }
 
     // ---------------------------------------------------------------- model picker
@@ -641,6 +744,7 @@ public partial class AiPanelView : UserControl
         KindBadge.Background = new SolidColorBrush(tint, 0.2);
         KindText.Foreground = new SolidColorBrush(tint);
         RenderHistory();
+        RenderFolder();
         SpeedText.Text = _ai.LastTokensPerSecond is { } speed ? $"{speed:0} tok/s" : "";
         SendIcon.Data = Res.Icon(_ai.IsBusy ? "IconStop" : "IconSend");
         SendIcon.Fill = _ai.IsBusy ? Brushes.White : null;
@@ -671,10 +775,11 @@ public partial class AiPanelView : UserControl
             catch (Exception) { }
         }
 
+        if (turn.Actions.Count > 0) content.Children.Add(ActionList(turn));
         if (turn.Error is { } error)
             content.Children.Add(new SelectableTextBlock { Classes = { "msg" }, Text = "⚠ " + error, Foreground = Res.Brush("DangerBrush") });
         else if (turn.Text.Length == 0 && turn.IsStreaming)
-            content.Children.Add(new TextBlock { Text = "Thinking…", Classes = { "muted" }, FontSize = 12.5 });
+            content.Children.Add(new TextBlock { Text = turn.Actions.Count > 0 ? "Working…" : "Thinking…", Classes = { "muted" }, FontSize = 12.5 });
         else
             foreach (var part in MarkdownParts(turn.Text)) content.Children.Add(part);
 
@@ -686,6 +791,47 @@ public partial class AiPanelView : UserControl
             content.Children.Add(copy);
         }
         return new Border { Classes = { "bubble", user ? "user" : "assistant" }, Child = content };
+    }
+
+    /// <summary>
+    /// The things the AI did while answering, one line each. Long lists fold to the last few once the answer is done.
+    /// </summary>
+    private static Control ActionList(AiTurn turn)
+    {
+        var lines = new StackPanel { Spacing = 3 };
+        for (var i = 0; i < turn.Actions.Count; i++)
+        {
+            var action = turn.Actions[i];
+            var failed = action.StartsWith('⚠');
+            var running = turn.IsStreaming && i == turn.Actions.Count - 1 && turn.Text.Length == 0;
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
+            row.Children.Add(new Avalonia.Controls.Shapes.Path
+            {
+                Classes = { "icon", "small" }, Height = 10, VerticalAlignment = VerticalAlignment.Center,
+                Data = Res.Icon(failed ? "IconAlert" : running ? "IconSparkle" : "IconCheck"),
+                Stroke = Res.Brush(failed ? "WarningBrush" : running ? "AccentBrush" : "SuccessBrush"),
+            });
+            row.Children.Add(new TextBlock
+            {
+                Text = failed ? action.TrimStart('⚠', ' ') : action, FontSize = 11.5, Classes = { "muted" },
+                TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 300, VerticalAlignment = VerticalAlignment.Center,
+            });
+            ToolTip.SetTip(row, action);
+            lines.Children.Add(new Border { Classes = { "actionline" }, HorizontalAlignment = HorizontalAlignment.Left, Child = row });
+        }
+        if (turn.IsStreaming || turn.Actions.Count <= 6) return lines;
+        lines.IsVisible = false;
+        var label = new TextBlock { Text = $"{turn.Actions.Count} actions", VerticalAlignment = VerticalAlignment.Center };
+        var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        header.Children.Add(new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small" }, Data = Res.Icon("IconCheck"), Height = 10, Stroke = Res.Brush("SuccessBrush") });
+        header.Children.Add(label);
+        header.Children.Add(new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small" }, Data = Res.Icon("IconChevronDown"), Height = 7, Opacity = 0.7 });
+        var toggle = new Button { Classes = { "footchip" }, Content = header, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(-7, 0, 0, 0) };
+        toggle.Click += (_, _) => lines.IsVisible = !lines.IsVisible;
+        var stack = new StackPanel { Spacing = 4 };
+        stack.Children.Add(toggle);
+        stack.Children.Add(lines);
+        return stack;
     }
 
     /// <summary>Plain paragraphs, plus fenced code blocks drawn as dark mono boxes with a copy button.</summary>

@@ -14,6 +14,12 @@ internal sealed class ChatThread
     public string? SessionId { get; set; }
     public string? SessionProvider { get; set; }
 
+    /// <summary>The folder that session runs in (Claude Code sessions belong to a folder).</summary>
+    public string? SessionFolder { get; set; }
+
+    /// <summary>Project folder the conversation was about.</summary>
+    public string? Folder { get; set; }
+
     public DateTime Updated { get; set; } = DateTime.Now;
     public List<AiTurn> Turns { get; set; } = new();
 }
@@ -51,8 +57,9 @@ internal sealed class ChatStore
             var copy = new ChatThread
             {
                 Id = thread.Id, Title = thread.Title, ProviderId = thread.ProviderId, Model = thread.Model,
-                SessionId = thread.SessionId, SessionProvider = thread.SessionProvider, Updated = thread.Updated,
-                Turns = thread.Turns.Where(t => !t.IsStreaming).Select(t => new AiTurn { Role = t.Role, Text = t.Text, Error = t.Error }).ToList(),
+                SessionId = thread.SessionId, SessionProvider = thread.SessionProvider, SessionFolder = thread.SessionFolder,
+                Folder = thread.Folder, Updated = thread.Updated,
+                Turns = thread.Turns.Where(t => !t.IsStreaming).Select(t => new AiTurn { Role = t.Role, Text = t.Text, Error = t.Error, Actions = t.Actions.ToList() }).ToList(),
             };
             File.WriteAllText(Path.Combine(_folder, thread.Id + ".json"), JsonSerializer.Serialize(copy, Json));
         }

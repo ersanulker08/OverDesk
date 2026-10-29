@@ -90,7 +90,9 @@ public sealed class OllamaProvider : IChatProvider
             .ToList();
     }
 
-    public async IAsyncEnumerable<ChatChunk> StreamAsync(string model, string? system, IReadOnlyList<ChatMessage> messages,
+    private const int MaxRounds = 30;
+
+    public async IAsyncEnumerable<ChatChunk> StreamAsync(string model, string? system, IReadOnlyList<ChatMessage> messages, AiContext? context,
         [EnumeratorCancellation] CancellationToken cancellation)
     {
         var list = new JsonArray();
@@ -102,29 +104,72 @@ public sealed class OllamaProvider : IChatProvider
                 item["images"] = new JsonArray(images.Select(i => (JsonNode)Convert.ToBase64String(i)).ToArray());
             list.Add(item);
         }
-        var body = new JsonObject { ["model"] = model, ["messages"] = list, ["stream"] = true };
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, BaseUrl + "/api/chat")
+        var tools = context is null ? null : new JsonArray(context.Tools.Tools.Select(t => (JsonNode)new JsonObject
         {
-            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
-        };
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellation);
-        if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Ollama: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync(cancellation)}");
+            ["type"] = "function",
+            ["function"] = new JsonObject { ["name"] = t.Name, ["description"] = t.Description, ["parameters"] = t.Schema.DeepClone() },
+        }).ToArray());
 
-        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(cancellation));
-        while (await reader.ReadLineAsync(cancellation) is { } line)
+        for (var round = 0; round < MaxRounds; round++)
         {
-            if (line.Length == 0) continue;
-            var node = JsonNode.Parse(line);
-            if (node?["error"]?.GetValue<string>() is { } error) throw new InvalidOperationException("Ollama: " + error);
-            var text = node?["message"]?["content"]?.GetValue<string>() ?? "";
-            double? speed = null;
-            if (node?["done"]?.GetValue<bool>() == true
-                && node["eval_count"]?.GetValue<long>() is > 0 and var count
-                && node["eval_duration"]?.GetValue<long>() is > 0 and var nanos)
-                speed = count / (nanos / 1e9);
-            if (text.Length > 0 || speed is not null) yield return new ChatChunk(text, speed);
+            var body = new JsonObject { ["model"] = model, ["messages"] = list.DeepClone(), ["stream"] = true };
+            if (tools is { Count: > 0 }) body["tools"] = tools.DeepClone();
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, BaseUrl + "/api/chat")
+            {
+                Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
+            };
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellation);
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync(cancellation);
+                // "does not support tools": many small models cannot call tools; they still chat.
+                if (tools is not null && error.Contains("tools", StringComparison.OrdinalIgnoreCase))
+                {
+                    tools = null;
+                    round--;
+                    continue;
+                }
+                throw new InvalidOperationException($"Ollama: {(int)response.StatusCode} {error}");
+            }
+
+            var text = new StringBuilder();
+            var calls = new List<JsonObject>();
+            using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(cancellation));
+            while (await reader.ReadLineAsync(cancellation) is { } line)
+            {
+                if (line.Length == 0) continue;
+                var node = JsonNode.Parse(line);
+                if (node?["error"]?.GetValue<string>() is { } error) throw new InvalidOperationException("Ollama: " + error);
+                foreach (var call in node?["message"]?["tool_calls"]?.AsArray() ?? new JsonArray())
+                    if (call is JsonObject c) calls.Add((JsonObject)c.DeepClone());
+                var piece = node?["message"]?["content"]?.GetValue<string>() ?? "";
+                text.Append(piece);
+                double? speed = null;
+                if (node?["done"]?.GetValue<bool>() == true
+                    && node["eval_count"]?.GetValue<long>() is > 0 and var count
+                    && node["eval_duration"]?.GetValue<long>() is > 0 and var nanos)
+                    speed = count / (nanos / 1e9);
+                if (piece.Length > 0 || speed is not null) yield return new ChatChunk(piece, speed);
+            }
+            if (calls.Count == 0 || context is null) break;
+
+            list.Add(new JsonObject { ["role"] = ChatMessage.Assistant, ["content"] = text.ToString(), ["tool_calls"] = new JsonArray(calls.Select(c => (JsonNode)c.DeepClone()).ToArray()) });
+            foreach (var call in calls)
+            {
+                var name = call["function"]?["name"]?.GetValue<string>() ?? "";
+                var args = call["function"]?["arguments"] switch
+                {
+                    JsonObject o => (JsonObject)o.DeepClone(),
+                    JsonValue v when v.TryGetValue<string>(out var json) => OpenAiCompatibleProvider.ParseArgs(json),
+                    _ => new JsonObject(),
+                };
+                var result = args is null ? AiToolResult.Error("The arguments were not valid JSON.") : await context.Tools.RunAsync(name, args, cancellation);
+                var answer = new JsonObject { ["role"] = "tool", ["tool_name"] = name, ["content"] = (result.IsError ? "Error: " : "") + result.Text };
+                if (result.Image is { } png) answer["images"] = new JsonArray(Convert.ToBase64String(png));
+                list.Add(answer);
+            }
+            if (text.Length > 0) yield return new ChatChunk("\n\n");
         }
     }
 }

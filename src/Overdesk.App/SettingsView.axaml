@@ -160,6 +160,28 @@
                             <TextBlock Classes="pagetitle" Text="AI"/>
                             <TextBlock Classes="muted" TextWrapping="Wrap" Text="Local models stay on this computer. Cloud keys are kept in your system keychain, never in a file."/>
                         </StackPanel>
+                        <Border Classes="pagecard">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border Classes="pageicon"><Path Classes="icon accent" Data="{StaticResource IconSparkle}"/></Border>
+                                <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Let the AI work inside OverDesk" FontWeight="SemiBold"/>
+                                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                               Text="Create and edit your works, open programs, tabs, sites and tools, read the clipboard, look at the program on stage"/>
+                                </StackPanel>
+                                <ToggleSwitch x:Name="AiToolsToggle" Grid.Column="2" OnContent="" OffContent=""/>
+                            </Grid>
+                        </Border>
+                        <Border Classes="pagecard">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border Classes="pageicon"><Path Classes="icon accent" Data="{StaticResource IconFolder}"/></Border>
+                                <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Allow file changes in the project folder" FontWeight="SemiBold"/>
+                                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                               Text="With a folder chosen at the bottom of the AI panel, the AI may write code there (never outside it, never shell commands). Off = read only."/>
+                                </StackPanel>
+                                <ToggleSwitch x:Name="AiEditsToggle" Grid.Column="2" OnContent="" OffContent=""/>
+                            </Grid>
+                        </Border>
                         <Border Classes="pagecard" Padding="18,14">
                             <StackPanel Spacing="12">
                                 <TextBlock Text="Cloud API keys" FontWeight="SemiBold"/>

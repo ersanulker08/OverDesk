@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json.Nodes;
 
 namespace Overdesk.AI;
 
@@ -24,11 +25,12 @@ public sealed class GeminiCliProvider : IChatProvider
     public Task<IReadOnlyList<AiModel>> ListModelsAsync(CancellationToken cancellation)
         => Task.FromResult<IReadOnlyList<AiModel>>(new[] { new AiModel("default", "Your account's default") });
 
-    public async IAsyncEnumerable<ChatChunk> StreamAsync(string model, string? system, IReadOnlyList<ChatMessage> messages,
+    public async IAsyncEnumerable<ChatChunk> StreamAsync(string model, string? system, IReadOnlyList<ChatMessage> messages, AiContext? context,
         [EnumeratorCancellation] CancellationToken cancellation)
     {
         var exe = CliTools.Find("gemini") ?? throw new InvalidOperationException("Gemini CLI is not installed.");
         Directory.CreateDirectory(_workspace);
+        await WriteSettingsAsync(context?.Mcp, cancellation);
         var prompt = new StringBuilder();
         if (!string.IsNullOrWhiteSpace(system)) prompt.AppendLine(system).AppendLine();
         if (messages.Count > 1)
@@ -40,6 +42,8 @@ public sealed class GeminiCliProvider : IChatProvider
         prompt.Append(messages[^1].Text);
 
         var info = CliTools.StartInfo(exe, _workspace);
+        // The project folder is readable through Gemini CLI's own tools; changes go through OverDesk's file tools.
+        if (context?.Folder is { } folder && Directory.Exists(folder)) { info.ArgumentList.Add("--include-directories"); info.ArgumentList.Add(folder); }
         info.ArgumentList.Add("-p");
         info.ArgumentList.Add(prompt.ToString());
         using var process = Process.Start(info) ?? throw new InvalidOperationException("Could not start Gemini CLI.");
@@ -53,5 +57,33 @@ public sealed class GeminiCliProvider : IChatProvider
             yield return new ChatChunk(new string(buffer, 0, read));
         await process.WaitForExitAsync(cancellation);
         if (process.ExitCode != 0) throw new InvalidOperationException("Gemini CLI: " + (await errors).Trim());
+    }
+
+    /// <summary>
+    /// Gemini CLI reads MCP servers from .gemini/settings.json in the folder it runs in (its own workspace, never the
+    /// user's project). "trust" lets OverDesk's tools run without the confirmation prompt a headless run cannot show.
+    /// </summary>
+    private async Task WriteSettingsAsync(McpEndpoint? mcp, CancellationToken cancellation)
+    {
+        var folder = Path.Combine(_workspace, ".gemini");
+        var file = Path.Combine(folder, "settings.json");
+        if (mcp is null)
+        {
+            if (File.Exists(file)) File.Delete(file);
+            return;
+        }
+        Directory.CreateDirectory(folder);
+        var settings = new JsonObject
+        {
+            ["mcpServers"] = new JsonObject
+            {
+                ["overdesk"] = new JsonObject
+                {
+                    ["httpUrl"] = mcp.Url, ["trust"] = true,
+                    ["headers"] = new JsonObject { ["Authorization"] = "Bearer " + mcp.Token },
+                },
+            },
+        };
+        await File.WriteAllTextAsync(file, settings.ToJsonString(), cancellation);
     }
 }

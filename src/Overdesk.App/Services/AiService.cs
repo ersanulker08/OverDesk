@@ -317,8 +317,13 @@ internal sealed class AiService
     private IAsyncEnumerable<ChatChunk> Stream(IChatProvider provider, string model, string system, AiContext? context, ChatThread thread, AiTurn answer,
         CancellationToken cancellation)
     {
-        var history = thread.Turns.Where(t => t != answer && t.Error is null)
-            .Select(t => new ChatMessage(t.Role, WithActions(t), t.Images.Count > 0 ? t.Images : null)).ToList();
+        var turns = thread.Turns.Where(t => t != answer && t.Error is null).ToList();
+        // Pictures go along only with the last few messages: older ones were already seen and would be paid for again
+        // on every turn. Very long chats keep their last 60 messages.
+        var recent = turns.Skip(Math.Max(0, turns.Count - 60)).ToList();
+        var history = recent
+            .Select((t, i) => new ChatMessage(t.Role, WithActions(t), t.Images.Count > 0 && i >= recent.Count - 4 ? t.Images : null))
+            .ToList();
         if (provider is not ISessionChatProvider session) return provider.StreamAsync(model, system, history, context, cancellation);
 
         // Claude Code keeps sessions per folder: a session started in another folder cannot be resumed from this one.

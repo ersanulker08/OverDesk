@@ -114,6 +114,8 @@ public sealed class OllamaProvider : IChatProvider
         {
             var body = new JsonObject { ["model"] = model, ["messages"] = list.DeepClone(), ["stream"] = true };
             if (tools is { Count: > 0 }) body["tools"] = tools.DeepClone();
+            // Tool definitions, the project overview and memory do not fit Ollama's default 4K context: ask for 16K.
+            if (context is not null) body["options"] = new JsonObject { ["num_ctx"] = 16384 };
 
             using var request = new HttpRequestMessage(HttpMethod.Post, BaseUrl + "/api/chat")
             {

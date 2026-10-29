@@ -15,6 +15,11 @@ public sealed class HostedTab : ObservableObject
     /// <summary>Path of Overdesk's own settings page when it is open as a tab.</summary>
     public const string SettingsPath = "overdesk://settings";
 
+    /// <summary>Prefix of the path of a work opened as a tab: "overdesk://work/&lt;id&gt;".</summary>
+    public const string WorkPrefix = "overdesk://work/";
+
+    public static string WorkPath(string workId) => WorkPrefix + workId;
+
     public HostedTab(string programPath, string? title = null)
     {
         ProgramPath = programPath;
@@ -23,8 +28,15 @@ public sealed class HostedTab : ObservableObject
         if (IsInternal) _status = TabStatus.Running; // a page of Overdesk itself: nothing to launch
     }
 
-    /// <summary>True for Overdesk's own pages (settings), false for hosted programs.</summary>
+    /// <summary>True for Overdesk's own pages (settings, works), false for hosted programs.</summary>
     public bool IsInternal { get; }
+
+    public bool IsSettings => ProgramPath == SettingsPath;
+
+    /// <summary>True when the tab shows one of the user's works.</summary>
+    public bool IsWork => ProgramPath.StartsWith(WorkPrefix, StringComparison.Ordinal);
+
+    public string? WorkId => IsWork ? ProgramPath[WorkPrefix.Length..] : null;
 
     public Guid Id { get; } = Guid.NewGuid();
     public string ProgramPath { get; }

@@ -67,8 +67,10 @@
                                                        UseAccent="{Binding IsInternal}"
                                                        Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"/>
                                             <Panel Width="18" Height="18" VerticalAlignment="Center">
-                                                <c:LogoMark IsVisible="{Binding IsInternal}" Glow="0.6"
+                                                <c:LogoMark IsVisible="{Binding IsSettings}" Glow="0.6"
                                                             Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"/>
+                                                <Path Classes="icon accent" Data="{StaticResource IconNote}" Height="15"
+                                                      IsVisible="{Binding IsWork}"/>
                                                 <Panel IsVisible="{Binding !IsInternal}">
                                                     <c:AppIcon ProgramPath="{Binding ProgramPath}" IsVisible="{Binding !IsBusy}"/>
                                                     <c:Spinner Thickness="2" IsVisible="{Binding IsBusy}"
@@ -248,6 +250,9 @@
 
                     <!-- OverDesk's own tab (settings) -->
                     <app:SettingsView x:Name="Settings" IsVisible="False" ZIndex="1"/>
+
+                    <!-- A work (note, list, story...) opened as a tab -->
+                    <Border x:Name="WorkPage" IsVisible="False" ZIndex="1" Background="{StaticResource Bg0Brush}"/>
 
                     <!-- Starting / failed / exited -->
                     <Grid x:Name="TabOverlay" Background="{StaticResource Bg0Brush}" IsVisible="False">

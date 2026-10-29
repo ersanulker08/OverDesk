@@ -21,9 +21,9 @@ public sealed class TabManager : ObservableObject
         }
     }
 
-    public HostedTab Add(string programPath, bool activate = true)
+    public HostedTab Add(string programPath, bool activate = true, string? title = null)
     {
-        var tab = new HostedTab(programPath);
+        var tab = new HostedTab(programPath, title);
         Tabs.Add(tab);
         if (activate || Active is null) Activate(tab);
         return tab;

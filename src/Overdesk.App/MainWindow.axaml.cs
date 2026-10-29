@@ -162,6 +162,7 @@ public partial class MainWindow : Window
             if (e.PropertyName == nameof(TabManager.Active)) OnActiveTabChanged();
         };
         _tabs.Tabs.CollectionChanged += (_, _) => SaveSettings();
+        InitializeWorks();
         _plugins.Tools.CollectionChanged += (_, _) => RebuildToolStrip();
 
         _embedding.Exited += (key, window) => Dispatcher.UIThread.Post(() => OnProgramExited(key, window));
@@ -198,6 +199,7 @@ public partial class MainWindow : Window
     // Hooks for the development snapshot tool (Services/DevSnapshot).
     internal void DevOpenSettings() => OpenSettings();
     internal void DevCloseSettings() => CloseSettings();
+    internal void DevShowSettingsSection(string label) => Settings.ShowSection(label);
     internal void DevOpenProgram(string path) => OpenProgram(path);
     internal void DevShowHome() => ShowHome();
     internal void DevOpenPicker() => _ = AddProgramsAsync();
@@ -259,6 +261,7 @@ public partial class MainWindow : Window
 
         PrepareForHosting();
         RegisterBuiltInTools();
+        RegisterWorksTool();
         _plugins.Discover(PluginRoots());
         _plugins.AddUserTools(_settings.UserTools);
         RebuildToolStrip();
@@ -273,6 +276,7 @@ public partial class MainWindow : Window
     private void OnClosing(object? sender, WindowClosingEventArgs e)
     {
         _layoutTimer.Stop();
+        _works.Flush();
         SaveSettings();
         foreach (var cts in _tabStarts.Values.Concat(_toolStarts.Values)) cts.Cancel();
         _embedding.Dispose();
@@ -573,14 +577,15 @@ public partial class MainWindow : Window
         UpdateSplitContent(tab, !minimized && !covered);
 
         HomeButton.Classes.Set("selected", tab is null && _activeWeb is null);
-        SettingsButton.Classes.Set("selected", tab is { IsInternal: true });
+        SettingsButton.Classes.Set("selected", tab is { IsSettings: true });
         Home.IsVisible = tab is null && _activeWeb is null;
         UpdateWebContent();
-        if (tab is { IsInternal: true })
+        if (tab is { IsSettings: true })
         {
             if (!Settings.IsVisible) Settings.Show(_settings, _embedding.Embedder, animated: true);
         }
         else if (Settings.IsVisible) Settings.Hide();
+        UpdateWorkPage(tab);
         OverlayAction.IsVisible = false;
         OverlayCloseTab.IsVisible = false;
 
@@ -776,14 +781,15 @@ public partial class MainWindow : Window
         {
             var tab = _tabs.Tabs[i];
             items.Add(new PaletteItem($"Switch to {tab.Title}", "Tab", () => _tabs.Activate(tab),
-                IconKey: tab.IsInternal ? "IconSliders" : null, ProgramPath: tab.IsInternal ? null : tab.ProgramPath,
-                Shortcut: i < 9 ? $"{mod}{i + 1}" : null, Detail: tab.IsInternal ? "Settings" : tab.ProgramPath));
+                IconKey: tab.IsWork ? "IconNote" : tab.IsInternal ? "IconSliders" : null, ProgramPath: tab.IsInternal ? null : tab.ProgramPath,
+                Shortcut: i < 9 ? $"{mod}{i + 1}" : null, Detail: tab.IsWork ? "Work" : tab.IsInternal ? "Settings" : tab.ProgramPath));
         }
 
         items.Add(new PaletteItem("Go home", "Action", ShowHome, "IconHome", Shortcut: OperatingSystem.IsMacOS() ? "⌘⇧H" : "Ctrl+Shift+H"));
         items.Add(new PaletteItem("Add a program…", "Action", () => _ = AddProgramsAsync(), "IconPlus", Shortcut: $"{mod}T"));
         items.Add(new PaletteItem("Search programs on this computer", "Action", FocusHomeSearch, "IconSearch", Shortcut: $"{mod}K"));
         items.Add(new PaletteItem("Open settings", "Action", OpenSettings, "IconSliders", Shortcut: $"{mod},"));
+        AddWorkPaletteItems(items);
         items.Add(new PaletteItem(_settings.SidebarExpanded ? "Collapse side dock" : "Expand side dock", "Action",
             () => Dock.SetExpanded(!_settings.SidebarExpanded, animate: true), "IconPanel", Shortcut: $"{mod}B"));
         if (_tabs.Active is { IsInternal: false } active)
@@ -923,13 +929,13 @@ public partial class MainWindow : Window
     private void OpenSettings()
     {
         if (OverlayOpen) return;
-        var tab = _tabs.Tabs.FirstOrDefault(t => t.IsInternal) ?? _tabs.Add(HostedTab.SettingsPath);
+        var tab = _tabs.Tabs.FirstOrDefault(t => t.IsSettings) ?? _tabs.Add(HostedTab.SettingsPath);
         _tabs.Activate(tab);
     }
 
     private void CloseSettings()
     {
-        if (_tabs.Tabs.FirstOrDefault(t => t.IsInternal) is { } tab) CloseTab(tab);
+        if (_tabs.Tabs.FirstOrDefault(t => t.IsSettings) is { } tab) CloseTab(tab);
     }
 
     private void OnSettingsChanged()
@@ -1035,7 +1041,7 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
             case Key.OemComma:
-                if (_tabs.Active is { IsInternal: true }) CloseSettings(); else OpenSettings();
+                if (_tabs.Active is { IsSettings: true }) CloseSettings(); else OpenSettings();
                 e.Handled = true;
                 break;
             case Key.H when e.KeyModifiers.HasFlag(KeyModifiers.Shift):

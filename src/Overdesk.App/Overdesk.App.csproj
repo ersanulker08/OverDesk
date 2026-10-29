@@ -30,6 +30,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AvaloniaResource Include="Assets/Fonts/*.ttf" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Overdesk.Core\Overdesk.Core.csproj" />
     <ProjectReference Include="..\Overdesk.AI\Overdesk.AI.csproj" />
   </ItemGroup>

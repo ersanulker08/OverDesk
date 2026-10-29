@@ -136,6 +136,24 @@
                         </Border>
                     </StackPanel>
 
+                    <!-- Works -->
+                    <StackPanel x:Name="SectionWorks" Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="pagetitle" Text="Works"/>
+                            <TextBlock Classes="muted" Text="Default fonts and text size for your notes, lists and stories. Every work can override them."/>
+                        </StackPanel>
+                        <Border Classes="pagecard" Padding="18,14">
+                            <StackPanel x:Name="WorkFontControls" Spacing="10"/>
+                        </Border>
+                        <Border Classes="pagecard" Padding="18,14">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Font gallery" FontWeight="SemiBold"/>
+                                <TextBlock Classes="muted" FontSize="12" Text="Open-source fonts from Google Fonts. Click one to use it as your default title or writing font."/>
+                                <StackPanel x:Name="WorkFontGallery" Spacing="4"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
                     <!-- AI -->
                     <StackPanel x:Name="SectionAi" Spacing="16">
                         <StackPanel Spacing="4">

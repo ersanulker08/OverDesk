@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="using:Overdesk.App.Controls"
+             xmlns:app="using:Overdesk.App"
              x:Class="Overdesk.App.HomeView"
              Background="{StaticResource Bg0Brush}">
     <Grid>
@@ -73,5 +74,16 @@
                 </Border>
             </Grid>
         </ScrollViewer>
+
+        <!-- Works tab: notes, lists, stories... as cards -->
+        <app:WorksHubView x:Name="WorksHub" IsVisible="False" Margin="0,56,0,0"/>
+
+        <!-- Home | Works -->
+        <Border Classes="hometabs" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,14,0,0" ZIndex="4">
+            <StackPanel Orientation="Horizontal" Spacing="2">
+                <Button x:Name="HomeTabButton" Classes="hometabpill selected" Content="Home"/>
+                <Button x:Name="WorksTabButton" Classes="hometabpill" Content="Works"/>
+            </StackPanel>
+        </Border>
     </Grid>
 </UserControl>

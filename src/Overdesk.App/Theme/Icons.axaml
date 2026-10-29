@@ -55,4 +55,6 @@
     <StreamGeometry x:Key="IconKey">M14.5 4a5.5 5.5 0 1 1-4.9 8L4 17.5V20h3v-2h2v-2h2l1.4-1.4A5.5 5.5 0 0 1 14.5 4zM16 8.5h.01</StreamGeometry>
     <StreamGeometry x:Key="IconHistory">M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v3.7h3.7M12 8v4.5l3 2</StreamGeometry>
     <StreamGeometry x:Key="IconTerminal">M4.5 5.5A1.5 1.5 0 0 1 6 4h12a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 18 20H6a1.5 1.5 0 0 1-1.5-1.5zM8 9.5l3 2.5-3 2.5M12.5 15H16</StreamGeometry>
+    <StreamGeometry x:Key="IconMore">M12 3.6a1.4 1.4 0 1 0 0 2.8a1.4 1.4 0 1 0 0-2.8zM12 10.6a1.4 1.4 0 1 0 0 2.8a1.4 1.4 0 1 0 0-2.8zM12 17.6a1.4 1.4 0 1 0 0 2.8a1.4 1.4 0 1 0 0-2.8z</StreamGeometry>
+    <StreamGeometry x:Key="IconUp">M12 19V5M6 11l6-6 6 6</StreamGeometry>
 </ResourceDictionary>

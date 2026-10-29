@@ -33,6 +33,13 @@ internal static class DevSnapshot
         Directory.CreateDirectory(dir);
         App.RenderLogo(512).Save(Path.Combine(dir, "logo.png"), new PngBitmapEncoderOptions());
 
+        if (Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT_WORKS") == "1")
+        {
+            await RunWorksAsync(main, dir);
+            main.Close();
+            return;
+        }
+
         await Task.Delay(3500);
         Save(main, Path.Combine(dir, "home.png"));
         main.DevOpenPlayer();
@@ -124,6 +131,39 @@ internal static class DevSnapshot
         AccentThemes.Apply(original);
 
         main.Close();
+    }
+
+    /// <summary>OVERDESK_SNAPSHOT_WORKS=1: seeds sample works and renders the Works screens only.</summary>
+    private static async Task RunWorksAsync(MainWindow main, string dir)
+    {
+        await Task.Delay(2500);
+        main.DevSeedWorks();
+        main.DevShowWorksTab(gallery: false);
+        await Task.Delay(1200);
+        Save(main, Path.Combine(dir, "w-hub.png"));
+        main.DevShowWorksTab(gallery: true);
+        await Task.Delay(900);
+        Save(main, Path.Combine(dir, "w-gallery.png"));
+        main.DevOpenWork(0, drawer: false);
+        await Task.Delay(1000);
+        Save(main, Path.Combine(dir, "w-tab.png"));
+        main.DevOpenWork(2, drawer: true);
+        await Task.Delay(1000);
+        Save(main, Path.Combine(dir, "w-tab-settings.png"));
+        main.DevOpenWork(4, drawer: false);
+        await Task.Delay(1000);
+        Save(main, Path.Combine(dir, "w-tab-todo.png"));
+        main.DevOpenWorksList();
+        await Task.Delay(900);
+        Save(main, Path.Combine(dir, "w-panel-list.png"));
+        main.DevOpenWorkInPanel(1);
+        await Task.Delay(900);
+        Save(main, Path.Combine(dir, "w-panel-editor.png"));
+        main.DevOpenSettings();
+        await Task.Delay(900);
+        main.DevShowSettingsSection("Works");
+        await Task.Delay(1200);
+        Save(main, Path.Combine(dir, "w-settings.png"));
     }
 
     private static async Task WaitUntil(Func<bool> condition)

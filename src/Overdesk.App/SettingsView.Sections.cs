@@ -4,6 +4,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Overdesk.App.Controls;
 using Overdesk.App.Services;
 using Overdesk.App.Theme;
 using Overdesk.Core.Settings;
@@ -55,6 +56,7 @@ public partial class SettingsView
         BreakMinutes.Value = _settings.BreakMinutes;
         _loading = false;
         BuildWebPins();
+        BuildWorks();
         BuildKeys();
         BuildPrompts();
         BuildProjects();
@@ -62,6 +64,65 @@ public partial class SettingsView
     }
 
     // ---------------------------------------------------------------- web strip
+
+    private void BuildWorks()
+    {
+        WorkFontControls.Children.Clear();
+        WorkFontControls.Children.Add(new TextBlock { Text = "Title font", FontWeight = FontWeight.SemiBold });
+        var title = new FontPickerButton { Selected = _settings.WorkTitleFont };
+        title.Chosen += name => Update(s => s.WorkTitleFont = name ?? s.WorkTitleFont);
+        WorkFontControls.Children.Add(title);
+        WorkFontControls.Children.Add(new TextBlock { Text = "Writing font", FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 6, 0, 0) });
+        var body = new FontPickerButton { Selected = _settings.WorkBodyFont };
+        body.Chosen += name => Update(s => s.WorkBodyFont = name ?? s.WorkBodyFont);
+        WorkFontControls.Children.Add(body);
+        var size = new NumericUpDown { Minimum = 11, Maximum = 32, Increment = 1, Width = 130, Value = (decimal)_settings.WorkFontSize, FormatString = "0 'px'", HorizontalAlignment = HorizontalAlignment.Left };
+        size.ValueChanged += (_, e) =>
+        {
+            if (!_loading) Update(s => s.WorkFontSize = (double)(e.NewValue ?? 15));
+        };
+        WorkFontControls.Children.Add(new TextBlock { Text = "Text size", FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 6, 0, 0) });
+        WorkFontControls.Children.Add(size);
+
+        WorkFontGallery.Children.Clear();
+        foreach (var category in WorkFonts.Categories)
+        {
+            WorkFontGallery.Children.Add(new TextBlock { Text = category.ToUpperInvariant(), Classes = { "eyebrow" }, FontSize = 9.5, Margin = new Thickness(2, 12, 0, 4) });
+            var wrap = new WrapPanel();
+            foreach (var font in WorkFonts.All.Where(f => f.Category == category))
+            {
+                var f = font;
+                var card = new StackPanel { Spacing = 2, Margin = new Thickness(4, 2) };
+                card.Children.Add(new TextBlock { Text = f.Name, FontFamily = f.Font, FontSize = 22, TextTrimming = TextTrimming.CharacterEllipsis });
+                card.Children.Add(new TextBlock { Text = "The quick brown fox", FontFamily = f.Font, FontSize = 12.5, Classes = { "muted" } });
+                var chip = new Button { Classes = { "wcard" }, Width = 214, Height = 74, Margin = new Thickness(0, 0, 10, 10), CornerRadius = new CornerRadius(14), Content = card, HorizontalContentAlignment = HorizontalAlignment.Left, Padding = new Thickness(10, 8) };
+                chip.Click += (_, _) => ShowFontUse(chip, f, title, body);
+                wrap.Children.Add(chip);
+            }
+            WorkFontGallery.Children.Add(wrap);
+        }
+    }
+
+    private void ShowFontUse(Control anchor, WorkFont font, FontPickerButton title, FontPickerButton body)
+    {
+        Flyout? flyout = null;
+        var asTitle = new Button { Content = "Use as title font", Classes = { "ghost" }, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var asBody = new Button { Content = "Use as writing font", Classes = { "ghost" }, HorizontalAlignment = HorizontalAlignment.Stretch };
+        asTitle.Click += (_, _) =>
+        {
+            Update(s => s.WorkTitleFont = font.Name);
+            title.Selected = font.Name;
+            flyout?.Hide();
+        };
+        asBody.Click += (_, _) =>
+        {
+            Update(s => s.WorkBodyFont = font.Name);
+            body.Selected = font.Name;
+            flyout?.Hide();
+        };
+        flyout = new Flyout { Content = new StackPanel { Width = 210, Spacing = 4, Children = { new TextBlock { Text = font.Name, FontFamily = font.Font, FontSize = 18, Margin = new Thickness(4, 0, 0, 4) }, asTitle, asBody } } };
+        flyout.ShowAt(anchor);
+    }
 
     private void BuildWebPins()
     {

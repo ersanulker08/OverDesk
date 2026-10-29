@@ -144,6 +144,11 @@ public sealed class AppSettings
     public int FocusMinutes { get; set; } = 25;
     public int BreakMinutes { get; set; } = 5;
 
+    /// <summary>Works: default fonts (names from the font catalog) and text size for works that do not set their own.</summary>
+    public string WorkTitleFont { get; set; } = "Playfair Display";
+    public string WorkBodyFont { get; set; } = "Lora";
+    public double WorkFontSize { get; set; } = 15;
+
     /// <summary>Text of the dock's scratchpad.</summary>
     public string Notes { get; set; } = "";
 }

@@ -947,4 +947,117 @@
         <Setter Property="CornerRadius" Value="12"/>
         <Setter Property="Padding" Value="14,10"/>
     </Style>
+
+    <!-- ============================================================ works (notes, lists, stories...) -->
+    <Style Selector="TextBox.wtext">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="4,4"/>
+        <Setter Property="MinHeight" Value="0"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="CaretBrush" Value="{DynamicResource AccentBrush}"/>
+        <Setter Property="SelectionBrush" Value="{DynamicResource AccentSoftBrush}"/>
+        <Setter Property="PlaceholderForeground" Value="{StaticResource FaintBrush}"/>
+    </Style>
+    <Style Selector="TextBox.wtext /template/ Border#PART_BorderElement">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="CornerRadius" Value="8"/>
+    </Style>
+    <Style Selector="TextBox.wtext:pointerover /template/ Border#PART_BorderElement">
+        <Setter Property="Background" Value="#0AFFFFFF"/>
+        <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+    <Style Selector="TextBox.wtext:focus /template/ Border#PART_BorderElement">
+        <Setter Property="Background" Value="#0FFFFFFF"/>
+        <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+    <Style Selector="TextBox.wtext.dim">
+        <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+    </Style>
+
+    <Style Selector="Button.wcard">
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="CornerRadius" Value="18"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+        <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource StrokeBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="RenderTransform" Value="none"/>
+        <Setter Property="Transitions">
+            <Transitions>
+                <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.18"/>
+            </Transitions>
+        </Setter>
+    </Style>
+    <Style Selector="Button.wcard:pointerover">
+        <Setter Property="RenderTransform" Value="translateY(-3px)"/>
+    </Style>
+    <Style Selector="Button.wcard /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="CornerRadius" Value="18"/>
+        <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource StrokeBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="Button.wcard:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.wcard:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{StaticResource Bg3Brush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource StrokeStrongBrush}"/>
+    </Style>
+    <Style Selector="Button.wrow">
+        <Setter Property="Padding" Value="10,9"/>
+        <Setter Property="CornerRadius" Value="12"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="Background" Value="Transparent"/>
+    </Style>
+    <Style Selector="Button.wrow:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{StaticResource Bg3Brush}"/>
+    </Style>
+    <Style Selector="Button.addblock">
+        <Setter Property="Padding" Value="10,5"/>
+        <Setter Property="CornerRadius" Value="10"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="{StaticResource StrokeBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+    </Style>
+    <Style Selector="Button.addblock:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentFaintBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+    </Style>
+    <Style Selector="Button.addblock /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="CornerRadius" Value="10"/>
+    </Style>
+
+    <!-- Home | Works switch on the start page -->
+    <Style Selector="Border.hometabs">
+        <Setter Property="Background" Value="{StaticResource GlassBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource StrokeBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="14"/>
+        <Setter Property="Padding" Value="3"/>
+    </Style>
+    <Style Selector="Button.hometabpill">
+        <Setter Property="Padding" Value="18,6"/>
+        <Setter Property="CornerRadius" Value="11"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+    </Style>
+    <Style Selector="Button.hometabpill /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="CornerRadius" Value="11"/>
+    </Style>
+    <Style Selector="Button.hometabpill:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="#0FFFFFFF"/>
+    </Style>
+    <Style Selector="Button.hometabpill.selected">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+    </Style>
+    <Style Selector="Button.hometabpill.selected /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+    </Style>
 </Styles>

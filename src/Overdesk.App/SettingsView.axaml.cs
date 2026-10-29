@@ -156,6 +156,7 @@ public partial class SettingsView : UserControl
             ("Appearance", "IconSparkle", SectionAppearance),
             ("Side dock", "IconPanel", SectionDock),
             ("Web strip", "IconGlobe", SectionWeb),
+            ("Works", "IconNote", SectionWorks),
             ("AI", "IconSparkle", SectionAi),
             ("Projects", "IconRocket", SectionProjects),
             ("Startup", "IconTabs", SectionStartup),

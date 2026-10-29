@@ -76,6 +76,25 @@ public partial class HomeView : UserControl
         }), TaskScheduler.Default);
     }
 
+    /// <summary>Home | Works switch: the Works tab shows the user's notes, lists and stories as cards.</summary>
+    internal void InitializeWorks(WorkService works)
+    {
+        WorksHub.Initialize(works);
+        HomeTabButton.Click += (_, _) => ShowWorksTab(false);
+        WorksTabButton.Click += (_, _) => ShowWorksTab(true);
+    }
+
+    public bool WorksTabVisible => WorksHub.IsVisible;
+
+    public void ShowWorksTab(bool works)
+    {
+        WorksHub.IsVisible = works;
+        Scroller.IsVisible = !works;
+        HomeTabButton.Classes.Set("selected", !works);
+        WorksTabButton.Classes.Set("selected", works);
+        if (works) ResultsCard.IsVisible = false;
+    }
+
     public void SetAnimated(bool animated) => Waves.IsAnimated = animated;
 
     public void FocusSearch()

@@ -61,7 +61,15 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
         foreach (var arg in new[] { "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages" }) info.ArgumentList.Add(arg);
         if (model is { Length: > 0 } && model != "default") { info.ArgumentList.Add("--model"); info.ArgumentList.Add(model); }
         if (sessionId is { Length: > 0 }) { info.ArgumentList.Add("--resume"); info.ArgumentList.Add(sessionId); }
-        if (!string.IsNullOrWhiteSpace(system)) { info.ArgumentList.Add("--append-system-prompt"); info.ArgumentList.Add(system); }
+        if (!string.IsNullOrWhiteSpace(system))
+        {
+            // From a file: the prompt is long and multi-line (project overview, memory), which a command line on
+            // Windows (claude.cmd goes through cmd.exe) would mangle.
+            var promptFile = Path.Combine(_workspace, "system-prompt.md");
+            await File.WriteAllTextAsync(promptFile, system, cancellation);
+            info.ArgumentList.Add("--append-system-prompt-file");
+            info.ArgumentList.Add(promptFile);
+        }
         if (inProject) { info.ArgumentList.Add("--add-dir"); info.ArgumentList.Add(_workspace); }
         if (edits) { info.ArgumentList.Add("--permission-mode"); info.ArgumentList.Add("acceptEdits"); }
 

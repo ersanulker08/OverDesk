@@ -44,10 +44,11 @@ public sealed class GeminiCliProvider : IChatProvider
         var info = CliTools.StartInfo(exe, _workspace);
         // The project folder is readable through Gemini CLI's own tools; changes go through OverDesk's file tools.
         if (context?.Folder is { } folder && Directory.Exists(folder)) { info.ArgumentList.Add("--include-directories"); info.ArgumentList.Add(folder); }
-        info.ArgumentList.Add("-p");
-        info.ArgumentList.Add(prompt.ToString());
+        // The conversation goes in on stdin (Gemini CLI runs headless when stdin is not a terminal): a long,
+        // multi-line prompt would not survive a command line on Windows, where gemini.cmd goes through cmd.exe.
         using var process = Process.Start(info) ?? throw new InvalidOperationException("Could not start Gemini CLI.");
         using var kill = cancellation.Register(() => { try { process.Kill(entireProcessTree: true); } catch (Exception) { } });
+        await process.StandardInput.WriteAsync(prompt.ToString());
         process.StandardInput.Close();
         var errors = process.StandardError.ReadToEndAsync(cancellation);
 

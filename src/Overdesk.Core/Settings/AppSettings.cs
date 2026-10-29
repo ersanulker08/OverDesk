@@ -129,6 +129,9 @@ public sealed class AppSettings
     public string? AiFolder { get; set; }
     public List<string> AiRecentFolders { get; set; } = new();
 
+    /// <summary>AI tools the user switched off (tool names, e.g. "media", "run_command").</summary>
+    public List<string> AiDisabledTools { get; set; } = new();
+
     /// <summary>The AI may create and change files inside the project folder (never outside it, never shell commands).</summary>
     public bool AiAllowEdits { get; set; } = true;
 

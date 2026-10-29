@@ -340,6 +340,17 @@ internal sealed class AiService
 
     // ---------------------------------------------------------------- tools & project
 
+    /// <summary>Every tool the AI could get right now (for the list in Settings), whether switched off or not.</summary>
+    public IReadOnlyList<AiTool> AllTools()
+    {
+        var tools = new List<AiTool>();
+        if (AppTools is not null) tools.AddRange(AppTools());
+        tools.Add(Memory.Tool(() => Folder));
+        // File tools are described even without a folder, so they can be switched off ahead of time.
+        tools.AddRange(ProjectTools.Create(Folder ?? Path.GetTempPath(), allowEdits: true));
+        return tools.DistinctBy(t => t.Name).ToList();
+    }
+
     /// <summary>
     /// The tools of this turn: OverDesk's own (when allowed) plus the project folder's file tools. Every call shows up
     /// in the answer as a line. Installed AI apps reach them over the local MCP server.
@@ -353,6 +364,7 @@ internal sealed class AiService
             tools.Add(Memory.Tool(() => folder));
         }
         if (folder is not null) tools.AddRange(ProjectTools.Create(folder, _settings.AiAllowEdits));
+        tools.RemoveAll(t => _settings.AiDisabledTools.Contains(t.Name));
         if (tools.Count == 0 && folder is null) return null;
 
         var box = new AiToolbox(tools);

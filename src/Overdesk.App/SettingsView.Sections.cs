@@ -70,9 +70,40 @@ public partial class SettingsView
         BuildWorks();
         BuildKeys();
         BuildMemory();
+        BuildAbilities();
         BuildPrompts();
         BuildProjects();
         BuildCardChips();
+    }
+
+    // ---------------------------------------------------------------- AI abilities
+
+    private void BuildAbilities()
+    {
+        AbilityChips.Children.Clear();
+        if (Ai is null) return;
+        IReadOnlyList<Overdesk.AI.AiTool> tools;
+        try { tools = Ai.AllTools(); }
+        catch (Exception) { return; /* a broken plugin must not break the settings page */ }
+        foreach (var tool in tools.OrderBy(t => t.IsFileTool).ThenBy(t => t.Name))
+        {
+            var chip = new ToggleButton
+            {
+                Classes = { "gaugechip" }, Content = tool.Name.Replace('_', ' '),
+                IsChecked = !_settings.AiDisabledTools.Contains(tool.Name),
+                // Small pills, not the dock's gauge cards.
+                Width = double.NaN, Padding = new Thickness(11, 5), Margin = new Thickness(0, 0, 6, 6), FontSize = 12, CornerRadius = new CornerRadius(14),
+            };
+            ToolTip.SetTip(chip, new TextBlock { Text = tool.Description + (tool.Approval is not null ? "\n\nAsks you before every use." : ""), TextWrapping = TextWrapping.Wrap, MaxWidth = 340 });
+            var name = tool.Name;
+            chip.IsCheckedChanged += (_, _) =>
+            {
+                _settings.AiDisabledTools.Remove(name);
+                if (chip.IsChecked != true) _settings.AiDisabledTools.Add(name);
+                Changed?.Invoke();
+            };
+            AbilityChips.Children.Add(chip);
+        }
     }
 
     // ---------------------------------------------------------------- AI memory

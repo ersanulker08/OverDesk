@@ -177,10 +177,18 @@
                                 <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
                                     <TextBlock Text="Allow file changes in the project folder" FontWeight="SemiBold"/>
                                     <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                                               Text="With a folder chosen at the bottom of the AI panel, the AI may write code there (never outside it, never shell commands). Off = read only."/>
+                                               Text="With a folder chosen at the bottom of the AI panel, the AI may write code there (never outside it; commands always ask you first). Off = read only."/>
                                 </StackPanel>
                                 <ToggleSwitch x:Name="AiEditsToggle" Grid.Column="2" OnContent="" OffContent=""/>
                             </Grid>
+                        </Border>
+                        <Border Classes="pagecard" Padding="18,14">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="What the AI may do" FontWeight="SemiBold"/>
+                                <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                           Text="Every ability it has inside OverDesk. Switch off the ones you do not want it to use; hover for details."/>
+                                <WrapPanel x:Name="AbilityChips"/>
+                            </StackPanel>
                         </Border>
                         <Border Classes="pagecard" Padding="18,14">
                             <StackPanel Spacing="10">

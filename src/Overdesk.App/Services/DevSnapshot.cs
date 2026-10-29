@@ -60,6 +60,9 @@ internal static class DevSnapshot
         main.DevOpenSettings();
         await Task.Delay(700);
         Save(main, Path.Combine(dir, "settings.png"));
+        main.DevShowSettingsSection("AI");
+        await Task.Delay(700);
+        Save(main, Path.Combine(dir, "settings-ai.png"));
         main.DevCloseSettings();
         await Task.Delay(400);
 

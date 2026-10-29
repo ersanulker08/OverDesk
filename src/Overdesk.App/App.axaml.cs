@@ -31,6 +31,11 @@ public partial class App : Application
             var catalog = PlatformFactory.CreateCatalog();
             IconCache.Catalog = catalog;
             var icon = CreateAppIcon();
+            using (var png = new MemoryStream())
+            {
+                RenderLogo(512).Save(png, new PngBitmapEncoderOptions());
+                PlatformFactory.CreateDesktop().SetAppIcon(png.ToArray());
+            }
 
             var main = new MainWindow(store, catalog) { Icon = icon };
             desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;

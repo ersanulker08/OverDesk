@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Overdesk.Core.Platform;
 
 namespace Overdesk.Platform.MacOS;
@@ -25,6 +26,30 @@ public sealed class MacDesktopServices : IDesktopServices
             return p is not null;
         }
         catch (Exception) { return false; }
+    }
+
+    [DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
+    private static extern IntPtr SendBytes(IntPtr receiver, IntPtr selector, IntPtr bytes, nuint length);
+
+    /// <summary>[NSApp setApplicationIconImage:]: the Dock tile and the Cmd+Tab switcher use it right away.</summary>
+    public void SetAppIcon(byte[] png)
+    {
+        var pool = ObjC.objc_autoreleasePoolPush();
+        var pinned = GCHandle.Alloc(png, GCHandleType.Pinned);
+        try
+        {
+            var data = SendBytes(ObjC.Class("NSData"), ObjC.Selector("dataWithBytes:length:"), pinned.AddrOfPinnedObject(), (nuint)png.Length);
+            var image = ObjC.Call(ObjC.Call(ObjC.Class("NSImage"), "alloc"), "initWithData:", data);
+            if (image == IntPtr.Zero) return;
+            ObjC.Call(ObjC.Call(ObjC.Class("NSApplication"), "sharedApplication"), "setApplicationIconImage:", image);
+            ObjC.Call(image, "release");
+        }
+        catch (Exception) { }
+        finally
+        {
+            pinned.Free();
+            ObjC.objc_autoreleasePoolPop(pool);
+        }
     }
 
     public void ScreenshotToClipboard()

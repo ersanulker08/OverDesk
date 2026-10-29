@@ -11,6 +11,12 @@ public interface IDesktopServices
 
     /// <summary>Unread badges the OS shows for running apps (e.g. "3" on Mail), keyed by app name. Empty when unknown.</summary>
     IReadOnlyDictionary<string, string> AppBadges();
+
+    /// <summary>
+    /// Show this PNG as the app's icon where the OS does not take it from the window (the macOS Dock when OverDesk runs
+    /// unbundled, e.g. with dotnet run). Windows reads the window and .exe icons, so it does nothing there.
+    /// </summary>
+    void SetAppIcon(byte[] png) { }
 }
 
 public sealed class NoDesktopServices : IDesktopServices

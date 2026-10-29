@@ -72,6 +72,8 @@ or let the AI fix the last failed task. The ✨ button in a work asks the AI to 
 <p align="center">
   <img src="docs/screenshots/ai-actions.png" alt="The AI acting inside OverDesk" width="300">
   &nbsp;
+  <img src="docs/screenshots/converter.png" alt="The Converter tool" width="300">
+  &nbsp;
   <img src="docs/screenshots/ai-models.png" alt="AI model picker" width="300">
   &nbsp;
   <img src="docs/screenshots/ai-history.png" alt="AI chat history" width="300">

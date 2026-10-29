@@ -68,6 +68,8 @@ internal sealed class TaskRunner
             process.ErrorDataReceived += (_, e) => { if (e.Data is not null) { task.Append(StripAnsi(e.Data)); Notify(); } };
             process.Exited += (_, _) =>
             {
+                // Let the redirected output finish arriving before the "finished" line and IsRunning = false.
+                try { process.WaitForExit(); } catch (Exception) { }
                 task.IsRunning = false;
                 try { task.ExitCode = process.ExitCode; } catch (InvalidOperationException) { }
                 task.Append(task.ExitCode == 0 ? "✓ finished" : $"✗ exited with code {task.ExitCode}");

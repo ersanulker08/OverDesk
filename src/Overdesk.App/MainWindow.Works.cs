@@ -20,6 +20,7 @@ public partial class MainWindow
         _works = new WorkService(Path.Combine(_store.Directory, "works"), _settings);
         _works.TabRequested += OpenWorkTab;
         _works.PanelRequested += OpenWorkInPanel;
+        _works.AiRequested += AskAiAboutWork;
         _works.Library.Changed += OnWorksChanged;
         Home.InitializeWorks(_works);
     }
@@ -41,6 +42,25 @@ public partial class MainWindow
         var tab = _tabs.Tabs.FirstOrDefault(t => t.ProgramPath == path) ?? _tabs.Add(path, activate: false, title: work.Title);
         tab.Title = TabTitle(work);
         _tabs.Activate(tab);
+    }
+
+    /// <summary>
+    /// With tools on, the AI changes the work itself (read_work, add rows...); without them it gets the text and answers in the chat.
+    /// </summary>
+    private void AskAiAboutWork(Work work, string? instruction)
+    {
+        var reference = $"my work “{TabTitle(work)}” (id {work.Id})";
+        if (instruction is null)
+        {
+            OpenAi();
+            AiPanel().Draft(_settings.AiTools ? $"About {reference}: " : $"About this work:\n\n{work.ToMarkdown()}\n\n");
+            return;
+        }
+        // The side panel is shared: when the work is open there, show it as a tab so the edits stay visible.
+        if (_activeTool?.Id == WorksToolId) OpenWorkTab(work);
+        OpenAi(question: _settings.AiTools
+            ? $"In {reference}: {instruction} Read it with read_work first, then change it directly with your tools. Reply in one or two sentences."
+            : $"{instruction}\n\nThe work:\n\n{work.ToMarkdown()}");
     }
 
     private void OpenWorkInPanel(Work work)

@@ -180,7 +180,8 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
             "WebSearch" => $"Searching the web for “{input?["query"]?.GetValue<string>()}”",
             "WebFetch" => $"Opening {input?["url"]?.GetValue<string>()}",
             "Task" or "Agent" => "Working on a sub-task",
-            "ToolSearch" or "TodoWrite" => null,
+            // Internal bookkeeping, or tools OverDesk switched off (the attempt is refused, nothing happens).
+            "ToolSearch" or "TodoWrite" or "Bash" or "KillShell" or "NotebookEdit" => null,
             _ when name.StartsWith("mcp__", StringComparison.Ordinal) => null,
             _ => name,
         };

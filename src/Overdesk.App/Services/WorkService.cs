@@ -41,6 +41,11 @@ internal sealed class WorkService
     /// <summary>The dirty works were just written to disk.</summary>
     public event Action? Saved;
 
+    /// <summary>The user asked the AI to do something with a work (instruction), or to talk about it (null).</summary>
+    public event Action<Work, string?>? AiRequested;
+
+    public void AskAi(Work work, string? instruction) => AiRequested?.Invoke(work, instruction);
+
     public void OpenInTab(Work work) => TabRequested?.Invoke(work);
     public void OpenInPanel(Work work) => PanelRequested?.Invoke(work);
 

@@ -285,6 +285,8 @@ public partial class MainWindow
         if (!File.Exists(path) && !Directory.Exists(path)) return AiToolResult.Error("No such file in the project.");
         var editor = FindEditor();
         if (editor is null) return AiToolResult.Error("No code editor (VS Code, Cursor, Zed...) is installed.");
+        // Development snapshots run unattended: never pop up the user's editor.
+        if (Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT") is { Length: > 0 }) return new AiToolResult("(snapshot run: the editor was not opened)");
 
         var name = ProgramNames.FromPath(editor);
         var cli = name switch { "Visual Studio Code" or "Code" => "code", "Cursor" => "cursor", "Windsurf" => "windsurf", "Zed" => "zed", _ => null };
@@ -528,10 +530,12 @@ public partial class MainWindow
         }
     }
 
+    /// <summary>The work's title for chat lines. Labels are built on the caller's thread, so the lookup hops to the UI thread.</summary>
     private string WorkName(JsonObject args)
     {
         var key = AiToolbox.Str(args, "work") ?? "";
-        var title = Dispatcher.UIThread.CheckAccess() ? _works.Library.Find(key)?.Title : null;
+        string? Lookup() => FindWork(args, out var work) is null ? work!.Title : null;
+        var title = Dispatcher.UIThread.CheckAccess() ? Lookup() : Dispatcher.UIThread.Invoke(Lookup);
         return $"“{title ?? key}”";
     }
 

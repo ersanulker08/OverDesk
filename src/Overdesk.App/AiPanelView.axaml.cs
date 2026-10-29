@@ -85,6 +85,14 @@ public partial class AiPanelView : UserControl
         FocusInput();
     }
 
+    /// <summary>Put text in the message box (cursor at the end) for the user to finish.</summary>
+    internal void Draft(string text)
+    {
+        Input.Text = text;
+        Input.CaretIndex = text.Length;
+        FocusInput();
+    }
+
     public void FocusInput() => Dispatcher.UIThread.Post(() => Input.Focus(), DispatcherPriority.Background);
 
     /// <summary>Run a prompt from outside (command palette, quick action), expanding {{clipboard}}.</summary>

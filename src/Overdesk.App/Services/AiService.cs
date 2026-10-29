@@ -405,7 +405,8 @@ internal sealed class AiService
                         "open_in_editor (when available) to show the changed file."
                       : "You can read its files but not change them (file changes are switched off in OverDesk's settings): show changes as code blocks.")
                   .Append(context.Tools.Tools.Any(t => t.Name == "run_command")
-                      ? " With run_command you can build, test and lint (the user approves each command): after changing code, check that it builds."
+                      ? " Run shell commands only with run_command (the user approves each one; other shell tools are off): use it to build, " +
+                        "test and lint, and after changing code check that it still builds."
                       : "")
                   .Append("\n\n").Append(await OverviewAsync(folder, cancellation));
         }

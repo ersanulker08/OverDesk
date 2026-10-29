@@ -63,7 +63,7 @@ internal sealed class WorkEditorView : UserControl
         _settingsButton = IconButton("IconSliders", "Look and settings", ToggleDrawer);
         var header = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions(compact ? "Auto,Auto,*,Auto,Auto,Auto,Auto" : "Auto,*,Auto,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions(compact ? "Auto,Auto,*,Auto,Auto,Auto,Auto,Auto" : "Auto,*,Auto,Auto,Auto,Auto"),
             Margin = compact ? new Thickness(10, 10, 8, 4) : new Thickness(36, 28, 36, 6),
         };
         var col = 0;
@@ -87,6 +87,11 @@ internal sealed class WorkEditorView : UserControl
         Grid.SetColumn(_saved, col++);
         _saved.Margin = new Thickness(8, 0, 6, 0);
         header.Children.Add(_saved);
+
+        var ai = IconButton("IconSparkle", "Ask AI to write, summarize or tidy this work", null);
+        ai.Click += (_, _) => ShowAiMenu(ai);
+        Grid.SetColumn(ai, col++);
+        header.Children.Add(ai);
 
         Grid.SetColumn(_settingsButton, col++);
         header.Children.Add(_settingsButton);
@@ -580,6 +585,38 @@ internal sealed class WorkEditorView : UserControl
         ToolTip.SetTip(button, tip);
         if (onClick is not null) button.Click += (_, _) => onClick();
         return button;
+    }
+
+    private static readonly (string Icon, string Name, string? Instruction)[] AiActions =
+    {
+        ("IconNote", "Continue writing", "Continue the writing in the same voice and style: add two to four new rows at the end that carry it forward."),
+        ("IconBook", "Summarize at the top", "Add a short summary at the top: a heading \"Summary\" and three to five bullet rows."),
+        ("IconCheck", "Turn into to-dos", "Turn the tasks, plans and ideas in it into to-do rows at the end, under a heading \"To-do\". Skip ones that are already to-dos."),
+        ("IconSparkle", "Brainstorm ideas", "Add eight fresh ideas that fit this work as bullet rows at the end, under a heading \"Ideas\"."),
+        ("IconSliders", "Fix spelling and grammar", "Fix spelling and grammar in every row, in place, without changing meaning, tone or language."),
+        ("IconSearch", "Ask about this work…", null),
+    };
+
+    private void ShowAiMenu(Control anchor)
+    {
+        var panel = new StackPanel { Spacing = 2, Width = 250 };
+        var flyout = new Flyout { Content = panel, Placement = PlacementMode.BottomEdgeAlignedRight };
+        panel.Children.Add(new TextBlock { Text = "ASK AI", Classes = { "eyebrow" }, FontSize = 9.5, Margin = new Thickness(6, 0, 0, 4) });
+        foreach (var (icon, name, instruction) in AiActions)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+            row.Children.Add(new Shapes.Path { Classes = { "icon", "small", "accent" }, Data = Res.Icon(icon), VerticalAlignment = VerticalAlignment.Center });
+            row.Children.Add(new TextBlock { Text = name, FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center });
+            var button = new Button { Classes = { "result" }, Content = row, Padding = new Thickness(8, 7), HorizontalAlignment = HorizontalAlignment.Stretch };
+            button.Click += (_, _) =>
+            {
+                flyout.Hide();
+                _svc.Flush();
+                _svc.AskAi(_work, instruction);
+            };
+            panel.Children.Add(button);
+        }
+        flyout.ShowAt(anchor);
     }
 
     private void ShowMoreMenu(Control anchor)

@@ -217,6 +217,22 @@ public partial class MainWindow : Window
         OpenAi();
         AiPanel().DevShow(sheet, rail);
     }
+    internal async Task<string> DevAskAiAndWaitAsync(string prompt, string? model)
+    {
+        OpenAi();
+        await _ai.PickStartingProviderAsync();
+        if (model is not null) _ai.Choose(_ai.Provider, model);
+        if (Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT_AI_FOLDER") is { Length: > 0 } folder) _ai.SetFolder(folder);
+        _ai.Current.AllowAll = Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT_AI_ALLOW") == "1";
+        await _ai.SendAsync(prompt);
+        for (var i = 0; i < 600 && _ai.IsBusy; i++) await Task.Delay(500);
+        await Task.Delay(500);
+        var answer = _ai.Conversation.LastOrDefault();
+        var works = string.Join("\n", _works.Library.Works.Select(w => Overdesk.Core.Works.WorkText.Describe(w)));
+        return $"PROVIDER {_ai.Provider.Name} / {_ai.Model}\nACTIONS:\n- {string.Join("\n- ", answer?.Actions ?? new())}\n" +
+               $"ERROR: {answer?.Error}\nANSWER:\n{answer?.Text}\nWORKS:\n{works}\nTABS: {string.Join(", ", _tabs.Tabs.Select(t => t.Title))}";
+    }
+
     internal void DevAiDemo(string folder)
     {
         OpenAi();

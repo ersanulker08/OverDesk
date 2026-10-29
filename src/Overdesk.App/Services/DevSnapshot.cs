@@ -33,6 +33,17 @@ internal static class DevSnapshot
         Directory.CreateDirectory(dir);
         App.RenderLogo(512).Save(Path.Combine(dir, "logo.png"), new PngBitmapEncoderOptions());
 
+        // OVERDESK_SNAPSHOT_AI_PROMPT="..." sends one real message with the current provider (OVERDESK_SNAPSHOT_AI_MODEL picks
+        // the model), waits for the answer, prints what the AI did and saves ai-live.png. Spends real tokens.
+        if (Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT_AI_PROMPT") is { Length: > 0 } prompt)
+        {
+            Console.WriteLine(await main.DevAskAiAndWaitAsync(prompt, Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT_AI_MODEL")));
+            await Task.Delay(800);
+            Save(main, Path.Combine(dir, "ai-live.png"));
+            main.Close();
+            return;
+        }
+
         if (Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT_WORKS") == "1")
         {
             await RunWorksAsync(main, dir);

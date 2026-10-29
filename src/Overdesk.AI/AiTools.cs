@@ -102,15 +102,22 @@ public sealed class AiToolbox
         try
         {
             var result = await tool.Run(arguments, cancellation);
-            if (result.IsError) Failed?.Invoke($"{label}: {result.Text}");
+            if (result.IsError) Failed?.Invoke($"{label}: {FirstLine(result.Text)}");
             return result;
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            Failed?.Invoke($"{label}: {ex.Message}");
+            Failed?.Invoke($"{label}: {FirstLine(ex.Message)}");
             return AiToolResult.Error(ex.Message);
         }
+    }
+
+    /// <summary>One short line for the chat; the model still gets the whole text.</summary>
+    private static string FirstLine(string text)
+    {
+        var line = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? "";
+        return line.Length > 140 ? line[..139] + "…" : line;
     }
 
     /// <summary>A string argument, or null when it is missing or empty.</summary>

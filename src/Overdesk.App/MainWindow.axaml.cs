@@ -218,6 +218,10 @@ public partial class MainWindow : Window
         OpenTool(tool);
         return null;
     }
+    internal void DevDropOnTool(IReadOnlyList<string> paths)
+    {
+        if (_activeTool is { } tool && _toolViews.TryGetValue(ToolKey(tool), out var view) && view is IFileDropTarget target) target.FilesDropped(paths);
+    }
     internal void DevOpenAi(bool sheet, bool rail)
     {
         OpenAi();

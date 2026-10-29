@@ -121,6 +121,13 @@ internal static class DevSnapshot
             if (main.DevOpenTool(toolId) is { } problem) Console.Error.WriteLine($"TOOL {toolId}: {problem}");
             await Task.Delay(800);
             Save(main, Path.Combine(dir, "tool.png"));
+            // OVERDESK_SNAPSHOT_TOOL_FILES="a;b" hands files to the tool as if they were dropped on it.
+            if (Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT_TOOL_FILES") is { Length: > 0 } files)
+            {
+                main.DevDropOnTool(files.Split(';', StringSplitOptions.RemoveEmptyEntries));
+                await Task.Delay(800);
+                Save(main, Path.Combine(dir, "tool-files.png"));
+            }
             main.DevCloseTools();
             await Task.Delay(300);
         }

@@ -1166,6 +1166,7 @@ public partial class MainWindow : Window
                     },
             };
             button.Classes.Set("active", _toolPanelOpen && _activeTool == tool);
+            if (tool.Id == AiToolId) button.Content = WithBusyDot(button.Content as Control);
             ToolTip.SetTip(button, tool.Name);
             button.Click += (_, _) => ToggleTool(tool);
             button.PointerReleased += (_, e) =>

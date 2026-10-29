@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
@@ -32,6 +33,7 @@ public partial class MainWindow
             BuiltIn = () => new BuiltInTool(() => AiPanel()),
         });
         _ai.AppTools = BuildAiTools;
+        _ai.Changed += WatchAi;
         _ai.StageInfo = StageSummary;
         _ai.FolderChanged += OnAiFolderChanged;
     }
@@ -78,6 +80,54 @@ public partial class MainWindow
         if (prompt is not null) _ = panel.RunPromptAsync(prompt);
         else if (question is not null) _ = panel.AskAsync(question);
         else panel.FocusInput();
+    }
+
+    private Avalonia.Controls.Shapes.Ellipse? _aiBusyDot;
+    private bool _aiWasBusy;
+    private AiApproval? _announcedApproval;
+
+    /// <summary>The AI icon in the tools strip, with a dot that shows while the AI is working.</summary>
+    private Control WithBusyDot(Control? icon)
+    {
+        _aiBusyDot = new Avalonia.Controls.Shapes.Ellipse
+        {
+            Width = 7, Height = 7, Fill = Overdesk.App.Theme.Res.Brush("AccentBrush"), IsVisible = _ai.IsBusy,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+            Margin = new Thickness(0, -3, -5, 0),
+        };
+        var panel = new Avalonia.Controls.Panel();
+        if (icon is not null) panel.Children.Add(icon);
+        panel.Children.Add(_aiBusyDot);
+        return panel;
+    }
+
+    private bool AiPanelVisible => _toolPanelOpen && _activeTool?.Id == AiToolId;
+
+    /// <summary>
+    /// Work can go on with the panel closed: the strip icon shows it, and when the answer is done, or the AI waits for
+    /// an OK, a toast says so (a system notification when OverDesk is in the background).
+    /// </summary>
+    private void WatchAi()
+    {
+        if (_aiBusyDot is not null) _aiBusyDot.IsVisible = _ai.IsBusy;
+        var last = _ai.Conversation.LastOrDefault();
+        if (last?.Pending is { } pending && pending != _announcedApproval)
+        {
+            _announcedApproval = pending;
+            Announce("The AI is waiting for your OK", pending.Text.Replace("`", ""));
+        }
+        if (_aiWasBusy && !_ai.IsBusy && last is { Role: Overdesk.AI.ChatMessage.Assistant })
+        {
+            var summary = last.Error is { } error ? "Stopped: " + error : last.Text.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Replace("**", "") ?? "Done";
+            Announce("The AI is done", summary.Length > 90 ? summary[..89] + "…" : summary);
+        }
+        _aiWasBusy = _ai.IsBusy;
+    }
+
+    private void Announce(string title, string text)
+    {
+        if (!IsActive) _desktop.Notify("OverDesk · " + title, text);
+        else if (!AiPanelVisible) ShowToast($"{title}: {text}", "IconSparkle");
     }
 
     /// <summary>⌘J: open the AI panel with the cursor in the message box, or close it when it already has the focus.</summary>

@@ -17,7 +17,6 @@ namespace Overdesk.App;
 // UI runs on the UI thread; providers call them from their own threads (and Claude Code / Gemini CLI over MCP).
 public partial class MainWindow
 {
-    private static readonly string[] BlockKinds = { "heading", "text", "todo", "toggle", "field", "number", "bullet", "quote", "divider" };
 
     private static Task<T> Ui<T>(Func<T> action) => Dispatcher.UIThread.InvokeAsync(action).GetTask();
     private static Task<T> Ui<T>(Func<Task<T>> action) => Dispatcher.UIThread.InvokeAsync(action);
@@ -276,7 +275,7 @@ public partial class MainWindow
             ["type"] = "object",
             ["properties"] = new JsonObject
             {
-                ["kind"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(BlockKinds.Select(k => (JsonNode)k).ToArray()),
+                ["kind"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(WorkText.Kinds.Select(k => (JsonNode)k).ToArray()),
                     ["description"] = "heading, text (a paragraph), todo (checkbox), toggle (named on/off variable), field (named text value), " +
                                       "number (named number), bullet, quote, divider" },
                 ["text"] = new JsonObject { ["type"] = "string", ["description"] = "The content, or the name of a toggle/field/number variable." },
@@ -326,7 +325,7 @@ public partial class MainWindow
             Description = "Read a work: every row with its short id (in brackets), kind and content. Use the ids to change or delete rows.",
             Schema = AiTool.Object(WorkParam),
             Label = a => $"Reading {WorkName(a)}",
-            Run = (a, _) => Ui(() => FindWork(a, out var work) is { } error ? error : new AiToolResult(DescribeWork(work!))),
+            Run = (a, _) => Ui(() => FindWork(a, out var work) is { } error ? error : new AiToolResult(WorkText.Describe(work!))),
         };
         yield return new AiTool
         {
@@ -344,10 +343,10 @@ public partial class MainWindow
                 work.Title = AiToolbox.Str(a, "title") ?? work.Title;
                 if (AiToolbox.Str(a, "color") is { } color && AccentThemes.All.Any(t => t.Name.Equals(color, StringComparison.OrdinalIgnoreCase)))
                     work.Color = AccentThemes.Find(color).Name;
-                if (a["blocks"] is JsonArray blocks && ParseBlocks(blocks) is { Count: > 0 } rows) work.Blocks = rows;
+                if (a["blocks"] is JsonArray blocks && WorkText.ParseBlocks(blocks) is { Count: > 0 } rows) work.Blocks = rows;
                 _works.Library.Touch(work, listChanged: true);
                 ShowWork(work, AiToolbox.Str(a, "open"));
-                return new AiToolResult($"Created “{work.Title}” (id {work.Id}).\n\n{DescribeWork(work)}");
+                return new AiToolResult($"Created “{work.Title}” (id {work.Id}).\n\n{WorkText.Describe(work)}");
             }),
         };
         yield return new AiTool
@@ -360,19 +359,19 @@ public partial class MainWindow
             Run = (a, _) => Ui(() =>
             {
                 if (FindWork(a, out var work) is { } error) return error;
-                var rows = a["blocks"] is JsonArray blocks ? ParseBlocks(blocks) : new List<WorkBlock>();
+                var rows = a["blocks"] is JsonArray blocks ? WorkText.ParseBlocks(blocks) : new List<WorkBlock>();
                 if (rows.Count == 0) return AiToolResult.Error("No rows to add.");
                 var index = work!.Blocks.Count;
                 if (AiToolbox.Str(a, "after") is { } after)
                 {
-                    if (FindBlock(work, after) is not { } anchor) return AiToolResult.Error($"No row with id {after}.");
+                    if (WorkText.FindBlock(work, after) is not { } anchor) return AiToolResult.Error($"No row with id {after}.");
                     index = work.Blocks.IndexOf(anchor) + 1;
                 }
                 // A blank template leaves one empty text row: fill it rather than keep it above the new rows.
                 if (work.Blocks is [{ Kind: BlockKind.Text, Text: "" }] && index == 1) { work.Blocks.Clear(); index = 0; }
                 work.Blocks.InsertRange(index, rows);
                 _works.Library.Touch(work, listChanged: true);
-                return new AiToolResult($"Added {rows.Count} row(s) to “{work.Title}”.\n\n{DescribeWork(work)}");
+                return new AiToolResult($"Added {rows.Count} row(s) to “{work.Title}”.\n\n{WorkText.Describe(work)}");
             }),
         };
         yield return new AiTool
@@ -382,20 +381,20 @@ public partial class MainWindow
             Schema = AiTool.Object(WorkParam, ("row", "string", "Short id of the row (from read_work).", true),
                                    ("text", "string", "New text / variable name.", false), ("value", "string", "New field value.", false),
                                    ("checked", "boolean", "todo done / toggle on.", false), ("number", "number", "New number.", false),
-                                   ("level", "integer", "Heading level 1-3.", false), ("kind", "string", "New kind: " + string.Join(", ", BlockKinds) + ".", false)),
+                                   ("level", "integer", "Heading level 1-3.", false), ("kind", "string", "New kind: " + string.Join(", ", WorkText.Kinds) + ".", false)),
             Label = a => $"Updating {WorkName(a)}",
             Run = (a, _) => Ui(() =>
             {
                 if (FindWork(a, out var work) is { } error) return error;
-                if (FindBlock(work!, AiToolbox.Str(a, "row") ?? "") is not { } block) return AiToolResult.Error("No such row. Read the work again for the ids.");
-                if (AiToolbox.Str(a, "kind") is { } kind && ParseKind(kind) is { } k) block.Kind = k;
+                if (WorkText.FindBlock(work!, AiToolbox.Str(a, "row") ?? "") is not { } block) return AiToolResult.Error("No such row. Read the work again for the ids.");
+                if (AiToolbox.Str(a, "kind") is { } kind && WorkText.ParseKind(kind) is { } k) block.Kind = k;
                 if (a["text"] is not null) block.Text = a["text"]!.ToString();
                 if (a["value"] is not null) block.Value = a["value"]!.ToString();
                 if (AiToolbox.Bool(a, "checked") is { } done) block.Checked = done;
                 if (a["number"] is JsonValue n && double.TryParse(n.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var number)) block.Number = number;
                 if (AiToolbox.Int(a, "level") is { } level) block.Level = Math.Clamp(level, 1, 3);
                 _works.Library.Touch(work!, listChanged: true);
-                return new AiToolResult("Updated: " + DescribeBlock(block));
+                return new AiToolResult("Updated: " + WorkText.DescribeBlock(block));
             }),
         };
         yield return new AiTool
@@ -408,7 +407,7 @@ public partial class MainWindow
             {
                 if (FindWork(a, out var work) is { } error) return error;
                 var ids = (a["rows"] as JsonArray)?.Select(n => n?.ToString() ?? "").ToList() ?? new List<string>();
-                var removed = ids.Select(id => FindBlock(work!, id)).OfType<WorkBlock>().Distinct().ToList();
+                var removed = ids.Select(id => WorkText.FindBlock(work!, id)).OfType<WorkBlock>().Distinct().ToList();
                 if (removed.Count == 0) return AiToolResult.Error("None of those rows exist.");
                 foreach (var block in removed) work!.Blocks.Remove(block);
                 if (work!.Blocks.Count == 0) work.Blocks.Add(new WorkBlock());
@@ -504,65 +503,5 @@ public partial class MainWindow
                ?? works.FirstOrDefault(w => w.Title.Equals(key, StringComparison.OrdinalIgnoreCase))
                ?? works.FirstOrDefault(w => w.Title.Contains(key, StringComparison.OrdinalIgnoreCase));
         return work is null ? AiToolResult.Error($"No work matches “{key}”. Use list_works.") : null;
-    }
-
-    private static WorkBlock? FindBlock(Work work, string id)
-    {
-        id = id.Trim().Trim('[', ']');
-        return id.Length < 4 ? null : work.Blocks.FirstOrDefault(b => b.Id.StartsWith(id, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static string DescribeWork(Work work)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine($"# {work.Title}  (id {work.Id}; template {work.Template}; color {work.Color}{(work.Pinned ? "; pinned" : "")})");
-        foreach (var block in work.Blocks) sb.AppendLine(DescribeBlock(block));
-        return sb.ToString();
-    }
-
-    private static string DescribeBlock(WorkBlock b)
-    {
-        var id = $"[{b.Id[..8]}]";
-        return b.Kind switch
-        {
-            BlockKind.Heading => $"{id} heading{b.Level}: {b.Text}",
-            BlockKind.Todo => $"{id} todo [{(b.Checked ? "x" : " ")}]: {b.Text}",
-            BlockKind.Toggle => $"{id} toggle: {b.Text} = {(b.Checked ? "on" : "off")}",
-            BlockKind.Field => $"{id} field: {b.Text} = {b.Value}",
-            BlockKind.Number => $"{id} number: {b.Text} = {b.Number.ToString(CultureInfo.InvariantCulture)}",
-            BlockKind.Divider => $"{id} divider",
-            _ => $"{id} {b.Kind.ToString().ToLowerInvariant()}: {b.Text}",
-        };
-    }
-
-    private static BlockKind? ParseKind(string kind) => kind.Trim().ToLowerInvariant() switch
-    {
-        "checkbox" or "task" or "todo" => BlockKind.Todo,
-        "variable" or "bool" or "toggle" => BlockKind.Toggle,
-        "paragraph" or "text" => BlockKind.Text,
-        "list" or "bullet" => BlockKind.Bullet,
-        "hr" or "divider" => BlockKind.Divider,
-        var other => Enum.TryParse<BlockKind>(other, ignoreCase: true, out var k) ? k : null,
-    };
-
-    private static List<WorkBlock> ParseBlocks(JsonArray blocks)
-    {
-        var rows = new List<WorkBlock>();
-        foreach (var node in blocks)
-        {
-            if (node is JsonValue plain) { rows.Add(new WorkBlock { Text = plain.ToString() }); continue; }
-            if (node is not JsonObject o) continue;
-            var block = new WorkBlock
-            {
-                Kind = ParseKind(AiToolbox.Str(o, "kind") ?? "text") ?? BlockKind.Text,
-                Text = o["text"]?.ToString() ?? "",
-                Value = o["value"]?.ToString() ?? "",
-                Checked = AiToolbox.Bool(o, "checked") ?? false,
-                Level = Math.Clamp(AiToolbox.Int(o, "level") ?? 2, 1, 3),
-            };
-            if (o["number"] is JsonValue n && double.TryParse(n.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var number)) block.Number = number;
-            rows.Add(block);
-        }
-        return rows;
     }
 }

@@ -10,13 +10,16 @@ namespace Overdesk.AI;
 /// apps that run as separate programs (Claude Code, Gemini CLI) can use OverDesk's tools: works, tabs, the project
 /// folder. Every request must carry the random bearer token written into their config; nothing else can call it.
 /// Paths: /mcp/all serves every tool, /mcp/app leaves out the file tools (for apps that have their own).
+/// HTTP is spoken over a plain socket (one request per connection): HttpListener would need a URL reservation on
+/// Windows for users without admin rights.
 /// </summary>
 public sealed class McpServer : IDisposable
 {
     private static readonly string[] Versions = { "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05" };
-    private readonly HttpListener _listener = new();
+    private const int MaxBody = 8 * 1024 * 1024;
     private readonly Func<AiToolbox?> _toolbox;
     private readonly CancellationTokenSource _stop = new();
+    private TcpListener? _listener;
 
     public McpServer(Func<AiToolbox?> toolbox)
     {
@@ -26,60 +29,114 @@ public sealed class McpServer : IDisposable
 
     public string Token { get; }
     public int Port { get; private set; }
-    public bool IsRunning => _listener.IsListening;
+    public bool IsRunning => _listener is not null;
 
     public McpEndpoint Endpoint(bool withFileTools) => new($"http://127.0.0.1:{Port}/mcp/{(withFileTools ? "all" : "app")}", Token);
 
     public void Start()
     {
-        if (_listener.IsListening) return;
-        Port = FreePort();
-        _listener.Prefixes.Add($"http://127.0.0.1:{Port}/");
-        _listener.Start();
+        if (_listener is not null) return;
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        _listener = listener;
+        Port = ((IPEndPoint)listener.LocalEndpoint).Port;
         _ = Task.Run(LoopAsync);
-    }
-
-    private static int FreePort()
-    {
-        var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
-        probe.Stop();
-        return port;
     }
 
     private async Task LoopAsync()
     {
-        while (!_stop.IsCancellationRequested)
+        while (!_stop.IsCancellationRequested && _listener is { } listener)
         {
-            HttpListenerContext context;
-            try { context = await _listener.GetContextAsync(); }
+            TcpClient client;
+            try { client = await listener.AcceptTcpClientAsync(_stop.Token); }
             catch (Exception) { return; }
-            _ = Task.Run(() => HandleAsync(context));
+            _ = Task.Run(() => ServeAsync(client));
         }
     }
 
-    private async Task HandleAsync(HttpListenerContext context)
+    private sealed record Request(string Method, string Path, Dictionary<string, string> Headers, string Body);
+
+    private async Task ServeAsync(TcpClient client)
     {
-        var request = context.Request;
-        var response = context.Response;
+        using var _ = client;
         try
         {
-            // Browsers send an Origin; MCP clients do not. Refusing it blocks web pages from reaching the server.
-            if (request.Headers["Origin"] is { Length: > 0 } || request.Headers["Authorization"] != "Bearer " + Token)
-            {
-                response.StatusCode = 403;
-                return;
-            }
-            var path = request.Url?.AbsolutePath ?? "";
-            if (!path.StartsWith("/mcp/", StringComparison.Ordinal)) { response.StatusCode = 404; return; }
-            if (request.HttpMethod != "POST") { response.StatusCode = 405; return; }
+            var stream = client.GetStream();
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
+            timeout.CancelAfter(TimeSpan.FromSeconds(30)); // reading the request; running the tool may take longer
+            var request = await ReadRequestAsync(stream, timeout.Token);
+            if (request is null) return;
+            var (status, body) = await HandleAsync(request);
+            await WriteResponseAsync(stream, status, body);
+        }
+        catch (Exception) { /* a broken connection only affects its own request */ }
+    }
 
-            string body;
-            using (var reader = new StreamReader(request.InputStream, Encoding.UTF8)) body = await reader.ReadToEndAsync();
-            var message = JsonNode.Parse(body);
-            var withFiles = path.EndsWith("/all", StringComparison.Ordinal);
+    private static async Task<Request?> ReadRequestAsync(NetworkStream stream, CancellationToken cancellation)
+    {
+        var buffer = new List<byte>();
+        var chunk = new byte[8192];
+        int headerEnd;
+        while ((headerEnd = IndexOf(buffer, "\r\n\r\n"u8)) < 0)
+        {
+            if (buffer.Count > 64 * 1024) return null;
+            var read = await stream.ReadAsync(chunk, cancellation);
+            if (read == 0) return null;
+            buffer.AddRange(chunk.AsSpan(0, read).ToArray());
+        }
+        var lines = Encoding.ASCII.GetString(buffer.GetRange(0, headerEnd).ToArray()).Split("\r\n");
+        var start = lines[0].Split(' ');
+        if (start.Length < 2) return null;
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in lines.Skip(1))
+            if (line.IndexOf(':') is > 0 and var colon) headers[line[..colon].Trim()] = line[(colon + 1)..].Trim();
 
+        var length = headers.TryGetValue("Content-Length", out var value) && int.TryParse(value, out var n) ? n : 0;
+        if (length is < 0 or > MaxBody) return null;
+        var body = buffer.Skip(headerEnd + 4).ToList();
+        while (body.Count < length)
+        {
+            var read = await stream.ReadAsync(chunk, cancellation);
+            if (read == 0) return null;
+            body.AddRange(chunk.AsSpan(0, read).ToArray());
+        }
+        var path = start[1].Split('?')[0];
+        return new Request(start[0], path, headers, Encoding.UTF8.GetString(body.Take(length).ToArray()));
+    }
+
+    private static int IndexOf(List<byte> data, ReadOnlySpan<byte> pattern)
+    {
+        for (var i = 0; i <= data.Count - pattern.Length; i++)
+        {
+            var match = true;
+            for (var j = 0; j < pattern.Length && match; j++) match = data[i + j] == pattern[j];
+            if (match) return i;
+        }
+        return -1;
+    }
+
+    private static async Task WriteResponseAsync(NetworkStream stream, int status, string? body)
+    {
+        var reason = status switch { 200 => "OK", 202 => "Accepted", 400 => "Bad Request", 403 => "Forbidden", 404 => "Not Found", 405 => "Method Not Allowed", _ => "Error" };
+        var bytes = body is null ? Array.Empty<byte>() : Encoding.UTF8.GetBytes(body);
+        var head = $"HTTP/1.1 {status} {reason}\r\nContent-Length: {bytes.Length}\r\n" +
+                   (body is null ? "" : "Content-Type: application/json\r\n") + "Connection: close\r\n\r\n";
+        await stream.WriteAsync(Encoding.ASCII.GetBytes(head));
+        if (bytes.Length > 0) await stream.WriteAsync(bytes);
+        await stream.FlushAsync();
+    }
+
+    private async Task<(int Status, string? Body)> HandleAsync(Request request)
+    {
+        // Browsers send an Origin; MCP clients do not. Refusing it blocks web pages from reaching the server.
+        if (request.Headers.ContainsKey("Origin") || !request.Headers.TryGetValue("Authorization", out var auth) || auth != "Bearer " + Token)
+            return (403, null);
+        if (!request.Path.StartsWith("/mcp/", StringComparison.Ordinal)) return (404, null);
+        if (request.Method != "POST") return (405, null);
+        try
+        {
+            var message = JsonNode.Parse(request.Body);
+            var withFiles = request.Path.EndsWith("/all", StringComparison.Ordinal);
             JsonNode? answer;
             if (message is JsonArray batch)
             {
@@ -89,24 +146,11 @@ public sealed class McpServer : IDisposable
                 answer = results.Count > 0 ? results : null;
             }
             else answer = message is JsonObject single ? await AnswerAsync(single, withFiles) : null;
-
-            if (answer is null)
-            {
-                response.StatusCode = 202;
-                return;
-            }
-            var bytes = Encoding.UTF8.GetBytes(answer.ToJsonString());
-            response.ContentType = "application/json";
-            response.ContentLength64 = bytes.Length;
-            await response.OutputStream.WriteAsync(bytes);
+            return answer is null ? (202, null) : (200, answer.ToJsonString());
         }
-        catch (Exception)
+        catch (System.Text.Json.JsonException)
         {
-            try { response.StatusCode = 400; } catch (Exception) { }
-        }
-        finally
-        {
-            try { response.Close(); } catch (Exception) { }
+            return (400, null);
         }
     }
 
@@ -188,6 +232,6 @@ public sealed class McpServer : IDisposable
     public void Dispose()
     {
         _stop.Cancel();
-        try { _listener.Close(); } catch (Exception) { }
+        try { _listener?.Stop(); } catch (Exception) { }
     }
 }

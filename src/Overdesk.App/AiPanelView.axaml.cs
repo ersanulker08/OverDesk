@@ -23,7 +23,8 @@ namespace Overdesk.App;
 /// </summary>
 public partial class AiPanelView : UserControl
 {
-    private readonly List<byte[]> _pendingImages = new();
+    private readonly List<(string Label, byte[] Png)> _pendingImages = new();
+    private readonly List<(string Name, string Text)> _pendingFiles = new();
     private string? _pendingClipboard;
     private AiService? _ai;
     private AppSettings _settings = new();
@@ -112,11 +113,15 @@ public partial class AiPanelView : UserControl
         }
         var text = Input.Text?.Trim() ?? "";
         if (_pendingClipboard is { } clip) text = string.IsNullOrEmpty(text) ? clip : $"{text}\n\n```\n{clip}\n```";
+        foreach (var (name, body) in _pendingFiles)
+            text += $"\n\nAttached file `{name}`:\n```{Path.GetExtension(name).TrimStart('.')}\n{body}\n```";
+        if (string.IsNullOrWhiteSpace(Input.Text) && _pendingFiles.Count > 0 && _pendingClipboard is null) text = "Look at the attached file(s)." + text;
         if (string.IsNullOrWhiteSpace(text) && _pendingImages.Count == 0) return;
         if (string.IsNullOrWhiteSpace(text)) text = "What do you see in this screenshot?";
-        var images = _pendingImages.ToList();
+        var images = _pendingImages.Select(i => i.Png).ToList();
         Input.Text = "";
         _pendingImages.Clear();
+        _pendingFiles.Clear();
         _pendingClipboard = null;
         RenderAttachments();
         _ = _ai.SendAsync(text, images);
@@ -150,9 +155,74 @@ public partial class AiPanelView : UserControl
             ShowProblem("Open a program on stage first. On macOS the screenshot needs the Screen Recording permission.");
             return;
         }
-        _pendingImages.Add(png);
+        _pendingImages.Add(("Screenshot", png));
         RenderAttachments();
         FocusInput();
+    }
+
+    private static readonly HashSet<string> ImageTypes = new(StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp" };
+    private const int MaxAttachedChars = 150_000;
+
+    /// <summary>
+    /// Dropped files: images and text files are attached to the next message; a folder becomes the project folder.
+    /// </summary>
+    internal async Task AttachPathsAsync(IEnumerable<string> paths)
+    {
+        var skipped = new List<string>();
+        foreach (var path in paths)
+        {
+            var name = Path.GetFileName(path.TrimEnd('/', '\\'));
+            try
+            {
+                if (Directory.Exists(path))
+                {
+                    _ai?.SetFolder(path);
+                    continue;
+                }
+                if (ImageTypes.Contains(Path.GetExtension(path)))
+                {
+                    var png = await Task.Run(() => ImageAsPng(path));
+                    if (png is null) skipped.Add(name);
+                    else _pendingImages.Add((name, png));
+                    continue;
+                }
+                var text = await Task.Run(() => ReadText(path));
+                if (text is null) skipped.Add(name);
+                else _pendingFiles.Add((name, text));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                skipped.Add(name);
+            }
+        }
+        RenderAttachments();
+        if (skipped.Count > 0) ShowProblem($"Not attached (not text or an image, or too large): {string.Join(", ", skipped)}");
+        FocusInput();
+    }
+
+    /// <summary>Any image as a PNG no larger than vision models read (long edge 1568 px).</summary>
+    private static byte[]? ImageAsPng(string path)
+    {
+        try
+        {
+            using var bitmap = new Bitmap(path);
+            var scale = Math.Min(1.0, 1568.0 / Math.Max(bitmap.PixelSize.Width, bitmap.PixelSize.Height));
+            using var scaled = bitmap.CreateScaledBitmap(new PixelSize(Math.Max(1, (int)(bitmap.PixelSize.Width * scale)), Math.Max(1, (int)(bitmap.PixelSize.Height * scale))));
+            using var ms = new MemoryStream();
+            scaled.Save(ms);
+            return ms.ToArray();
+        }
+        catch (Exception) { return null; }
+    }
+
+    private static string? ReadText(string path)
+    {
+        var info = new FileInfo(path);
+        if (!info.Exists || info.Length > MaxAttachedChars * 2) return null;
+        var bytes = File.ReadAllBytes(path);
+        if (bytes.Take(8000).Contains((byte)0)) return null;
+        var text = System.Text.Encoding.UTF8.GetString(bytes);
+        return text.Length > MaxAttachedChars ? text[..MaxAttachedChars] + "\n… (cut)" : text;
     }
 
     private void RenderAttachments()
@@ -160,10 +230,15 @@ public partial class AiPanelView : UserControl
         Attachments.Children.Clear();
         if (_pendingClipboard is { } clip)
             Attachments.Children.Add(AttachmentChip("IconClipboard", $"Clipboard · {clip.Length} chars", () => { _pendingClipboard = null; RenderAttachments(); }));
+        for (var i = 0; i < _pendingFiles.Count; i++)
+        {
+            var index = i;
+            Attachments.Children.Add(AttachmentChip("IconNote", _pendingFiles[i].Name, () => { _pendingFiles.RemoveAt(index); RenderAttachments(); }));
+        }
         for (var i = 0; i < _pendingImages.Count; i++)
         {
             var index = i;
-            Attachments.Children.Add(AttachmentChip("IconCamera", "Screenshot", () => { _pendingImages.RemoveAt(index); RenderAttachments(); }));
+            Attachments.Children.Add(AttachmentChip("IconCamera", _pendingImages[i].Label, () => { _pendingImages.RemoveAt(index); RenderAttachments(); }));
         }
     }
 
@@ -784,7 +859,7 @@ public partial class AiPanelView : UserControl
             if (turn.Pending is null) content.Children.Add(new TextBlock { Text = turn.Actions.Count > 0 ? "Working…" : "Thinking…", Classes = { "muted" }, FontSize = 12.5 });
         }
         else
-            foreach (var part in user ? new Control[] { new SelectableTextBlock { Classes = { "msg" }, Text = turn.Text } } : ChatMarkdown.Render(turn.Text, CopyAsync)) content.Children.Add(part);
+            foreach (var part in user ? new Control[] { new SelectableTextBlock { Classes = { "msg" }, Text = Shortened(turn.Text) } } : ChatMarkdown.Render(turn.Text, CopyAsync)) content.Children.Add(part);
 
         if (!user && !turn.IsStreaming && turn.Error is null && turn.Text.Length > 0)
         {
@@ -795,6 +870,10 @@ public partial class AiPanelView : UserControl
         }
         return new Border { Classes = { "bubble", user ? "user" : "assistant" }, Child = content };
     }
+
+    /// <summary>Your own long messages (attached files, pasted logs) are shown cut; the AI still gets all of it.</summary>
+    private static string Shortened(string text)
+        => text.Length <= 900 ? text : text[..700].TrimEnd() + $"\n… ({text.Length - 700:N0} more characters sent)";
 
     /// <summary>The AI wants to do something hard to undo: Allow / Allow all in this chat / Deny.</summary>
     private Control ApprovalCard(AiApproval approval)

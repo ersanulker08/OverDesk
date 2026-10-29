@@ -221,6 +221,7 @@ public partial class MainWindow : Window
     {
         OpenAi();
         _ai.DevShowDemo(folder);
+        _ = AiPanel().AttachPathsAsync(new[] { Path.Combine(folder, "README.md"), Path.Combine(folder, "assets", "overdesk-logo.png") });
     }
     internal void DevShowWorkspaces() => ShowWorkspaceMenu();
     internal void DevScrollDock(double y) => Dock.DevScroll(y);
@@ -968,10 +969,13 @@ public partial class MainWindow : Window
         {
             // Over the tool strip the drop adds a tool instead of a tab; say so.
             var onTools = ToolStrip.IsPointerOver || ReferenceEquals(sender, ToolStrip);
-            DropTitle.Text = onTools ? "Drop to add a tool" : "Drop to open as a tab";
+            var onAi = !onTools && OverAiPanel(e);
+            DropTitle.Text = onTools ? "Drop to add a tool" : onAi ? "Drop to give it to the AI" : "Drop to open as a tab";
             DropText.Text = onTools
                 ? "It will sit in the tools strip on the right and open in the side panel."
-                : "Any program works: it will live in OverDesk's top bar.";
+                : onAi
+                    ? "Images and text files are attached to your message. A folder becomes the chat's project folder."
+                    : "Any program works: it will live in OverDesk's top bar.";
         }
         e.Handled = true;
     }
@@ -996,7 +1000,8 @@ public partial class MainWindow : Window
     private void OnDropProgram(object? sender, DragEventArgs e)
     {
         ShowDropOverlay(false);
-        foreach (var path in DroppedPaths(e)) OpenProgram(path);
+        if (OverAiPanel(e)) _ = AiPanel().AttachPathsAsync(DroppedPaths(e));
+        else foreach (var path in DroppedPaths(e)) OpenProgram(path);
         e.Handled = true;
     }
 
@@ -1006,6 +1011,10 @@ public partial class MainWindow : Window
         foreach (var path in DroppedPaths(e)) AddTool(path);
         e.Handled = true;
     }
+
+    /// <summary>Files dropped on the open AI panel go to the chat instead of becoming tabs.</summary>
+    private bool OverAiPanel(DragEventArgs e)
+        => _toolPanelOpen && _activeTool?.Id == AiToolId && ToolPanel.IsVisible && new Rect(ToolPanel.Bounds.Size).Contains(e.GetPosition(ToolPanel));
 
     private static IEnumerable<string> DroppedPaths(DragEventArgs e)
         => (e.DataTransfer.TryGetFiles() ?? Array.Empty<Avalonia.Platform.Storage.IStorageItem>())

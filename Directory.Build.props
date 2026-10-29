@@ -1,7 +1,7 @@
 <Project>
   <!-- Shared by every project in the repository. -->
   <PropertyGroup>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Product>OverDesk</Product>
     <Copyright>Copyright (c) 2026 OverDesk contributors</Copyright>
   </PropertyGroup>

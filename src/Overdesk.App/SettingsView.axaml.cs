@@ -46,7 +46,7 @@ public partial class SettingsView : UserControl
         DockToggle.IsCheckedChanged += (_, _) => Update(s => s.SidebarExpanded = DockToggle.IsChecked == true);
         MirrorToggle.IsCheckedChanged += (_, _) => Update(s => s.MirrorPrograms = MirrorToggle.IsChecked == true);
 
-        var version = typeof(SettingsView).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
+        var version = typeof(SettingsView).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
         var os = OperatingSystem.IsMacOS() ? "macOS" : OperatingSystem.IsWindows() ? "Windows" : "Linux";
         AboutVersion.Text = $"Version {version}  ·  {os}  ·  .NET {Environment.Version.ToString(2)}";
         NavVersion.Text = $"OverDesk {version}";

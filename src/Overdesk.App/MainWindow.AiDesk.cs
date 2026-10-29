@@ -45,8 +45,12 @@ public partial class MainWindow
             Label = _ => "Checking local servers",
             Run = async (_, _) =>
             {
-                await _stats.RefreshPortsAsync();
-                var ports = _stats.Ports.Where(p => p.Port is >= 1024 and < 49152).OrderBy(p => p.Port).ToList();
+                // The refresh tells the dock, which must happen on the UI thread.
+                var ports = await Ui(async () =>
+                {
+                    await _stats.RefreshPortsAsync();
+                    return _stats.Ports.Where(p => p.Port is >= 1024 and < 49152).OrderBy(p => p.Port).ToList();
+                });
                 return new AiToolResult(ports.Count == 0
                     ? "No local servers are listening."
                     : string.Join('\n', ports.Select(p => $"- http://localhost:{p.Port}  ({p.ProcessName}, pid {p.ProcessId})")));

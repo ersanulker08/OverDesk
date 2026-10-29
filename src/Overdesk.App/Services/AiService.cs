@@ -251,24 +251,29 @@ internal sealed class AiService
             var system = await SystemPromptAsync(context, cts.Token);
             var stream = Stream(provider, model, system, context, thread, answer, cts.Token);
             var lastUpdate = DateTime.MinValue;
-            await foreach (var chunk in stream.ConfigureAwait(false))
+            // Off the UI thread from the first step: providers parse streams and run tools in their awaits,
+            // which would otherwise come back to the UI thread.
+            await Task.Run(async () =>
             {
-                answer.Text += chunk.Text;
-                if (chunk.TokensPerSecond is { } speed) LastTokensPerSecond = speed;
-                if (chunk.SessionId is { Length: > 0 } session)
+                await foreach (var chunk in stream.ConfigureAwait(false))
                 {
-                    thread.SessionId = session;
-                    thread.SessionProvider = provider.Id;
-                    thread.SessionFolder = folder;
+                    answer.Text += chunk.Text;
+                    if (chunk.TokensPerSecond is { } speed) LastTokensPerSecond = speed;
+                    if (chunk.SessionId is { Length: > 0 } session)
+                    {
+                        thread.SessionId = session;
+                        thread.SessionProvider = provider.Id;
+                        thread.SessionFolder = folder;
+                    }
+                    if (chunk.Activity is { } activity) Dispatcher.UIThread.Post(() => answer.Actions.Add(activity));
+                    // Repaint at most ~20 times a second, however fast tokens arrive.
+                    if (DateTime.UtcNow - lastUpdate > TimeSpan.FromMilliseconds(50))
+                    {
+                        lastUpdate = DateTime.UtcNow;
+                        Dispatcher.UIThread.Post(() => Changed?.Invoke());
+                    }
                 }
-                if (chunk.Activity is { } activity) Dispatcher.UIThread.Post(() => answer.Actions.Add(activity));
-                // Repaint at most ~20 times a second, however fast tokens arrive.
-                if (DateTime.UtcNow - lastUpdate > TimeSpan.FromMilliseconds(50))
-                {
-                    lastUpdate = DateTime.UtcNow;
-                    Dispatcher.UIThread.Post(() => Changed?.Invoke());
-                }
-            }
+            });
         }
         catch (OperationCanceledException)
         {

@@ -348,6 +348,8 @@ public partial class AiPanelView : UserControl
         return button;
     }
 
+    internal void ChooseFolder() => _ = ChooseFolderAsync();
+
     private async Task ChooseFolderAsync()
     {
         if (_ai is null || TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;

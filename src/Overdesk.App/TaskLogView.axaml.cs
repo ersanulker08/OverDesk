@@ -36,13 +36,13 @@ public partial class TaskLogView : UserControl
             if (_task is null) return;
             var output = _task.Output;
             if (output.Length > 30_000) output = "…" + output[^30_000..];
-            AskAi?.Invoke($"This is the output of `{_task.Command}` (run in {_task.Folder}). Explain what went wrong, if anything, and how to fix it:\n\n```\n{output}\n```");
+            AskAi?.Invoke(_task, $"This is the output of `{_task.Command}` (run in {_task.Folder}). Explain what went wrong, if anything, and how to fix it:\n\n```\n{output}\n```");
             Hide();
         };
     }
 
-    /// <summary>The host opens the AI panel with this question.</summary>
-    internal event Action<string>? AskAi;
+    /// <summary>The host opens the AI panel with this question (or, for a failed task, lets the AI fix it).</summary>
+    internal event Action<RunningTask, string>? AskAi;
 
     internal void Show(RunningTask task, TaskRunner runner)
     {

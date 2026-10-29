@@ -108,7 +108,12 @@ public partial class MainWindow : Window
         };
 
         Picker.BrowseRequested += BrowseForProgram;
-        TaskLog.AskAi += question => OpenAi(question: question);
+        TaskLog.AskAi += (task, question) =>
+        {
+            // With tools the AI can read the log, open the project and fix it; otherwise it explains the pasted log.
+            if (_settings.AiTools && task is { IsRunning: false, ExitCode: not 0 } && Directory.Exists(task.Folder)) FixTaskWithAi(task);
+            else OpenAi(question: question);
+        };
         TaskLog.PropertyChanged += (_, e) =>
         {
             if (e.Property == IsVisibleProperty && !TaskLog.IsVisible) RestoreEmbedded();
@@ -911,7 +916,8 @@ public partial class MainWindow : Window
         items.Add(new PaletteItem("Take a screenshot (to clipboard)", "Action", _desktop.ScreenshotToClipboard, "IconScissors"));
         items.Add(new PaletteItem("Focus mode (fill the screen)", "View", ToggleFocusMode, "IconTimer"));
 
-        items.Add(new PaletteItem("Open the AI panel", "AI", () => OpenAi(), "IconSparkle"));
+        items.Add(new PaletteItem("Open the AI panel", "AI", () => OpenAi(), "IconSparkle", Shortcut: $"{mod}J"));
+        AddAiPaletteItems(items);
         foreach (var prompt in _settings.Prompts)
             items.Add(new PaletteItem($"AI: {prompt.Name}", "AI", () => OpenAi(prompt: prompt.Text), "IconSparkle", Detail: "Uses the clipboard text"));
 
@@ -1064,6 +1070,10 @@ public partial class MainWindow : Window
                 break;
             case Key.P:
                 ShowPalette();
+                e.Handled = true;
+                break;
+            case Key.J:
+                ToggleAi();
                 e.Handled = true;
                 break;
             case Key.B:

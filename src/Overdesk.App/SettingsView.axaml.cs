@@ -312,7 +312,8 @@ public partial class SettingsView : UserControl
             ($"{mod}1 – 9", "Jump to a tab"), ($"{mod}Tab", "Next tab"),
             ($"{mod}P", "Command palette"), ($"{mod}K", "Search programs"),
             ($"{mod}B", "Side dock"), ($"{mod},", "Settings"),
-            ($"{mod}{shift}H", "Home"), ("Middle click", "Close a tab"),
+            ($"{mod}{shift}H", "Home"), ($"{mod}J", "AI panel"),
+            ("Middle click", "Close a tab"), ("Drop on AI panel", "Attach files"),
         };
         foreach (var (keys, what) in list)
         {

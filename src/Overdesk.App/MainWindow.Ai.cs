@@ -80,6 +80,44 @@ public partial class MainWindow
         else panel.FocusInput();
     }
 
+    /// <summary>⌘J: open the AI panel with the cursor in the message box, or close it when it already has the focus.</summary>
+    private void ToggleAi()
+    {
+        if (_toolPanelOpen && _activeTool?.Id == AiToolId && _aiPanel?.IsKeyboardFocusWithin == true) CloseToolPanel();
+        else OpenAi();
+    }
+
+    private void AddAiPaletteItems(List<PaletteItem> items)
+    {
+        items.Add(new PaletteItem("AI: new chat", "AI", () =>
+        {
+            OpenAi();
+            _ai.NewChat();
+        }, "IconPlus"));
+        items.Add(new PaletteItem("AI: choose a project folder…", "AI", () =>
+        {
+            OpenAi();
+            AiPanel().ChooseFolder();
+        }, "IconFolder", Detail: _ai.Folder is { } f ? $"now: {Path.GetFileName(f)}" : "the AI reads and answers about it"));
+        foreach (var folder in _ai.RecentFolders.Where(f => f != _ai.Folder && Directory.Exists(f)).Take(5))
+            items.Add(new PaletteItem($"AI folder: {Path.GetFileName(folder)}", "AI", () =>
+            {
+                _ai.SetFolder(folder);
+                OpenAi();
+            }, "IconFolder", Detail: folder));
+        // The newest failed task is usually the one the user wants fixed.
+        if (_runner.Tasks.FirstOrDefault(t => !t.IsRunning && t.ExitCode is not 0 and not null) is { } failed)
+            items.Add(new PaletteItem($"AI: fix “{failed.Name}”", "AI", () => FixTaskWithAi(failed), "IconSparkle", Detail: $"exited with code {failed.ExitCode}"));
+    }
+
+    /// <summary>Point the AI at a failed task: its folder becomes the project folder, the log is one tool call away.</summary>
+    internal void FixTaskWithAi(RunningTask task)
+    {
+        if (Directory.Exists(task.Folder)) _ai.SetFolder(task.Folder);
+        OpenAi(question: $"The command `{task.Command}` (task “{task.Name}”) failed with exit code {task.ExitCode}. " +
+                         "Read its log with read_tasks, find the cause in the project and fix it, then run the command again to check.");
+    }
+
     /// <summary>A PNG of the program on stage, scaled to a size vision models read well (long edge ≤ 1568 px).</summary>
     private async Task<byte[]?> CaptureStagePngAsync()
     {

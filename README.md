@@ -52,6 +52,8 @@ The AI panel can act, not just answer. It has tools for everything under OverDes
 | "Open Spotify and skip this song" | open **programs**, switch and close **tabs**, open **sites** and panel **tools**, control **media**, arrange **workspaces** and **split view** |
 | "Why is my dev server crashing?" | read the **logs** of running tasks, list local **dev servers**, check **CPU / memory** |
 | "Summarize this page" / "What am I looking at?" | read the text of **web tabs**, take a **screenshot** of the program on stage, use the **clipboard** and the scratchpad |
+| "Put the dentist on Friday 3 pm in my calendar" | **script other programs**: AppleScript on macOS (Calendar, Reminders, Notes, Mail, Safari, Finder…), PowerShell on Windows; you see and approve each script |
+| "Remind me in 20 minutes" / "Start a 25 min focus" | set **reminders**, run the **focus timer**, read the **clipboard history**, **launch projects** |
 | "Make these photos WebP, max 1600 px" | **convert files** with the Converter tool (and any plugin that gives the AI tools) |
 | "Fix the failing test" | read, search and edit files in your **project folder** and run commands, then open the result in VS Code |
 

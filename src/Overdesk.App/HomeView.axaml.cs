@@ -60,6 +60,9 @@ public partial class HomeView : UserControl
     }
 
     public event Action<string>? ProgramRequested;
+
+    /// <summary>The search text should go to the AI as a question.</summary>
+    public event Action<string>? AskAiRequested;
     public event Action? AddProgramRequested;
     public event Action<string>? PinToggled;
     public event Action<string>? RecentRemoved;
@@ -96,6 +99,12 @@ public partial class HomeView : UserControl
     }
 
     public void SetAnimated(bool animated) => Waves.IsAnimated = animated;
+
+    internal void DevSearch(string text)
+    {
+        SearchBox.Focus();
+        SearchBox.Text = text;
+    }
 
     public void FocusSearch()
     {
@@ -323,7 +332,35 @@ public partial class HomeView : UserControl
             Results.Children.Add(button);
         }
 
-        NoResults.IsVisible = matches.Count == 0;
+        // Anything that is not a program name can be a question: the last row sends it to the AI.
+        if (AskAiRequested is not null && query.Length >= 2)
+        {
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+            row.Children.Add(new Border
+            {
+                Width = 30, Height = 30, CornerRadius = new CornerRadius(9), Background = Res.Brush("AccentGradientDiagonal"),
+                Child = new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small" }, Data = Res.Icon("IconSparkle"), Stroke = Brushes.White },
+            });
+            var text = new StackPanel { Margin = new Thickness(12, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+            text.Children.Add(new TextBlock { Text = $"Ask AI: {query}", FontWeight = FontWeight.SemiBold, FontSize = 13.5, TextTrimming = TextTrimming.CharacterEllipsis });
+            text.Children.Add(new TextBlock { Text = "It can answer, or do it for you in OverDesk", FontSize = 11, Classes = { "faint" } });
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+            var chip = new Border { Classes = { "chip" }, Child = new TextBlock { Text = "Ask ↵" }, VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(chip, 2);
+            row.Children.Add(chip);
+            var ask = new Button { Classes = { "result" }, Content = row, Tag = chip };
+            ask.Click += (_, _) =>
+            {
+                SearchBox.Text = "";
+                ResultsCard.IsVisible = false;
+                AskAiRequested?.Invoke(query);
+            };
+            _resultButtons.Add(ask);
+            Results.Children.Add(ask);
+        }
+
+        NoResults.IsVisible = _resultButtons.Count == 0;
         ResultsCard.IsVisible = true;
         SetHighlight(0);
     }

@@ -93,6 +93,11 @@ internal static class DevSnapshot
             await Task.Delay(900);
         }
 
+        main.DevHomeSearch("plan my week");
+        await Task.Delay(500);
+        Save(main, Path.Combine(dir, "home-ask.png"));
+        main.DevHomeSearch("");
+
         // No real question here: the default provider may be the user's own Claude account.
         main.DevOpenAi(sheet: false, rail: false);
         await Task.Delay(1500);

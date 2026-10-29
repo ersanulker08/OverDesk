@@ -98,6 +98,7 @@ public partial class MainWindow : Window
         OverlayWaves.IsAnimated = _settings.AnimatedBackground;
         StageWaves.IsAnimated = _settings.AnimatedBackground;
         Home.ProgramRequested += OpenProgram;
+        Home.AskAiRequested += question => OpenAi(question: question);
         Home.AddProgramRequested += () => _ = AddProgramsAsync();
         Home.PinToggled += TogglePin;
         Home.RecentRemoved += path =>
@@ -244,6 +245,7 @@ public partial class MainWindow : Window
         _ai.DevShowDemo(folder);
         _ = AiPanel().AttachPathsAsync(new[] { Path.Combine(folder, "README.md"), Path.Combine(folder, "assets", "overdesk-logo.png") });
     }
+    internal void DevHomeSearch(string text) => Home.DevSearch(text);
     internal void DevShowWorkspaces() => ShowWorkspaceMenu();
     internal void DevScrollDock(double y) => Dock.DevScroll(y);
     internal void DevCloseTools() => CloseToolPanel();

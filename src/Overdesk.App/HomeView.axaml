@@ -35,7 +35,7 @@
                         <Path Classes="icon" Data="{StaticResource IconSearch}" Height="18"
                               VerticalAlignment="Center"/>
                         <TextBox x:Name="SearchBox" Grid.Column="1" Classes="search" Margin="12,0,8,0"
-                                 PlaceholderText="Search programs on this computer…"/>
+                                 PlaceholderText="Search programs or ask the AI…"/>
                         <Border Grid.Column="2" Classes="chip" VerticalAlignment="Center">
                             <TextBlock x:Name="SearchHint" Text="Ctrl K"/>
                         </Border>

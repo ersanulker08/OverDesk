@@ -776,10 +776,13 @@ public partial class AiPanelView : UserControl
         }
 
         if (turn.Actions.Count > 0) content.Children.Add(ActionList(turn));
+        if (turn.Pending is { } pending) content.Children.Add(ApprovalCard(pending));
         if (turn.Error is { } error)
             content.Children.Add(new SelectableTextBlock { Classes = { "msg" }, Text = "⚠ " + error, Foreground = Res.Brush("DangerBrush") });
         else if (turn.Text.Length == 0 && turn.IsStreaming)
-            content.Children.Add(new TextBlock { Text = turn.Actions.Count > 0 ? "Working…" : "Thinking…", Classes = { "muted" }, FontSize = 12.5 });
+        {
+            if (turn.Pending is null) content.Children.Add(new TextBlock { Text = turn.Actions.Count > 0 ? "Working…" : "Thinking…", Classes = { "muted" }, FontSize = 12.5 });
+        }
         else
             foreach (var part in user ? new Control[] { new SelectableTextBlock { Classes = { "msg" }, Text = turn.Text } } : ChatMarkdown.Render(turn.Text, CopyAsync)) content.Children.Add(part);
 
@@ -791,6 +794,37 @@ public partial class AiPanelView : UserControl
             content.Children.Add(copy);
         }
         return new Border { Classes = { "bubble", user ? "user" : "assistant" }, Child = content };
+    }
+
+    /// <summary>The AI wants to do something hard to undo: Allow / Allow all in this chat / Deny.</summary>
+    private Control ApprovalCard(AiApproval approval)
+    {
+        var stack = new StackPanel { Spacing = 10 };
+        var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
+        title.Children.Add(new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small" }, Data = Res.Icon("IconShield"), Stroke = Res.Brush("WarningBrush"), VerticalAlignment = VerticalAlignment.Center });
+        title.Children.Add(new TextBlock { Text = "Allow this?", FontWeight = FontWeight.SemiBold, FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center });
+        stack.Children.Add(title);
+        stack.Children.Add(ChatMarkdown.Inline(approval.Text, 12.5));
+
+        var buttons = new WrapPanel();
+        Button Choice(string text, string classes, bool allow, bool always)
+        {
+            var button = new Button { Content = text, Margin = new Thickness(0, 0, 6, 0), FontSize = 12, Padding = new Thickness(12, 5) };
+            button.Classes.Add(classes);
+            button.Click += (_, _) => _ai?.Answer(approval, allow, always);
+            return button;
+        }
+        buttons.Children.Add(Choice("Allow", "accent", true, false));
+        var all = Choice("Allow all", "ghost", true, true);
+        ToolTip.SetTip(all, "Allow this and every further action in this conversation");
+        buttons.Children.Add(all);
+        buttons.Children.Add(Choice("Deny", "ghost", false, false));
+        stack.Children.Add(buttons);
+        return new Border
+        {
+            Background = new SolidColorBrush(Color.Parse("#FFB547"), 0.07), BorderBrush = new SolidColorBrush(Color.Parse("#FFB547"), 0.35),
+            BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Padding = new Thickness(12, 10), Child = stack,
+        };
     }
 
     /// <summary>

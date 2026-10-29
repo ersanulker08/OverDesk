@@ -26,6 +26,7 @@ public partial class MainWindow
         var tools = new List<AiTool>();
         tools.AddRange(AppTools());
         tools.AddRange(WorkTools());
+        if (_settings.AiFolder is { } folder && Directory.Exists(folder)) tools.Add(RunCommandTool(folder));
         return tools;
     }
 
@@ -95,6 +96,7 @@ public partial class MainWindow
             Description = "Close a program tab or web tab. Only when the user asked for it: closing quits a program OverDesk started.",
             Schema = AiTool.Object(("title", "string", "Tab title (a part of it is enough).", true)),
             Label = a => $"Closing {AiToolbox.Str(a, "title")}",
+            Approval = a => $"Close the tab “{AiToolbox.Str(a, "title")}”?",
             Run = (a, _) => Ui(() =>
             {
                 var title = AiToolbox.Str(a, "title") ?? "";
@@ -194,6 +196,43 @@ public partial class MainWindow
             Run = (a, _) => Ui(() => OpenInEditor(AiToolbox.Str(a, "path"), AiToolbox.Int(a, "line"))),
         };
     }
+
+    /// <summary>
+    /// A shell command in the project folder (build, test, lint, git status...). Every run asks the user first and
+    /// shows up as a task in the dock with its live log.
+    /// </summary>
+    private AiTool RunCommandTool(string folder) => new()
+    {
+        Name = "run_command",
+        Description = "Run a shell command in the project folder and get its output, e.g. to build, run tests or a linter, or check git status. " +
+                      "The user approves every command. Commands that keep running (dev servers) are left running in the background after the wait.",
+        Schema = AiTool.Object(("command", "string", "The command line, as typed in a terminal in the project folder.", true),
+                               ("wait_seconds", "integer", "How long to wait for it to finish (5-600, default 120).", false)),
+        Label = a => $"Running `{AiToolbox.Str(a, "command")}`",
+        Approval = a => $"Run `{AiToolbox.Str(a, "command")}` in {Path.GetFileName(folder.TrimEnd('/', '\\'))}?",
+        Run = async (a, ct) =>
+        {
+            var command = AiToolbox.Str(a, "command");
+            if (string.IsNullOrWhiteSpace(command)) return AiToolResult.Error("No command given.");
+            var task = await Ui(() => _runner.Start("AI: " + (command.Length > 40 ? command[..39] + "…" : command), command, folder));
+            var wait = TimeSpan.FromSeconds(Math.Clamp(AiToolbox.Int(a, "wait_seconds") ?? 120, 5, 600));
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                while (task.IsRunning && clock.Elapsed < wait) await Task.Delay(250, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                _runner.Stop(task);
+                throw;
+            }
+            var output = task.Output;
+            if (output.Length > 12000) output = "…" + output[^12000..];
+            if (task.IsRunning)
+                return new AiToolResult($"Still running after {wait.TotalSeconds:0} s (left running as a task in the dock). Output so far:\n{output}");
+            return new AiToolResult($"Exit code {task.ExitCode}.\n{output}", IsError: task.ExitCode != 0);
+        },
+    };
 
     private string DescribeState()
     {
@@ -442,6 +481,7 @@ public partial class MainWindow
             Description = "Delete a whole work. Only when the user clearly asked for it. A copy is kept in the works-trash folder.",
             Schema = AiTool.Object(WorkParam),
             Label = a => $"Deleting {WorkName(a)}",
+            Approval = a => $"Delete the work {WorkName(a)}?",
             Run = (a, _) => Ui(() =>
             {
                 if (FindWork(a, out var work) is { } error) return error;

@@ -25,6 +25,12 @@ public sealed class AiTool
     /// <summary>A short line for the chat ("Created “Groceries”"), built from the arguments before the tool runs.</summary>
     public Func<JsonObject, string>? Label { get; init; }
 
+    /// <summary>
+    /// For actions that are hard to undo (running a command, deleting a work): what to ask the user ("Run `npm test`
+    /// in OverDesk?"). The call waits until they allow or deny it in the chat.
+    /// </summary>
+    public Func<JsonObject, string>? Approval { get; init; }
+
     /// <summary>File tools for the chosen project folder. Claude Code brings its own, so it gets only the others.</summary>
     public bool IsFileTool { get; init; }
 
@@ -62,9 +68,12 @@ public sealed class AiToolbox
     /// <summary>Raised after a call that failed, with its error.</summary>
     public event Action<string>? Failed;
 
+    /// <summary>Asks the user to allow an action (the text says what); without it, actions that need approval are refused.</summary>
+    public Func<string, CancellationToken, Task<bool>>? Approve { get; set; }
+
     public AiToolbox Without(Func<AiTool, bool> skip)
     {
-        var copy = new AiToolbox(Tools.Where(t => !skip(t)).ToList());
+        var copy = new AiToolbox(Tools.Where(t => !skip(t)).ToList()) { Approve = Approve };
         copy.Activity += line => Activity?.Invoke(line);
         copy.Failed += line => Failed?.Invoke(line);
         return copy;
@@ -78,6 +87,17 @@ public sealed class AiToolbox
         string label;
         try { label = tool.Label?.Invoke(arguments) ?? name.Replace('_', ' '); }
         catch (Exception) { label = name.Replace('_', ' '); }
+        if (tool.Approval is not null)
+        {
+            string question;
+            try { question = tool.Approval(arguments); }
+            catch (Exception) { question = label; }
+            if (Approve is null || !await Approve(question, cancellation))
+            {
+                Failed?.Invoke($"{label}: not allowed");
+                return AiToolResult.Error("The user did not allow this action. Do not try it again unless they ask for it.");
+            }
+        }
         Activity?.Invoke(label);
         try
         {

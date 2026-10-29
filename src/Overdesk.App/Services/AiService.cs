@@ -19,6 +19,16 @@ internal sealed class AiTurn
 
     [JsonIgnore] public List<byte[]> Images { get; } = new();
     [JsonIgnore] public bool IsStreaming { get; set; }
+
+    /// <summary>An action waiting for the user's yes or no.</summary>
+    [JsonIgnore] public AiApproval? Pending { get; set; }
+}
+
+/// <summary>A question the AI asked before doing something hard to undo (shown as a card in its answer).</summary>
+internal sealed class AiApproval
+{
+    public required string Text { get; init; }
+    public TaskCompletionSource<bool> Answer { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 }
 
 /// <summary>Where a provider comes from, which is how the model picker groups them.</summary>
@@ -230,7 +240,7 @@ internal sealed class AiService
             var folder = Folder;
             thread.Folder = folder;
 
-            var context = BuildContext(provider, folder, answer);
+            var context = BuildContext(provider, folder, thread, answer, cts.Token);
             var system = await SystemPromptAsync(context, cts.Token);
             var stream = Stream(provider, model, system, context, thread, answer, cts.Token);
             var lastUpdate = DateTime.MinValue;
@@ -310,7 +320,7 @@ internal sealed class AiService
     /// The tools of this turn: OverDesk's own (when allowed) plus the project folder's file tools. Every call shows up
     /// in the answer as a line. Installed AI apps reach them over the local MCP server.
     /// </summary>
-    private AiContext? BuildContext(IChatProvider provider, string? folder, AiTurn answer)
+    private AiContext? BuildContext(IChatProvider provider, string? folder, ChatThread thread, AiTurn answer, CancellationToken stop)
     {
         var tools = new List<AiTool>();
         if (_settings.AiTools && AppTools is not null) tools.AddRange(AppTools());
@@ -324,6 +334,7 @@ internal sealed class AiService
             Changed?.Invoke();
         });
         box.Failed += line => Dispatcher.UIThread.Post(() => answer.Actions.Add("⚠ " + line));
+        box.Approve = (question, cancellation) => AskAsync(thread, answer, question, cancellation, stop);
         _activeTools = box;
 
         McpEndpoint? mcp = null;
@@ -341,6 +352,41 @@ internal sealed class AiService
         return new AiContext(box, folder, _settings.AiAllowEdits, mcp);
     }
 
+    /// <summary>
+    /// Show the question in the answer and wait for Allow / Deny. Stopping the chat counts as a no. Calls over MCP
+    /// carry the server's token, so the chat's own stop token is watched too.
+    /// </summary>
+    private async Task<bool> AskAsync(ChatThread thread, AiTurn answer, string question, CancellationToken cancellation, CancellationToken stop)
+    {
+        if (thread.AllowAll)
+        {
+            Dispatcher.UIThread.Post(() => answer.Actions.Add("Allowed for this chat: " + question));
+            return true;
+        }
+        var approval = new AiApproval { Text = question };
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            answer.Pending = approval;
+            Changed?.Invoke();
+        });
+        await using var a = cancellation.Register(() => approval.Answer.TrySetResult(false));
+        await using var b = stop.Register(() => approval.Answer.TrySetResult(false));
+        var allowed = await approval.Answer.Task;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (answer.Pending == approval) answer.Pending = null;
+            Changed?.Invoke();
+        });
+        return allowed;
+    }
+
+    /// <summary>The user's answer to an approval card. "Always" allows every further action in this conversation.</summary>
+    public void Answer(AiApproval approval, bool allow, bool always = false)
+    {
+        if (always) Current.AllowAll = true;
+        approval.Answer.TrySetResult(allow);
+    }
+
     private async Task<string> SystemPromptAsync(AiContext? context, CancellationToken cancellation)
     {
         var prompt = new StringBuilder(_settings.AiSystemPrompt);
@@ -356,8 +402,11 @@ internal sealed class AiService
                   .Append("code, look at the real files with your tools. ")
                   .Append(context.AllowEdits
                       ? "You may create and change files in this folder when the user asks for it: make focused changes, then use " +
-                        "open_in_editor (when available) to show the changed file. You cannot run shell commands."
+                        "open_in_editor (when available) to show the changed file."
                       : "You can read its files but not change them (file changes are switched off in OverDesk's settings): show changes as code blocks.")
+                  .Append(context.Tools.Tools.Any(t => t.Name == "run_command")
+                      ? " With run_command you can build, test and lint (the user approves each command): after changing code, check that it builds."
+                      : "")
                   .Append("\n\n").Append(await OverviewAsync(folder, cancellation));
         }
         return prompt.ToString();
@@ -389,6 +438,12 @@ internal sealed class AiService
             Role = ChatMessage.Assistant,
             Actions = { "Reading “Release to-dos”", "Adding to “Release to-dos”", "Reading README.md", "Editing README.md", "Opening README.md in the editor" },
             Text = "Done. Here is what changed:\n\n## Release to-dos\n1. **Tag** the version (`v0.2.0`)\n2. Build with `scripts/package-macos.sh`\n3. Write the _release notes_\n4. Upload to [GitHub releases](https://github.com)\n\n> README.md: fixed ~~recieve~~ → receive, now open in VS Code.\n\n| File | Change |\n|---|---|\n| README.md | 1 line |\n| Release to-dos | +4 rows |\n\n```bash\ngit tag v0.2.0\n```",
+        });
+        Current.Turns.Add(new AiTurn { Role = ChatMessage.User, Text = "Now run the tests" });
+        Current.Turns.Add(new AiTurn
+        {
+            Role = ChatMessage.Assistant, Actions = { "Reading package.json" },
+            Pending = new AiApproval { Text = "Run `npm test` in OverDesk?" },
         });
         Changed?.Invoke();
     }

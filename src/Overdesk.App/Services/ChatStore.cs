@@ -21,6 +21,9 @@ internal sealed class ChatThread
     public string? Folder { get; set; }
 
     public DateTime Updated { get; set; } = DateTime.Now;
+
+    /// <summary>The user chose "allow all" on an approval card: later actions in this conversation run without asking.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public bool AllowAll { get; set; }
     public List<AiTurn> Turns { get; set; } = new();
 }
 

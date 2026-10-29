@@ -99,3 +99,25 @@ public class AiMemoryTests
         Assert.Empty(memory.Notes("/p"));
     }
 }
+
+public class ConditionalApprovalTests
+{
+    [Fact]
+    public async Task A_null_question_means_no_approval_is_needed()
+    {
+        var runs = 0;
+        var box = new AiToolbox(new[]
+        {
+            new AiTool
+            {
+                Name = "projects", Description = "List or launch.", Schema = AiTool.Object(),
+                Approval = a => AiToolbox.Str(a, "action") == "launch" ? "Launch?" : null,
+                Run = (_, _) => { runs++; return Task.FromResult(new AiToolResult("ok")); },
+            },
+        });
+        // No approver: listing still runs, launching is refused.
+        Assert.False((await box.RunAsync("projects", new JsonObject { ["action"] = "list" }, CancellationToken.None)).IsError);
+        Assert.True((await box.RunAsync("projects", new JsonObject { ["action"] = "launch" }, CancellationToken.None)).IsError);
+        Assert.Equal(1, runs);
+    }
+}

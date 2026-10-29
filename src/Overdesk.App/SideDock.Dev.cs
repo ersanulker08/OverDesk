@@ -139,6 +139,22 @@ public partial class SideDock
         RenderFocus();
     }
 
+    /// <summary>For the AI: start a focus session (optionally of a new length), stop it, or describe it.</summary>
+    internal void StartFocus(int? minutes)
+    {
+        if (minutes is > 0 and <= 240) _settings.FocusMinutes = minutes.Value;
+        ResetFocus();
+        _focusRunning = true;
+        _focusTick.Start();
+        RenderFocus();
+    }
+
+    internal void StopFocus() => ResetFocus();
+
+    internal string FocusStatus => _focusRunning
+        ? $"{(_onBreak ? "On a break" : "Focusing")}, {_focusLeft.ToString(@"mm\:ss")} left (sessions of {_settings.FocusMinutes} min, breaks of {_settings.BreakMinutes} min)."
+        : $"Not running (sessions of {_settings.FocusMinutes} min).";
+
     private void ResetFocus()
     {
         _focusTick.Stop();

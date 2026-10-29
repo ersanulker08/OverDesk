@@ -139,6 +139,96 @@ public partial class MainWindow
         };
     }
 
+    private IEnumerable<AiTool> AssistantTools()
+    {
+        yield return new AiTool
+        {
+            Name = "clipboard_history",
+            Description = "The last texts the user copied (newest first), from OverDesk's clipboard history in the dock.",
+            Schema = AiTool.Object(),
+            Label = _ => "Looking at the clipboard history",
+            Run = (_, _) => Ui(() => _clipboard.Items.Count == 0
+                ? new AiToolResult("The clipboard history is empty.")
+                : new AiToolResult(string.Join("\n---\n", _clipboard.Items.Select((t, i) => $"[{i + 1}] {(t.Length > 2000 ? t[..2000] + "…" : t)}")))),
+        };
+        yield return new AiTool
+        {
+            Name = "remind_me",
+            Description = "Remind the user of something after some minutes, with a notification (only while OverDesk stays open).",
+            Schema = AiTool.Object(("minutes", "number", "In how many minutes (0.5-1440).", true), ("text", "string", "What to remind them of.", true)),
+            Label = a => $"Reminder in {AiToolbox.Str(a, "minutes")} min: {AiToolbox.Str(a, "text")}",
+            Run = (a, _) => Ui(() =>
+            {
+                var minutes = double.TryParse(AiToolbox.Str(a, "minutes"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var m) ? m : 0;
+                if (minutes is < 0.5 or > 1440) return AiToolResult.Error("Give between 0.5 and 1440 minutes.");
+                var text = AiToolbox.Str(a, "text") ?? "Reminder";
+                var due = DateTime.Now.AddMinutes(minutes);
+                Avalonia.Threading.DispatcherTimer.RunOnce(() =>
+                {
+                    ShowToast("⏰ " + text, "IconBell");
+                    _desktop.Notify("OverDesk reminder", text);
+                }, TimeSpan.FromMinutes(minutes));
+                return new AiToolResult($"I will remind the user at {due:HH:mm}.");
+            }),
+        };
+        yield return new AiTool
+        {
+            Name = "focus_timer",
+            Description = "The focus timer in the dock (Pomodoro style): start a session (optionally with a length in minutes), stop it, or see its state.",
+            Schema = AiTool.Object(("action", "string", "status (default), start or stop.", false), ("minutes", "integer", "start: session length.", false)),
+            Label = a => (AiToolbox.Str(a, "action") ?? "status") switch
+            {
+                "start" => $"Starting a {AiToolbox.Str(a, "minutes") ?? _settings.FocusMinutes.ToString()} min focus session",
+                "stop" => "Stopping the focus timer",
+                _ => "Checking the focus timer",
+            },
+            Run = (a, _) => Ui(() =>
+            {
+                switch (AiToolbox.Str(a, "action") ?? "status")
+                {
+                    case "start": Dock.StartFocus(AiToolbox.Int(a, "minutes")); break;
+                    case "stop": Dock.StopFocus(); break;
+                }
+                SaveSettings();
+                return new AiToolResult(Dock.FocusStatus);
+            }),
+        };
+        yield return new AiTool
+        {
+            Name = "projects",
+            Description = "The user's projects in OverDesk (folder, start commands, URL, editor): list them, launch one (opens its editor, " +
+                          "runs its start commands as tasks and opens its URL), or stop its tasks.",
+            Schema = AiTool.Object(("action", "string", "list (default), launch or stop.", false), ("name", "string", "Project name.", false)),
+            Label = a => (AiToolbox.Str(a, "action") ?? "list") switch
+            {
+                "launch" => $"Launching {AiToolbox.Str(a, "name")}",
+                "stop" => $"Stopping {AiToolbox.Str(a, "name")}",
+                _ => "Looking at your projects",
+            },
+            Approval = a => AiToolbox.Str(a, "action") == "launch" ? $"Launch the project {AiToolbox.Str(a, "name")} (runs its start commands)?" : null,
+            Run = (a, _) => Ui(() =>
+            {
+                var name = AiToolbox.Str(a, "name") ?? "";
+                var project = _settings.Projects.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                              ?? _settings.Projects.FirstOrDefault(p => name.Length > 0 && p.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
+                switch (AiToolbox.Str(a, "action") ?? "list")
+                {
+                    case "launch" when project is not null:
+                        LaunchProject(project);
+                        return new AiToolResult($"Launched {project.Name}: {(project.Commands.Count > 0 ? string.Join(", ", project.Commands) : "no start commands")}{(project.Url is { } u ? $"; opening {u}" : "")}.");
+                    case "stop" when project is not null:
+                        StopProject(project);
+                        return new AiToolResult($"Stopped the tasks of {project.Name}.");
+                    case "launch" or "stop":
+                        return AiToolResult.Error($"No project is called “{name}”.");
+                    default:
+                        return new AiToolResult(_settings.Projects.Count == 0 ? "No projects yet (choosing an AI project folder adds one)."
+                            : string.Join("\n", _settings.Projects.Select(p => $"- {p.Name}: {p.Folder}; commands: {string.Join(" && ", p.Commands.DefaultIfEmpty("none"))}{(p.Url is { } u ? $"; {u}" : "")}")));
+                }
+            }),
+        };
+    }
+
     /// <summary>The visible text of a web tab (its title, address and up to 40,000 characters of text).</summary>
     private async Task<AiToolResult> ReadWebPageAsync(WebTab tab)
     {

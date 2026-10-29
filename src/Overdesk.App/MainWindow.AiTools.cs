@@ -29,6 +29,7 @@ public partial class MainWindow
         tools.AddRange(WorkTools());
         tools.AddRange(DeskTools());
         tools.AddRange(LayoutTools());
+        tools.AddRange(AssistantTools());
         if (_webFactory.IsSupported) tools.AddRange(WebTools());
         tools.AddRange(PluginAiTools(tools.Select(t => t.Name).ToHashSet()));
         if (_settings.AiFolder is { } folder && Directory.Exists(folder)) tools.Add(RunCommandTool(folder));

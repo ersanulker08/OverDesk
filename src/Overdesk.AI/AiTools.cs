@@ -27,9 +27,10 @@ public sealed class AiTool
 
     /// <summary>
     /// For actions that are hard to undo (running a command, deleting a work): what to ask the user ("Run `npm test`
-    /// in OverDesk?"). The call waits until they allow or deny it in the chat.
+    /// in OverDesk?"). The call waits until they allow or deny it in the chat. Returning null means this particular call
+    /// needs no approval (e.g. "list" but not "launch").
     /// </summary>
-    public Func<JsonObject, string>? Approval { get; init; }
+    public Func<JsonObject, string?>? Approval { get; init; }
 
     /// <summary>File tools for the chosen project folder. Claude Code brings its own, so it gets only the others.</summary>
     public bool IsFileTool { get; init; }
@@ -87,11 +88,14 @@ public sealed class AiToolbox
         string label;
         try { label = tool.Label?.Invoke(arguments) ?? name.Replace('_', ' '); }
         catch (Exception) { label = name.Replace('_', ' '); }
+        string? question = null;
         if (tool.Approval is not null)
         {
-            string question;
             try { question = tool.Approval(arguments); }
             catch (Exception) { question = label; }
+        }
+        if (question is not null)
+        {
             if (Approve is null || !await Approve(question, cancellation))
             {
                 Failed?.Invoke($"{label}: not allowed");

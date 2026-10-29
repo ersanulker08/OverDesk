@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Overdesk.Core\Overdesk.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Edge's engine for web tabs (the runtime ships with Windows 10/11). -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!-- Windows TFM for the WinRT media API. EnableWindowsTargeting lets it compile on macOS too. -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- The WebView2 package also brings its WPF/WinForms wrappers, which we never use; their WindowsBase mismatch is harmless. -->
+    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+</Project>

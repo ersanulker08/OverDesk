@@ -1,0 +1,24 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      # Each OS builds its own flavor: macOS -> net10.0 + Platform.MacOS, Windows -> net10.0-windows + Platform.Windows.
+      - name: Build OverDesk
+        run: dotnet build src/Overdesk.App -c Release
+      - name: Build the sample plugin
+        run: dotnet build samples/HelloTool -c Release

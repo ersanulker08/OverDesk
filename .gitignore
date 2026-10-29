@@ -1,0 +1,30 @@
+# Build output
+bin/
+obj/
+dist/
+samples/*/plugin/
+*.binlog
+TestResults/
+
+# IDE / editor
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.DotSettings.user
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local AI assistant notes and settings (personal, not part of the project)
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+
+# Local data and secrets
+*.env
+.env*
+settings.local.json

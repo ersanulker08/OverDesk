@@ -1,0 +1,68 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Overdesk.App.App"
+             Name="OverDesk"
+             RequestedThemeVariant="Dark">
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://Overdesk.App/Theme/Icons.axaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Surfaces, darkest to lightest -->
+            <Color x:Key="Bg0Color">#09090D</Color>
+            <Color x:Key="Bg1Color">#0F0F15</Color>
+            <Color x:Key="Bg2Color">#15151D</Color>
+            <Color x:Key="Bg3Color">#1D1D28</Color>
+            <Color x:Key="Bg4Color">#272735</Color>
+            <SolidColorBrush x:Key="Bg0Brush" Color="{StaticResource Bg0Color}"/>
+            <SolidColorBrush x:Key="Bg1Brush" Color="{StaticResource Bg1Color}"/>
+            <SolidColorBrush x:Key="Bg2Brush" Color="{StaticResource Bg2Color}"/>
+            <SolidColorBrush x:Key="Bg3Brush" Color="{StaticResource Bg3Color}"/>
+            <SolidColorBrush x:Key="Bg4Brush" Color="{StaticResource Bg4Color}"/>
+            <SolidColorBrush x:Key="GlassBrush" Color="#C415151D"/>
+            <SolidColorBrush x:Key="StrokeBrush" Color="#23232F"/>
+            <SolidColorBrush x:Key="StrokeStrongBrush" Color="#33334A"/>
+            <SolidColorBrush x:Key="TextBrush" Color="#F1F1F6"/>
+            <SolidColorBrush x:Key="MutedBrush" Color="#9898AE"/>
+            <SolidColorBrush x:Key="FaintBrush" Color="#5C5C72"/>
+            <SolidColorBrush x:Key="DangerBrush" Color="#FF4D5E"/>
+            <SolidColorBrush x:Key="SuccessBrush" Color="#2FD98B"/>
+            <SolidColorBrush x:Key="WarningBrush" Color="#FFB547"/>
+
+            <!-- Accent: replaced at runtime by AccentThemes.Apply; these are the Crimson defaults -->
+            <Color x:Key="AccentColor">#FA1E4E</Color>
+            <Color x:Key="Accent2Color">#FF6A3D</Color>
+            <SolidColorBrush x:Key="AccentBrush" Color="#FA1E4E"/>
+            <SolidColorBrush x:Key="Accent2Brush" Color="#FF6A3D"/>
+            <SolidColorBrush x:Key="AccentSoftBrush" Color="#2AFA1E4E"/>
+            <SolidColorBrush x:Key="AccentFaintBrush" Color="#14FA1E4E"/>
+            <SolidColorBrush x:Key="AccentBorderBrush" Color="#80FA1E4E"/>
+            <LinearGradientBrush x:Key="AccentGradient" StartPoint="0%,0%" EndPoint="100%,0%">
+                <GradientStop Color="#FA1E4E" Offset="0"/>
+                <GradientStop Color="#FF6A3D" Offset="1"/>
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="AccentGradientDiagonal" StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#FA1E4E" Offset="0"/>
+                <GradientStop Color="#FF6A3D" Offset="1"/>
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="AccentTabGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                <GradientStop Color="#00FA1E4E" Offset="0"/>
+                <GradientStop Color="#30FA1E4E" Offset="1"/>
+            </LinearGradientBrush>
+            <BoxShadows x:Key="AccentGlow">0 0 18 0 #70FA1E4E</BoxShadows>
+            <BoxShadows x:Key="AccentGlowSmall">0 0 10 0 #90FA1E4E</BoxShadows>
+            <BoxShadows x:Key="AccentGlowLarge">0 0 40 2 #55FA1E4E</BoxShadows>
+            <BoxShadows x:Key="CardShadow">0 18 48 0 #A0000000</BoxShadows>
+            <BoxShadows x:Key="NoShadow">0 0 0 0 #00000000</BoxShadows>
+
+            <FontFamily x:Key="UiFont">fonts:Inter#Inter, $Default</FontFamily>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme/>
+        <StyleInclude Source="avares://Overdesk.App/Theme/Styles.axaml"/>
+    </Application.Styles>
+</Application>

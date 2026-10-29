@@ -1,0 +1,12 @@
+{
+  // Every tool is a folder with this file in it. Copy the built "plugin" folder into OverDesk's plugins folder
+  // (<settings folder>/plugins/hello) and it shows up in the tools strip on the right.
+  "id": "overdesk.samples.hello",
+  "name": "Hello",
+  "version": "1.0.0",
+  "description": "The smallest possible in-process tool: shows how a plugin returns its own view.",
+  "run": "inProcess",
+  "assembly": "HelloTool.dll",
+  "typeName": "Overdesk.Samples.HelloTool.HelloPlugin",
+  "icon": "IconNote"
+}

@@ -1,0 +1,114 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Overdesk.App.AiPanelView">
+  <Grid ColumnDefinitions="40,*">
+    <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*,Auto">
+        <!-- Provider / model picker -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="12,2,12,8">
+            <Button x:Name="ModelButton" Classes="modelpicker" HorizontalAlignment="Stretch">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <Border x:Name="KindBadge" Classes="chip" Padding="5,1" VerticalAlignment="Center">
+                        <TextBlock x:Name="KindText" FontSize="9" FontWeight="Bold"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="8,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="ProviderText" FontSize="11" Classes="muted"/>
+                        <TextBlock x:Name="ModelText" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <Path Grid.Column="2" Classes="icon small" Data="{StaticResource IconChevronDown}" Height="9"/>
+                </Grid>
+            </Button>
+            <Button x:Name="NewChatButton" Grid.Column="1" Classes="icon" Margin="6,0,0,0" ToolTip.Tip="New chat">
+                <Path Classes="icon" Data="{StaticResource IconPlus}"/>
+            </Button>
+        </Grid>
+
+        <Border x:Name="ProblemBar" Grid.Row="1" Margin="12,0,12,8" Padding="10,8" CornerRadius="10"
+                Background="#1AFFB547" BorderBrush="#33FFB547" BorderThickness="1" IsVisible="False">
+            <TextBlock x:Name="ProblemText" FontSize="11.5" TextWrapping="Wrap"/>
+        </Border>
+
+        <!-- Conversation -->
+        <Panel Grid.Row="2">
+            <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Disabled" Padding="12,0">
+                <StackPanel x:Name="Messages" Spacing="12" Margin="0,4,0,12"/>
+            </ScrollViewer>
+            <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10" Margin="18">
+                <Border Width="54" Height="54" CornerRadius="16" HorizontalAlignment="Center"
+                        Background="{DynamicResource AccentGradientDiagonal}" BoxShadow="{DynamicResource AccentGlow}">
+                    <Path Classes="icon" Data="{StaticResource IconSparkle}" Stroke="White" Height="24"/>
+                </Border>
+                <TextBlock Text="Ask anything" FontSize="17" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                <TextBlock Classes="muted" FontSize="12" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="260"
+                           Text="Local models stay on this computer. Attach the clipboard or a screenshot of the program you are using."/>
+                <WrapPanel x:Name="QuickActions" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+            </StackPanel>
+        </Panel>
+
+        <!-- Composer -->
+        <StackPanel Grid.Row="3" Margin="12,0,12,12" Spacing="6">
+            <WrapPanel x:Name="Attachments"/>
+            <Border Classes="composer">
+                <Grid RowDefinitions="*,Auto">
+                    <TextBox x:Name="Input" Classes="search composer" AcceptsReturn="True" TextWrapping="Wrap"
+                             MaxHeight="160" MinHeight="40" Margin="12,8,12,0"
+                             PlaceholderText="Message… (Enter to send, Shift+Enter for a new line)"/>
+                    <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,*,Auto" Margin="6,2,6,6">
+                        <Button x:Name="AttachClipboard" Classes="icon" Width="28" Height="28" ToolTip.Tip="Attach the clipboard text">
+                            <Path Classes="icon small" Data="{StaticResource IconClipboard}"/>
+                        </Button>
+                        <Button x:Name="AttachScreenshot" Grid.Column="1" Classes="icon" Width="28" Height="28"
+                                ToolTip.Tip="Attach a screenshot of the program on stage">
+                            <Path Classes="icon small" Data="{StaticResource IconCamera}"/>
+                        </Button>
+                        <Button x:Name="PromptsButton" Grid.Column="2" Classes="icon" Width="28" Height="28" ToolTip.Tip="Prompt library">
+                            <Path Classes="icon small" Data="{StaticResource IconBook}"/>
+                        </Button>
+                        <TextBlock x:Name="SpeedText" Grid.Column="3" Classes="faint mono" FontSize="10.5" VerticalAlignment="Center"
+                                   HorizontalAlignment="Right" Margin="0,0,8,0"/>
+                        <Button x:Name="SendButton" Grid.Column="4" Classes="playbtn small" ToolTip.Tip="Send">
+                            <Path x:Name="SendIcon" Classes="icon" Data="{StaticResource IconSend}" Stroke="White" Height="13"/>
+                        </Button>
+                    </Grid>
+                </Grid>
+            </Border>
+        </StackPanel>
+    </Grid>
+
+    <!-- Model picker: slides over the chat inside the panel -->
+    <Border x:Name="ModelSheet" Grid.Column="1" IsVisible="False" Margin="8,0,8,8" Classes="modelsheet">
+        <Grid RowDefinitions="Auto,*">
+            <Grid ColumnDefinitions="*,Auto" Margin="14,12,8,6">
+                <StackPanel>
+                    <TextBlock Text="Choose a model" FontSize="15" FontWeight="SemiBold"/>
+                    <TextBlock Classes="muted" FontSize="11.5" Text="Apps, local models or cloud APIs"/>
+                </StackPanel>
+                <Button x:Name="CloseSheet" Grid.Column="1" Classes="icon" VerticalAlignment="Top" ToolTip.Tip="Close">
+                    <Path Classes="icon" Data="{StaticResource IconClose}"/>
+                </Button>
+            </Grid>
+            <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel x:Name="ModelList" Margin="10,0,10,12" Spacing="6"/>
+            </ScrollViewer>
+        </Grid>
+    </Border>
+
+    <!-- Conversation history: a slim rail that opens over the chat on hover -->
+    <Border x:Name="HistoryRail" Grid.Column="0" Grid.ColumnSpan="2" HorizontalAlignment="Left" Width="40" ZIndex="5"
+            Classes="historyrail">
+        <DockPanel Width="236" HorizontalAlignment="Left">
+            <Button x:Name="RailNewChat" DockPanel.Dock="Top" Classes="railnew" Width="30" HorizontalAlignment="Left" ToolTip.Tip="New chat">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <Path Classes="icon" Data="{StaticResource IconPlus}" Height="14"/>
+                    <TextBlock x:Name="RailNewText" Text="New chat" FontWeight="SemiBold" FontSize="12.5" Opacity="0"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+            <TextBlock x:Name="RailTitle" DockPanel.Dock="Top" Classes="eyebrow" Text="HISTORY" FontSize="9" Margin="12,8,0,4"
+                       Opacity="0"/>
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden">
+                <StackPanel x:Name="HistoryList" Spacing="3" Margin="4,4,4,8"/>
+            </ScrollViewer>
+        </DockPanel>
+    </Border>
+  </Grid>
+</UserControl>

@@ -1,0 +1,65 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="using:Overdesk.App.Controls"
+        x:Class="Overdesk.App.SplashWindow"
+        Title="OverDesk"
+        Width="680" Height="420"
+        CanResize="False"
+        WindowDecorations="None"
+        WindowStartupLocation="CenterScreen"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent">
+
+    <Border x:Name="Card" Margin="20" CornerRadius="24" ClipToBounds="True"
+            BorderBrush="#22FFFFFF" BorderThickness="1" Opacity="0"
+            RenderTransformOrigin="50%,50%">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#15151F" Offset="0"/>
+                <GradientStop Color="#09090D" Offset="0.65"/>
+                <GradientStop Color="#0C0A10" Offset="1"/>
+            </LinearGradientBrush>
+        </Border.Background>
+        <Grid>
+            <c:WaveBackground x:Name="Waves" Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"
+                              StrandCount="46" Opacity="0"/>
+
+            <!-- Halo behind the logo -->
+            <Ellipse x:Name="Halo" Width="340" Height="340" Margin="0,-70,0,0" Opacity="0"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                <Ellipse.Fill>
+                    <RadialGradientBrush>
+                        <GradientStop Color="#40FA1E4E" Offset="0"/>
+                        <GradientStop Color="#00FA1E4E" Offset="1"/>
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+            </Ellipse>
+
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-28,0,0" Spacing="6">
+                <c:LogoMark x:Name="Logo" Width="128" Height="128" HorizontalAlignment="Center"
+                            Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"
+                            Progress="0" TileScale="0" Glow="0"/>
+                <TextBlock x:Name="Wordmark" HorizontalAlignment="Center" FontSize="36" FontWeight="Black"
+                           LetterSpacing="22" Opacity="0" Margin="0,14,0,0">
+                    <Run Text="OVER" Foreground="White"/><Run Text="DESK" Foreground="{DynamicResource AccentBrush}"/>
+                </TextBlock>
+                <TextBlock x:Name="Tagline" HorizontalAlignment="Center" Text="Every program. One desk."
+                           Foreground="{StaticResource MutedBrush}" FontSize="13" LetterSpacing="0.5" Opacity="0"/>
+            </StackPanel>
+
+            <!-- Loading bar + status -->
+            <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,34" Spacing="10">
+                <Grid Width="260" Height="3">
+                    <Border Background="#1FFFFFFF" CornerRadius="2"/>
+                    <Border x:Name="Bar" HorizontalAlignment="Left" Width="0" CornerRadius="2"
+                            Background="{DynamicResource AccentGradient}" BoxShadow="{DynamicResource AccentGlowSmall}"/>
+                </Grid>
+                <TextBlock x:Name="Status" HorizontalAlignment="Center" FontSize="11" LetterSpacing="1.2"
+                           Foreground="{StaticResource FaintBrush}" Text="STARTING"/>
+            </StackPanel>
+
+            <TextBlock x:Name="Version" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,20,16"
+                       FontSize="10.5" Foreground="{StaticResource FaintBrush}"/>
+        </Grid>
+    </Border>
+</Window>

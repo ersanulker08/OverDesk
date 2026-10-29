@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A minimal in-process OverDesk tool. Avalonia and Overdesk.Core come from the host, so they are not copied. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>HelloTool</AssemblyName>
+    <RootNamespace>Overdesk.Samples.HelloTool</RootNamespace>
+    <!-- Output next to the manifest, so the folder is the whole plugin. -->
+    <OutputPath>plugin</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.4" ExcludeAssets="runtime" />
+    <ProjectReference Include="../../src/Overdesk.Core/Overdesk.Core.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="overdesk.plugin.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,277 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Overdesk.App.Controls"
+             x:Class="Overdesk.App.SideDock"
+             ClipToBounds="True">
+    <Border Background="{StaticResource Bg1Brush}" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="0,0,1,0">
+        <Grid RowDefinitions="Auto,*">
+            <!-- Header -->
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Height="44" Margin="14,4,8,0">
+                <TextBlock x:Name="HeaderText" Classes="eyebrow" Text="YOUR DESK" VerticalAlignment="Center"/>
+                <Button x:Name="CollapseButton" Grid.Column="1" Classes="icon" Width="28" Height="28"
+                        HorizontalAlignment="Center">
+                    <Path x:Name="CollapseIcon" Classes="icon small" Data="{StaticResource IconChevronLeft}"/>
+                </Button>
+            </Grid>
+
+            <!-- ============================================== expanded: widget cards -->
+            <ScrollViewer x:Name="Expanded" Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Margin="12,2,12,14" Spacing="10">
+
+                    <!-- Now playing -->
+                    <Border x:Name="MediaCard" Classes="dockcard media" ClipToBounds="True" Cursor="Hand">
+                        <Panel>
+                            <!-- Tinted artwork backdrop -->
+                            <Border x:Name="MediaBackdrop" Opacity="0.35" IsHitTestVisible="False"/>
+                            <Border IsHitTestVisible="False">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+                                        <GradientStop Color="#9915151D" Offset="0"/>
+                                        <GradientStop Color="#F215151D" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                            </Border>
+
+                            <StackPanel Margin="12" Spacing="10">
+                                <TextBlock Classes="eyebrow" Text="NOW PLAYING" FontSize="9.5"/>
+
+                                <!-- Compact row -->
+                                <Grid x:Name="MediaCompact" ColumnDefinitions="Auto,*,Auto">
+                                    <Border x:Name="SmallArtFrame" Width="46" Height="46" CornerRadius="10" ClipToBounds="True"
+                                            Background="{DynamicResource AccentGradientDiagonal}">
+                                        <Panel>
+                                            <Path Classes="icon" Data="{StaticResource IconMusic}" Stroke="White" Height="20"/>
+                                            <Image x:Name="SmallArt" Stretch="UniformToFill"/>
+                                        </Panel>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="10,0,6,0" VerticalAlignment="Center" Spacing="1">
+                                        <TextBlock x:Name="MediaTitle" FontWeight="SemiBold" FontSize="13"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock x:Name="MediaArtist" Classes="muted" FontSize="11.5"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                    <Button x:Name="CompactPlay" Grid.Column="2" Classes="playbtn small" VerticalAlignment="Center">
+                                        <Path x:Name="CompactPlayIcon" Classes="icon" Data="{StaticResource IconPlay}"
+                                              Stroke="White" Fill="White" Height="12"/>
+                                    </Button>
+                                </Grid>
+
+                                <c:SeekBar x:Name="CompactSeek" Height="10" IsHitTestVisible="False"
+                                           Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"/>
+
+                                <!-- Expanded player -->
+                                <StackPanel x:Name="MediaDetails" Spacing="12" IsVisible="False">
+                                    <Border x:Name="BigArtFrame" Height="196" CornerRadius="14" ClipToBounds="True"
+                                            Background="{DynamicResource AccentGradientDiagonal}"
+                                            BoxShadow="{DynamicResource AccentGlow}">
+                                        <Panel>
+                                            <Path Classes="icon" Data="{StaticResource IconMusic}" Stroke="White" Height="56" StrokeThickness="1.4"/>
+                                            <Image x:Name="BigArt" Stretch="UniformToFill"/>
+                                        </Panel>
+                                    </Border>
+                                    <StackPanel Spacing="2">
+                                        <TextBlock x:Name="BigTitle" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock x:Name="BigArtist" Classes="muted" FontSize="12.5" TextTrimming="CharacterEllipsis"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0">
+                                            <Border Classes="chip"><TextBlock x:Name="MediaSource"/></Border>
+                                            <TextBlock x:Name="BigAlbum" Classes="faint" FontSize="11" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis" MaxWidth="150"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <StackPanel Spacing="4">
+                                        <c:SeekBar x:Name="BigSeek" Height="16"
+                                                   Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"/>
+                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,*,Auto">
+                                            <TextBlock x:Name="ElapsedText" Classes="faint mono" FontSize="11" VerticalAlignment="Center"/>
+                                            <Button x:Name="Back10" Grid.Column="2" Classes="icon seekjump" ToolTip.Tip="Back 10 seconds">
+                                                <TextBlock Text="−10s"/>
+                                            </Button>
+                                            <Button x:Name="Fwd10" Grid.Column="3" Classes="icon seekjump" ToolTip.Tip="Forward 10 seconds">
+                                                <TextBlock Text="+10s"/>
+                                            </Button>
+                                            <TextBlock x:Name="RemainingText" Grid.Column="5" Classes="faint mono" FontSize="11"
+                                                       VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </StackPanel>
+                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,*,Auto">
+                                        <Button x:Name="ShuffleButton" Grid.Column="0" Classes="icon modebtn" ToolTip.Tip="Shuffle">
+                                            <Path Classes="icon" Data="{StaticResource IconShuffle}"/>
+                                        </Button>
+                                        <Button x:Name="PrevButton" Grid.Column="2" Classes="icon" ToolTip.Tip="Previous">
+                                            <Path Classes="icon" Data="{StaticResource IconPrev}" Fill="{StaticResource MutedBrush}"/>
+                                        </Button>
+                                        <Button x:Name="BigPlay" Grid.Column="3" Classes="playbtn" Margin="10,0">
+                                            <Path x:Name="BigPlayIcon" Classes="icon" Data="{StaticResource IconPlay}"
+                                                  Stroke="White" Fill="White" Height="16"/>
+                                        </Button>
+                                        <Button x:Name="NextButton" Grid.Column="4" Classes="icon" ToolTip.Tip="Next">
+                                            <Path Classes="icon" Data="{StaticResource IconNext}" Fill="{StaticResource MutedBrush}"/>
+                                        </Button>
+                                        <Button x:Name="RepeatButton" Grid.Column="6" Classes="icon modebtn" ToolTip.Tip="Repeat">
+                                            <Panel>
+                                                <Path Classes="icon" Data="{StaticResource IconRepeat}"/>
+                                                <Border x:Name="RepeatOneBadge" Width="11" Height="11" CornerRadius="6"
+                                                        Background="{DynamicResource AccentBrush}" HorizontalAlignment="Right"
+                                                        VerticalAlignment="Top" Margin="0,-5,-6,0" IsVisible="False">
+                                                    <TextBlock Text="1" FontSize="8" FontWeight="Bold" Foreground="White"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                            </Panel>
+                                        </Button>
+                                    </Grid>
+                                </StackPanel>
+
+                                <TextBlock x:Name="MediaHint" Classes="faint" FontSize="11" TextWrapping="Wrap" IsVisible="False"/>
+                            </StackPanel>
+                        </Panel>
+                    </Border>
+
+                    <!-- Focus timer -->
+                    <Border x:Name="FocusCard" Classes="dockcard">
+                        <StackPanel Margin="12" Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="eyebrow" Text="FOCUS" FontSize="9.5" VerticalAlignment="Center"/>
+                                <StackPanel x:Name="FocusActions" Grid.Column="1" Orientation="Horizontal" Spacing="2"/>
+                            </Grid>
+                            <StackPanel x:Name="FocusBody" Spacing="6"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- System gauges: the gear picks which ones are shown -->
+                    <Border x:Name="SystemCard" Classes="dockcard">
+                        <StackPanel Margin="12" Spacing="10">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="eyebrow" Text="SYSTEM" FontSize="9.5" VerticalAlignment="Center"/>
+                                <Button x:Name="MetricsButton" Grid.Column="1" Classes="icon" Width="22" Height="22"
+                                        ToolTip.Tip="Choose what to show">
+                                    <Path Classes="icon small" Data="{StaticResource IconSettingsSmall}" Height="12"
+                                          StrokeThickness="1.6"/>
+                                </Button>
+                            </Grid>
+                            <StackPanel x:Name="MetricRows" Spacing="12"/>
+                            <TextBlock x:Name="MetricsEmpty" Classes="faint" FontSize="11.5" TextWrapping="Wrap" IsVisible="False"
+                                       Text="No gauges selected. Use the gear to pick some."/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Local AI monitor -->
+                    <Border x:Name="AiCard" Classes="dockcard">
+                        <StackPanel Margin="12" Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="eyebrow" Text="LOCAL AI" FontSize="9.5" VerticalAlignment="Center"/>
+                                <StackPanel x:Name="AiActions" Grid.Column="1" Orientation="Horizontal" Spacing="2"/>
+                            </Grid>
+                            <StackPanel x:Name="AiBody" Spacing="6"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Projects + running tasks -->
+                    <Border x:Name="ProjectsCard" Classes="dockcard">
+                        <StackPanel Margin="12" Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="eyebrow" Text="PROJECTS" FontSize="9.5" VerticalAlignment="Center"/>
+                                <StackPanel x:Name="ProjectsActions" Grid.Column="1" Orientation="Horizontal" Spacing="2"/>
+                            </Grid>
+                            <StackPanel x:Name="ProjectsBody" Spacing="6"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Git status of the active project -->
+                    <Border x:Name="GitCard" Classes="dockcard">
+                        <StackPanel Margin="12" Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="eyebrow" Text="GIT" FontSize="9.5" VerticalAlignment="Center"/>
+                                <StackPanel x:Name="GitActions" Grid.Column="1" Orientation="Horizontal" Spacing="2"/>
+                            </Grid>
+                            <StackPanel x:Name="GitBody" Spacing="6"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Docker containers -->
+                    <Border x:Name="DockerCard" Classes="dockcard">
+                        <StackPanel Margin="12" Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="eyebrow" Text="DOCKER" FontSize="9.5" VerticalAlignment="Center"/>
+                                <StackPanel x:Name="DockerActions" Grid.Column="1" Orientation="Horizontal" Spacing="2"/>
+                            </Grid>
+                            <StackPanel x:Name="DockerBody" Spacing="6"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Localhost ports -->
+                    <Border x:Name="PortsCard" Classes="dockcard">
+                        <StackPanel Margin="12" Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="eyebrow" Text="LOCALHOST" FontSize="9.5" VerticalAlignment="Center"/>
+                                <Button x:Name="RefreshPorts" Grid.Column="1" Classes="icon" Width="22" Height="22"
+                                        ToolTip.Tip="Refresh">
+                                    <Path Classes="icon small" Data="{StaticResource IconRefresh}" Height="11"/>
+                                </Button>
+                            </Grid>
+                            <StackPanel x:Name="PortList" Spacing="4"/>
+                            <TextBlock x:Name="PortsEmpty" Classes="faint" FontSize="11.5" Text="No dev servers are listening."/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Clipboard -->
+                    <Border x:Name="ClipCard" Classes="dockcard">
+                        <StackPanel Margin="12" Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="eyebrow" Text="CLIPBOARD" FontSize="9.5" VerticalAlignment="Center"/>
+                                <Button x:Name="ClearClips" Grid.Column="1" Classes="icon" Width="22" Height="22"
+                                        ToolTip.Tip="Clear history">
+                                    <Path Classes="icon small" Data="{StaticResource IconClose}" Height="10"/>
+                                </Button>
+                            </Grid>
+                            <StackPanel x:Name="SnippetList" Spacing="4"/>
+                            <StackPanel x:Name="ClipList" Spacing="4"/>
+                            <TextBlock x:Name="ClipsEmpty" Classes="faint" FontSize="11.5" TextWrapping="Wrap"
+                                       Text="Copy some text anywhere; it shows up here. Click to copy it again."/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Notes -->
+                    <Border x:Name="NotesCard" Classes="dockcard">
+                        <StackPanel Margin="12" Spacing="8">
+                            <TextBlock Classes="eyebrow" Text="SCRATCHPAD" FontSize="9.5"/>
+                            <TextBox x:Name="Notes" Classes="notes" AcceptsReturn="True" TextWrapping="Wrap" Height="110"
+                                     PlaceholderText="Quick notes, TODOs, snippets…"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ============================================== collapsed: icon rail -->
+            <StackPanel x:Name="Rail" Grid.Row="1" Spacing="10" HorizontalAlignment="Center" Margin="0,6,0,0"
+                        IsVisible="False">
+                <Button x:Name="RailMedia" Classes="icon" Width="42" Height="42" CornerRadius="12" ToolTip.Tip="Now playing">
+                    <Border Width="34" Height="34" CornerRadius="9" ClipToBounds="True"
+                            Background="{DynamicResource AccentGradientDiagonal}">
+                        <Panel>
+                            <Path Classes="icon" Data="{StaticResource IconMusic}" Stroke="White" Height="15"/>
+                            <Image x:Name="RailArt" Stretch="UniformToFill"/>
+                        </Panel>
+                    </Border>
+                </Button>
+                <Button x:Name="RailSystem" Classes="icon" Width="42" Height="42" CornerRadius="12" ToolTip.Tip="System">
+                    <StackPanel Spacing="0">
+                        <TextBlock x:Name="RailCpu" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                        <TextBlock Text="CPU" FontSize="8" Classes="faint" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="RailPorts" Classes="icon" Width="42" Height="42" CornerRadius="12" ToolTip.Tip="Localhost">
+                    <StackPanel Spacing="0">
+                        <TextBlock x:Name="RailPortCount" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                        <TextBlock Text="PORTS" FontSize="8" Classes="faint" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="RailClips" Classes="icon" Width="42" Height="42" CornerRadius="12" ToolTip.Tip="Clipboard">
+                    <Path Classes="icon" Data="{StaticResource IconClipboard}"/>
+                </Button>
+                <Button x:Name="RailNotes" Classes="icon" Width="42" Height="42" CornerRadius="12" ToolTip.Tip="Scratchpad">
+                    <Path Classes="icon" Data="{StaticResource IconNote}"/>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

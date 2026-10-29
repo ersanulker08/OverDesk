@@ -1,0 +1,310 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Overdesk.App.Controls"
+             x:Class="Overdesk.App.SettingsView">
+    <!-- OverDesk's own tab: a full page (navigation on the left, sections on the right) over the home backdrop -->
+    <Grid>
+        <Border Background="{StaticResource Bg0Brush}"/>
+        <c:WaveBackground x:Name="Waves" Intensity="0.55"
+                          Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"/>
+        <Border IsHitTestVisible="False">
+            <Border.Background>
+                <RadialGradientBrush Center="30%,0%" GradientOrigin="30%,0%" RadiusX="60%" RadiusY="50%">
+                    <GradientStop Color="#14FFFFFF" Offset="0"/>
+                    <GradientStop Color="#00FFFFFF" Offset="1"/>
+                </RadialGradientBrush>
+            </Border.Background>
+        </Border>
+
+        <Grid ColumnDefinitions="244,*">
+            <!-- ============================================ navigation -->
+            <Border x:Name="NavPane" Grid.Column="0" Background="#C80C0C12" BorderBrush="{StaticResource StrokeBrush}"
+                    BorderThickness="0,0,1,0">
+                <DockPanel Margin="22,30,16,22">
+                    <StackPanel DockPanel.Dock="Top" Margin="6,0,0,30" Spacing="2">
+                        <c:LogoMark Width="58" Height="58" HorizontalAlignment="Left" Glow="0.9"
+                                    Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"/>
+                        <TextBlock FontSize="23" FontWeight="Black" LetterSpacing="4" Margin="0,16,0,0">
+                            <Run Text="OVER"/><Run Text="DESK" Foreground="{DynamicResource AccentBrush}"/>
+                        </TextBlock>
+                        <TextBlock Classes="muted" FontSize="12.5" Text="Settings and personalization"/>
+                    </StackPanel>
+                    <TextBlock x:Name="NavVersion" DockPanel.Dock="Bottom" Classes="faint" FontSize="11" Margin="8,0,0,0"/>
+                    <StackPanel x:Name="Nav" Spacing="4"/>
+                </DockPanel>
+            </Border>
+
+            <!-- ============================================ sections -->
+            <ScrollViewer x:Name="Scroller" Grid.Column="1" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel x:Name="Sections" Margin="44,40,44,80" MaxWidth="1040" HorizontalAlignment="Left" Spacing="44">
+
+                    <!-- Appearance -->
+                    <StackPanel x:Name="SectionAppearance" Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="pagetitle" Text="Appearance"/>
+                            <TextBlock Classes="muted" Text="Pick your color. Everything in OverDesk follows it, live."/>
+                        </StackPanel>
+                        <WrapPanel x:Name="ThemeCards"/>
+                        <StackPanel x:Name="AppearanceToggles" Spacing="12">
+                            <Border Classes="pagecard">
+                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                    <Border Classes="pageicon"><Path Classes="icon accent" Data="{StaticResource IconSparkle}"/></Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
+                                        <TextBlock Text="Animated background" FontWeight="SemiBold"/>
+                                        <TextBlock Classes="muted" FontSize="12" Text="Flowing strands behind home and programs"/>
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="AnimatedToggle" Grid.Column="2" OnContent="" OffContent=""/>
+                                </Grid>
+                            </Border>
+                            <Border Classes="pagecard">
+                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                    <Border Classes="pageicon"><Path Classes="icon accent" Data="{StaticResource IconPlay}"/></Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
+                                        <TextBlock Text="Opening screen" FontWeight="SemiBold"/>
+                                        <TextBlock Classes="muted" FontSize="12" Text="Play the logo intro at start"/>
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="SplashToggle" Grid.Column="2" OnContent="" OffContent=""/>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Dock -->
+                    <StackPanel x:Name="SectionDock" Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="pagetitle" Text="Side dock"/>
+                            <TextBlock Classes="muted" Text="The widgets on the left: music, gauges, local servers, clipboard and notes."/>
+                        </StackPanel>
+                        <Border Classes="pagecard">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border Classes="pageicon"><Path Classes="icon accent" Data="{StaticResource IconPanel}"/></Border>
+                                <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Show the dock expanded" FontWeight="SemiBold"/>
+                                    <TextBlock Classes="muted" FontSize="12" Text="Off keeps it as a slim icon rail (toggle anytime with Cmd/Ctrl+B)"/>
+                                </StackPanel>
+                                <ToggleSwitch x:Name="DockToggle" Grid.Column="2" OnContent="" OffContent=""/>
+                            </Grid>
+                        </Border>
+                        <Border Classes="pagecard" Padding="18,16">
+                            <StackPanel Spacing="12">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Gauges" FontWeight="SemiBold"/>
+                                    <TextBlock Classes="muted" FontSize="12" Text="Choose what the System card shows. Greyed out ones are not available on this computer."/>
+                                </StackPanel>
+                                <WrapPanel x:Name="GaugeChips"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="pagecard" Padding="18,16">
+                            <StackPanel Spacing="12">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Cards" FontWeight="SemiBold"/>
+                                    <TextBlock Classes="muted" FontSize="12" Text="Which cards the dock shows."/>
+                                </StackPanel>
+                                <WrapPanel x:Name="CardChips"/>
+                                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto" >
+                                    <TextBlock Text="Focus" Classes="muted" VerticalAlignment="Center"/>
+                                    <NumericUpDown x:Name="FocusMinutes" Grid.Column="1" Minimum="5" Maximum="120" Increment="5" Width="120" Margin="10,0,24,0" FormatString="0 'min'"/>
+                                    <TextBlock Grid.Column="2" Text="Break" Classes="muted" VerticalAlignment="Center"/>
+                                    <NumericUpDown x:Name="BreakMinutes" Grid.Column="3" Minimum="1" Maximum="60" Increment="1" Width="120" Margin="10,0,0,0" FormatString="0 'min'"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Web strip -->
+                    <StackPanel x:Name="SectionWeb" Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="pagetitle" Text="Web strip"/>
+                            <TextBlock Classes="muted" Text="Websites and web apps live in their own row, apart from your programs."/>
+                        </StackPanel>
+                        <Border Classes="pagecard">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border Classes="pageicon"><Path Classes="icon accent" Data="{StaticResource IconGlobe}"/></Border>
+                                <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Show the web strip" FontWeight="SemiBold"/>
+                                    <TextBlock Classes="muted" FontSize="12" Text="GitHub, ChatGPT, Codex, Claude, Gemini and your own sites"/>
+                                </StackPanel>
+                                <ToggleSwitch x:Name="WebToggle" Grid.Column="2" OnContent="" OffContent=""/>
+                            </Grid>
+                        </Border>
+                        <Border Classes="pagecard" Padding="18,14">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Pinned sites" FontWeight="SemiBold"/>
+                                <StackPanel x:Name="WebPinRows" Spacing="6"/>
+                                <TextBlock Classes="faint" FontSize="11.5" Text="Add more with the + at the end of the strip."/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- AI -->
+                    <StackPanel x:Name="SectionAi" Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="pagetitle" Text="AI"/>
+                            <TextBlock Classes="muted" TextWrapping="Wrap" Text="Local models stay on this computer. Cloud keys are kept in your system keychain, never in a file."/>
+                        </StackPanel>
+                        <Border Classes="pagecard" Padding="18,14">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="Cloud API keys" FontWeight="SemiBold"/>
+                                <StackPanel x:Name="KeyRows" Spacing="10"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="pagecard" Padding="18,14">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Local servers" FontWeight="SemiBold"/>
+                                <Grid ColumnDefinitions="120,*" RowDefinitions="Auto,Auto" >
+                                    <TextBlock Text="Ollama" Classes="muted" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="OllamaUrl" Grid.Column="1" Classes="mono"/>
+                                    <TextBlock Grid.Row="1" Text="LM Studio" Classes="muted" VerticalAlignment="Center" Margin="0,8,0,0"/>
+                                    <TextBox x:Name="LmStudioUrl" Grid.Row="1" Grid.Column="1" Margin="0,8,0,0"/>
+                                </Grid>
+                                <TextBlock Classes="faint" FontSize="11" Text="Changes apply the next time OverDesk starts."/>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="pagecard" Padding="18,14">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Instructions for every chat" FontWeight="SemiBold"/>
+                                <TextBox x:Name="SystemPrompt" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="70"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="pagecard" Padding="18,14">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Prompt library" FontWeight="SemiBold"/>
+                                <TextBlock Classes="faint" FontSize="11.5" Text="{}{{clipboard}} is replaced by the copied text. Prompts appear in the AI panel and the command palette."/>
+                                <StackPanel x:Name="PromptRows" Spacing="8"/>
+                                <Button x:Name="AddPromptButton" Classes="ghost" Content="Add a prompt" HorizontalAlignment="Left"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Projects -->
+                    <StackPanel x:Name="SectionProjects" Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="pagetitle" Text="Projects"/>
+                            <TextBlock Classes="muted" TextWrapping="Wrap" Text="A project is a folder plus how to start it. Launch it from the dock or the command palette: the editor, the dev server and the browser open together."/>
+                        </StackPanel>
+                        <StackPanel x:Name="ProjectRows" Spacing="12"/>
+                        <Button x:Name="AddProjectButton" Classes="accent" Content="Add a project folder…" HorizontalAlignment="Left"/>
+                    </StackPanel>
+
+                    <!-- Startup -->
+                    <StackPanel x:Name="SectionStartup" Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="pagetitle" Text="Startup"/>
+                            <TextBlock Classes="muted" Text="What happens when OverDesk opens."/>
+                        </StackPanel>
+                        <Border Classes="pagecard">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border Classes="pageicon"><Path Classes="icon accent" Data="{StaticResource IconTabs}"/></Border>
+                                <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Reopen tabs" FontWeight="SemiBold"/>
+                                    <TextBlock Classes="muted" FontSize="12" Text="Bring back the programs from your last session"/>
+                                </StackPanel>
+                                <ToggleSwitch x:Name="RestoreToggle" Grid.Column="2" OnContent="" OffContent=""/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Permissions -->
+                    <StackPanel x:Name="SectionPermissions" Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="pagetitle" Text="Permissions"/>
+                            <TextBlock Classes="muted" Text="What OverDesk needs from the system to keep programs inside its window."/>
+                        </StackPanel>
+                        <Border Classes="pagecard" x:Name="AccessibilityCard">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border Classes="pageicon"><Path x:Name="PermissionIcon" Classes="icon" Data="{StaticResource IconShield}"/></Border>
+                                <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
+                                    <TextBlock x:Name="PermissionTitle" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="PermissionText" Classes="muted" FontSize="12" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <Button x:Name="PermissionButton" Grid.Column="2" Classes="accent" Content="Grant" Padding="16,7"
+                                        VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <Border Classes="pagecard" x:Name="MirrorCard">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border Classes="pageicon"><Path x:Name="MirrorIcon" Classes="icon" Data="{StaticResource IconSparkle}"/></Border>
+                                <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
+                                    <TextBlock x:Name="MirrorTitle" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="MirrorText" Classes="muted" FontSize="12" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <Panel Grid.Column="2" VerticalAlignment="Center">
+                                    <Button x:Name="MirrorButton" Classes="accent" Content="Grant" Padding="16,7"/>
+                                    <ToggleSwitch x:Name="MirrorToggle" OnContent="" OffContent="" ToolTip.Tip="Live mirror on/off"/>
+                                </Panel>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Shortcuts -->
+                    <StackPanel x:Name="SectionShortcuts" Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="pagetitle" Text="Keyboard shortcuts"/>
+                            <TextBlock Classes="muted" Text="Everything is a keystroke away."/>
+                        </StackPanel>
+                        <Border Classes="pagecard" Padding="18,10">
+                            <UniformGrid x:Name="ShortcutGrid" Columns="2"/>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Data -->
+                    <StackPanel x:Name="SectionData" Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="pagetitle" Text="Data"/>
+                            <TextBlock Classes="muted" Text="OverDesk keeps everything on this computer."/>
+                        </StackPanel>
+                        <Border Classes="pagecard">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border Classes="pageicon"><Path Classes="icon accent" Data="{StaticResource IconRefresh}"/></Border>
+                                <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Recent programs" FontWeight="SemiBold"/>
+                                    <TextBlock Classes="muted" FontSize="12" Text="Forget the programs you opened recently"/>
+                                </StackPanel>
+                                <Button x:Name="ClearRecentButton" Grid.Column="2" Classes="ghost" Content="Clear" Padding="16,7"
+                                        VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <Border Classes="pagecard">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Border Classes="pageicon"><Path Classes="icon accent" Data="{StaticResource IconFolder}"/></Border>
+                                <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Settings file" FontWeight="SemiBold"/>
+                                    <SelectableTextBlock x:Name="DataPath" Classes="mono" FontSize="11.5"
+                                                         Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- About -->
+                    <Border x:Name="SectionAbout" CornerRadius="20" Padding="30" BorderThickness="1" ClipToBounds="True"
+                            BorderBrush="{DynamicResource AccentBorderBrush}" BoxShadow="{DynamicResource AccentGlowLarge}">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                                <GradientStop Color="#22262636" Offset="0"/>
+                                <GradientStop Color="#F00C0C12" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                        <Grid ColumnDefinitions="Auto,*">
+                            <c:LogoMark Width="96" Height="96" Glow="1" AppIconBackdrop="True"
+                                        Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"/>
+                            <StackPanel Grid.Column="1" Margin="26,0,0,0" VerticalAlignment="Center" Spacing="4">
+                                <TextBlock FontSize="26" FontWeight="Black" LetterSpacing="5">
+                                    <Run Text="OVER"/><Run Text="DESK" Foreground="{DynamicResource AccentBrush}"/>
+                                </TextBlock>
+                                <TextBlock x:Name="AboutVersion" Classes="muted"/>
+                                <TextBlock Classes="faint" TextWrapping="Wrap" MaxWidth="560" Margin="0,6,0,0"
+                                           Text="Every program under one roof. Add any app as a tab, keep your tools on the side, and stay in flow."/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <Button x:Name="CloseButton" Grid.Column="1" Classes="icon" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="0,18,22,0" Width="36" Height="36" ToolTip.Tip="Close this tab">
+                <Path Classes="icon" Data="{StaticResource IconClose}"/>
+            </Button>
+        </Grid>
+    </Grid>
+</UserControl>

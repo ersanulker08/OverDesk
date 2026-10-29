@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Overdesk.AI/Overdesk.AI.csproj" />
+    <Project Path="src/Overdesk.App/Overdesk.App.csproj" />
+    <Project Path="src/Overdesk.Core/Overdesk.Core.csproj" />
+    <Project Path="src/Overdesk.Platform.MacOS/Overdesk.Platform.MacOS.csproj" />
+    <Project Path="src/Overdesk.Platform.Windows/Overdesk.Platform.Windows.csproj" />
+  </Folder>
+</Solution>

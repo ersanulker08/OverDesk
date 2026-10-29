@@ -1,0 +1,45 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Overdesk.App.TaskLogView">
+    <Grid>
+        <Border x:Name="Backdrop" Background="#B3050508"/>
+        <Border x:Name="Dialog" Classes="card" Width="880" Margin="28" MaxHeight="640"
+                HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="True">
+            <Grid RowDefinitions="Auto,*">
+                <Grid ColumnDefinitions="Auto,*,Auto" Margin="20,16,14,12">
+                    <Border x:Name="StatusDot" Width="10" Height="10" CornerRadius="5" VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="TitleText" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock x:Name="DetailText" Classes="faint mono" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                        <Button x:Name="AskAiButton" Classes="ghost" Padding="12,6">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Path Classes="icon small accent" Data="{StaticResource IconSparkle}"/>
+                                <TextBlock Text="Ask AI"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="CopyButton" Classes="icon" ToolTip.Tip="Copy the output">
+                            <Path Classes="icon" Data="{StaticResource IconCopy}"/>
+                        </Button>
+                        <Button x:Name="StopButton" Classes="icon danger" ToolTip.Tip="Stop">
+                            <Path Classes="icon" Data="{StaticResource IconStop}"/>
+                        </Button>
+                        <Button x:Name="RestartButton" Classes="icon" ToolTip.Tip="Run again">
+                            <Path Classes="icon" Data="{StaticResource IconRefresh}"/>
+                        </Button>
+                        <Button x:Name="CloseButton" Classes="icon" ToolTip.Tip="Close (Esc)">
+                            <Path Classes="icon" Data="{StaticResource IconClose}"/>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+                <Border Grid.Row="1" Background="#FF07070A" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="0,1,0,0">
+                    <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Auto">
+                        <SelectableTextBlock x:Name="Output" Classes="mono" FontSize="12" Margin="18,14" LineHeight="18"
+                                             Foreground="#D6D6E2" SelectionBrush="{DynamicResource AccentSoftBrush}"/>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Overdesk.App.CommandPaletteView">
+    <Grid>
+        <Border x:Name="Backdrop" Background="#99050508"/>
+        <Border x:Name="Dialog" Classes="card" Width="660" Margin="24,64,24,24" VerticalAlignment="Top"
+                HorizontalAlignment="Center" ClipToBounds="True">
+            <StackPanel>
+                <Grid ColumnDefinitions="Auto,*,Auto" Height="56" Margin="18,0,14,0">
+                    <Path Classes="icon accent" Data="{StaticResource IconCommand}" Height="18" VerticalAlignment="Center"/>
+                    <TextBox x:Name="SearchBox" Grid.Column="1" Classes="search" Margin="12,0,8,0" FontSize="16"
+                             PlaceholderText="Type a command, a tab, a program, a port…"/>
+                    <Border Grid.Column="2" Classes="chip" VerticalAlignment="Center"><TextBlock Text="esc"/></Border>
+                </Grid>
+                <Border Height="1" Background="{StaticResource StrokeBrush}"/>
+                <ScrollViewer x:Name="Scroller" MaxHeight="430" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="Results" Margin="6"/>
+                </ScrollViewer>
+                <TextBlock x:Name="NoResults" Classes="faint" Margin="20,14" IsVisible="False" Text="No matches."/>
+                <Border Background="{StaticResource Bg1Brush}" BorderBrush="{StaticResource StrokeBrush}"
+                        BorderThickness="0,1,0,0" Padding="16,8">
+                    <StackPanel Orientation="Horizontal" Spacing="14">
+                        <TextBlock Classes="faint" FontSize="11" Text="↑↓ navigate"/>
+                        <TextBlock Classes="faint" FontSize="11" Text="↵ run"/>
+                        <TextBlock Classes="faint" FontSize="11" Text="esc close"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

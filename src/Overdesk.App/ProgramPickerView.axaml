@@ -1,0 +1,62 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Overdesk.App.ProgramPickerView">
+    <Grid>
+        <Border x:Name="Backdrop" Background="#B3050508"/>
+
+        <Border x:Name="Dialog" Classes="card" Width="760" MaxHeight="680" Margin="24"
+                HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="True">
+            <Grid RowDefinitions="Auto,Auto,*,Auto">
+                <!-- Header -->
+                <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="24,20,16,6">
+                    <Border Width="38" Height="38" CornerRadius="12" Background="{DynamicResource AccentGradientDiagonal}"
+                            BoxShadow="{DynamicResource AccentGlowSmall}">
+                        <Path Classes="icon" Data="{StaticResource IconGrid}" Stroke="White" Height="18"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="TitleText" Text="Add a program" FontSize="19" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="SubtitleText" Classes="muted" FontSize="12" Text="It opens as a tab in the top bar"/>
+                    </StackPanel>
+                    <Button x:Name="CloseButton" Grid.Column="2" Classes="icon" VerticalAlignment="Top" ToolTip.Tip="Close (Esc)">
+                        <Path Classes="icon" Data="{StaticResource IconClose}"/>
+                    </Button>
+                </Grid>
+
+                <!-- Search -->
+                <Border Grid.Row="1" Classes="searchbox" Height="46" Margin="24,12,24,10">
+                    <Grid ColumnDefinitions="Auto,*" Margin="14,0">
+                        <Path Classes="icon" Data="{StaticResource IconSearch}" VerticalAlignment="Center"/>
+                        <TextBox x:Name="SearchBox" Grid.Column="1" Classes="search" Margin="10,0,0,0" FontSize="14"
+                                 PlaceholderText="Search installed programs…"/>
+                    </Grid>
+                </Border>
+
+                <!-- Program grid -->
+                <Panel Grid.Row="2" MinHeight="300">
+                    <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Disabled" Padding="18,0,18,8">
+                        <WrapPanel x:Name="Programs" HorizontalAlignment="Left"/>
+                    </ScrollViewer>
+                    <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"
+                                IsVisible="False">
+                        <Path Classes="icon large" Data="{StaticResource IconSearch}" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="EmptyText" Classes="muted" HorizontalAlignment="Center" TextAlignment="Center"/>
+                    </StackPanel>
+                </Panel>
+
+                <!-- Footer -->
+                <Border Grid.Row="3" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="0,1,0,0"
+                        Background="{StaticResource Bg1Brush}" Padding="24,12">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock x:Name="CountText" Classes="faint" FontSize="12" VerticalAlignment="Center"/>
+                        <Button x:Name="BrowseButton" Grid.Column="1" Classes="ghost">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Path Classes="icon" Data="{StaticResource IconFolder}" Height="14"/>
+                                <TextBlock Text="Browse for a program…"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

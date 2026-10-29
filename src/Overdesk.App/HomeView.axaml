@@ -1,0 +1,77 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Overdesk.App.Controls"
+             x:Class="Overdesk.App.HomeView"
+             Background="{StaticResource Bg0Brush}">
+    <Grid>
+        <!-- Backdrop: accent haze at the top, flowing strands at the bottom -->
+        <Border IsHitTestVisible="False">
+            <Border.Background>
+                <RadialGradientBrush Center="50%,0%" GradientOrigin="50%,0%" RadiusX="70%" RadiusY="55%">
+                    <GradientStop Color="#1AFFFFFF" Offset="0"/>
+                    <GradientStop Color="#00FFFFFF" Offset="1"/>
+                </RadialGradientBrush>
+            </Border.Background>
+        </Border>
+        <c:WaveBackground x:Name="Waves" Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"/>
+
+        <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <Grid x:Name="Column" MaxWidth="920" Margin="32,0,32,40" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+
+                <!-- Clock and greeting -->
+                <StackPanel x:Name="Hero" Grid.Row="0" Margin="0,64,0,0" HorizontalAlignment="Center" Spacing="2">
+                    <TextBlock x:Name="Greeting" Classes="eyebrow" HorizontalAlignment="Center"
+                               Foreground="{DynamicResource AccentBrush}"/>
+                    <TextBlock x:Name="Clock" HorizontalAlignment="Center" FontSize="78" FontWeight="Light"
+                               LetterSpacing="-2" Foreground="{StaticResource TextBrush}"/>
+                    <TextBlock x:Name="DateText" HorizontalAlignment="Center" FontSize="14" Classes="muted"/>
+                </StackPanel>
+
+                <!-- Search -->
+                <Border x:Name="SearchBorder" Grid.Row="1" Classes="searchbox" Height="54" MaxWidth="620"
+                        Margin="0,32,0,0" ZIndex="2">
+                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="18,0,12,0">
+                        <Path Classes="icon" Data="{StaticResource IconSearch}" Height="18"
+                              VerticalAlignment="Center"/>
+                        <TextBox x:Name="SearchBox" Grid.Column="1" Classes="search" Margin="12,0,8,0"
+                                 PlaceholderText="Search programs on this computer…"/>
+                        <Border Grid.Column="2" Classes="chip" VerticalAlignment="Center">
+                            <TextBlock x:Name="SearchHint" Text="Ctrl K"/>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- Quick launch: header and tiles share one centered column so they line up -->
+                <StackPanel Grid.Row="2" Grid.RowSpan="2" HorizontalAlignment="Center" Margin="0,40,0,0">
+                    <Grid ColumnDefinitions="*,Auto" Margin="8,0,8,8">
+                        <TextBlock x:Name="SectionTitle" Classes="eyebrow" Text="QUICK LAUNCH" VerticalAlignment="Center"
+                                   Margin="0,0,40,0"/>
+                        <TextBlock Grid.Column="1" Classes="faint" FontSize="11.5" VerticalAlignment="Center"
+                                   Text="Right-click a tile to pin it"/>
+                    </Grid>
+                    <WrapPanel x:Name="Tiles" HorizontalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- Drop hint + shortcuts -->
+                <StackPanel Grid.Row="4" Margin="0,34,0,0" HorizontalAlignment="Center" Spacing="14">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10">
+                        <Path Classes="icon" Data="{StaticResource IconDrop}" VerticalAlignment="Center"/>
+                        <TextBlock Classes="muted" VerticalAlignment="Center"
+                                   Text="Drag any program onto OverDesk to open it as a tab"/>
+                    </StackPanel>
+                    <StackPanel x:Name="Shortcuts" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8"/>
+                </StackPanel>
+
+                <!-- Search results float over the content below the search box -->
+                <Border x:Name="ResultsCard" Grid.Row="1" Grid.RowSpan="4" Classes="card" MaxWidth="620"
+                        VerticalAlignment="Top" Margin="0,94,0,0" Padding="6" ZIndex="3" IsVisible="False">
+                    <StackPanel>
+                        <StackPanel x:Name="Results"/>
+                        <TextBlock x:Name="NoResults" Classes="faint" Margin="12,10" IsVisible="False"
+                                   Text="No programs match your search."/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

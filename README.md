@@ -27,7 +27,8 @@
   - models on your computer: Ollama (download models right from the panel) and LM Studio;
   - cloud APIs: Claude, OpenAI, Gemini, with keys kept in the system keychain.
 
-  You can attach the clipboard or a screenshot of the program you are using, and keep a history of past chats.
+  The AI does not only talk, it works inside OverDesk (see below). Attach the clipboard, a screenshot of the program
+  you are using, or drop files on the panel; past chats are kept.
 - **Side dock.** The left side holds a set of cards:
   - Now Playing mini player;
   - CPU / GPU / RAM / temperature gauges;
@@ -39,7 +40,35 @@
 - **Tools panel + plugins.** The right side hosts tools. A tool is a folder with an `overdesk.plugin.json`; it can be a
   C# plugin or any program in any language. See [docs/PLUGINS.md](docs/PLUGINS.md).
 
+## The AI works for you
+
+The AI panel can act, not just answer. It has tools for everything under OverDesk's roof:
+
+| Ask for… | It can |
+|---|---|
+| "Make a packing list for Saturday" | create, read, change and delete **works** (notes, to-do lists, stories, game variables) |
+| "Open Spotify and skip this song" | open **programs**, switch and close **tabs**, open **sites** and panel **tools**, control **media** |
+| "Why is my dev server crashing?" | read the **logs** of running tasks, list local **dev servers**, check **CPU / memory** |
+| "What am I looking at?" | take a **screenshot** of the program on stage, read and write the **clipboard** and the scratchpad |
+| "Fix the failing test" | read, search and edit files in your **project folder** and run commands, then open the result in VS Code |
+
+**Project folder.** Pick a folder with the 📁 chip under the message box (or drop a folder on the panel). The AI gets an
+overview of the project (layout, build files, README / CLAUDE.md), reads and searches its files, and, if you allow file
+changes, edits them. It can never leave that folder or touch `.git`.
+
+**You stay in control.** Anything hard to undo (running a command, deleting a work, closing a tab) shows an
+**Allow / Deny** card first. File changes have their own switch (*Can edit files* / *Read only*), and every action the
+AI takes is listed in its answer.
+
+Every provider gets the same tools: the API ones call them directly, and installed AI apps (Claude Code, Gemini CLI)
+reach them through a small local MCP server that only this computer can use.
+
+Shortcuts: **⌘J / Ctrl+J** opens the AI panel. In the command palette you can start a new chat, switch the project folder,
+or let the AI fix the last failed task. The ✨ button in a work asks the AI to continue, summarize, tidy or brainstorm it.
+
 <p align="center">
+  <img src="docs/screenshots/ai-actions.png" alt="The AI acting inside OverDesk" width="300">
+  &nbsp;
   <img src="docs/screenshots/ai-models.png" alt="AI model picker" width="300">
   &nbsp;
   <img src="docs/screenshots/ai-history.png" alt="AI chat history" width="300">
@@ -88,7 +117,9 @@ belongs to the terminal, so use the packaged `OverDesk.app` for day-to-day use.
 src/
   Overdesk.App/               Avalonia UI: main window, home, dock, settings, AI panel, palette
   Overdesk.Core/              Tabs, settings, plugin manifest + registry, platform interfaces (no OS code)
-  Overdesk.AI/                Chat providers behind IChatProvider (Ollama, LM Studio, OpenAI, Claude, Gemini, Claude Code CLI, Gemini CLI)
+  Overdesk.AI/                Chat providers behind IChatProvider (Ollama, LM Studio, OpenAI, Claude, Gemini, Claude Code CLI,
+                              Gemini CLI), the tool layer, project file tools and the local MCP server
+tests/Overdesk.Tests/         Unit tests (file tools, MCP server, approvals, works)
   Overdesk.Platform.MacOS/    Accessibility window gluing, WKWebView, keychain, media, system stats
   Overdesk.Platform.Windows/  Win32 reparenting, WebView2, Credential Manager, media, system stats
 samples/HelloTool/            A minimal in-process tool plugin
@@ -103,6 +134,9 @@ The core never knows which OS it runs on. Everything OS-specific sits behind int
 - `OVERDESK_DATA_DIR=<folder>` uses a throwaway settings folder instead of your real one.
 - `OVERDESK_SNAPSHOT=<folder>` renders the main screens to PNG files and quits, which is handy for checking UI changes.
   `OVERDESK_SNAPSHOT_TOOL=<plugin id>` also opens a tool.
+- `OVERDESK_SNAPSHOT_AI_PROMPT="..."` (with `OVERDESK_SNAPSHOT`) sends one real message from inside the app and prints
+  what the AI did; `OVERDESK_SNAPSHOT_AI_MODEL`, `_FOLDER` and `_ALLOW=1` pick the model, the project folder and auto-approval.
+- `dotnet test tests/Overdesk.Tests` runs the unit tests.
 - Check the Windows build from a Mac: `dotnet build src/Overdesk.App -p:OS=Windows_NT -p:EnableWindowsTargeting=true`.
 
 ## Contributing

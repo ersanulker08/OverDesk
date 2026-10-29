@@ -67,7 +67,7 @@ public partial class App : Application
 
     /// <summary>The window/dock icon is the logo itself, rendered on a dark rounded tile.</summary>
     private static WindowIcon CreateAppIcon() => new(RenderLogo(256));
-    
+
     internal static Bitmap RenderLogo(int pixels)
     {
         var accent = AccentThemes.Current;

@@ -125,8 +125,10 @@ public sealed class OpenAiCompatibleProvider : IChatProvider
                 foreach (var call in delta?["tool_calls"]?.AsArray() ?? new JsonArray())
                 {
                     var index = call?["index"]?.GetValue<int>() ?? calls.Count;
-                    if (!calls.TryGetValue(index, out var entry)) entry = calls[index] = ("", "", new StringBuilder());
                     var id = call?["id"]?.GetValue<string>();
+                    // Some servers number every call 0: a new id at a used index is a new call, not more arguments.
+                    if (id is { Length: > 0 } && calls.TryGetValue(index, out var known) && known.Id.Length > 0 && known.Id != id) index = 1000 + calls.Count;
+                    if (!calls.TryGetValue(index, out var entry)) entry = calls[index] = ("", "", new StringBuilder());
                     var name = call?["function"]?["name"]?.GetValue<string>();
                     calls[index] = (id ?? entry.Id, name ?? entry.Name, entry.Args.Append(call?["function"]?["arguments"]?.GetValue<string>() ?? ""));
                 }

@@ -8,6 +8,9 @@ namespace Overdesk.Core.Plugins;
 public sealed record PluginAiTool(string Name, string Description, string Parameters, Func<string, CancellationToken, Task<string>> Run)
 {
     public Func<string, string>? Approval { get; init; }
+
+    /// <summary>A short line for the chat about one call ("Converting 3 files to WEBP"), from its arguments.</summary>
+    public Func<string, string>? Label { get; init; }
 }
 
 /// <summary>

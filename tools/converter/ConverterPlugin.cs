@@ -25,7 +25,16 @@ public sealed class ConverterPlugin : IToolPlugin, IAiToolSource
               "output_folder":{"type":"string","description":"Folder for the results; default next to each original."}
             },"required":["paths"]}
             """,
-            RunAsync),
+            RunAsync)
+        {
+            Label = json =>
+            {
+                var args = JsonNode.Parse(json);
+                var count = (args?["paths"] as JsonArray)?.Count ?? 0;
+                var files = count == 1 ? Path.GetFileName(args!["paths"]![0]!.ToString()) : $"{count} files";
+                return args?["to"]?.ToString() is { Length: > 0 } to ? $"Converting {files} to {to.ToUpperInvariant()}" : $"Checking formats for {files}";
+            },
+        },
     };
 
     private static async Task<string> RunAsync(string json, CancellationToken cancellation)

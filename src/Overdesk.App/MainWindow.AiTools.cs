@@ -52,7 +52,7 @@ public partial class MainWindow
                     Name = p.Name,
                     Description = $"{p.Description} (Provided by the {owner} tool.)",
                     Schema = schema,
-                    Label = _ => $"{owner}: {p.Name.Replace('_', ' ')}",
+                    Label = a => p.Label is { } label ? label(a.ToJsonString()) : $"{owner}: {p.Name.Replace('_', ' ')}",
                     Approval = p.Approval is { } ask ? a => ask(a.ToJsonString()) : null,
                     Run = async (a, ct) =>
                     {

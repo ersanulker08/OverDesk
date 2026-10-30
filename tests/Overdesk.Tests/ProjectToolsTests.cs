@@ -123,4 +123,17 @@ public class ProjectToolsTests
         Assert.Contains("scripts: dev", overview);
         Assert.Contains("src/", overview);
     }
+
+    [Fact]
+    public async Task Images_come_back_as_pictures_with_their_type()
+    {
+        using var dir = new TempFolder();
+        File.WriteAllBytes(Path.Combine(dir.Path, "shot.jpg"), new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10 });
+        var result = await Run(Box(dir.Path), "read_file", new { path = "shot.jpg" });
+        Assert.False(result.IsError);
+        Assert.NotNull(result.Image);
+        Assert.Equal("image/jpeg", AiImages.MediaType(result.Image!));
+        Assert.Equal("image/png", AiImages.MediaType(new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G' }));
+        Assert.Equal("image/webp", AiImages.MediaType(System.Text.Encoding.ASCII.GetBytes("RIFF\0\0\0\0WEBPVP8 ")));
+    }
 }

@@ -8,6 +8,18 @@ public sealed record AiToolResult(string Text, byte[]? Image = null, bool IsErro
     public static AiToolResult Error(string text) => new(text, IsError: true);
 }
 
+public static class AiImages
+{
+    /// <summary>The media type of image bytes, from their first bytes (PNG when unknown).</summary>
+    public static string MediaType(byte[] data) => data switch
+    {
+        [0xFF, 0xD8, ..] => "image/jpeg",
+        [(byte)'G', (byte)'I', (byte)'F', ..] => "image/gif",
+        [(byte)'R', (byte)'I', (byte)'F', (byte)'F', _, _, _, _, (byte)'W', (byte)'E', (byte)'B', (byte)'P', ..] => "image/webp",
+        _ => "image/png",
+    };
+}
+
 /// <summary>
 /// Something the AI can do inside OverDesk (open a work, add a to-do, read a project file...). The schema is a JSON
 /// Schema object; every provider turns it into its own tool-calling format.

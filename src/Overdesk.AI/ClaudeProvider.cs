@@ -192,7 +192,7 @@ public sealed class ClaudeProvider : IChatProvider
             content.Add(new JsonObject
             {
                 ["type"] = "image",
-                ["source"] = new JsonObject { ["type"] = "base64", ["media_type"] = "image/png", ["data"] = Convert.ToBase64String(png) },
+                ["source"] = new JsonObject { ["type"] = "base64", ["media_type"] = AiImages.MediaType(png), ["data"] = Convert.ToBase64String(png) },
             });
         var raw = new JsonObject { ["type"] = "tool_result", ["tool_use_id"] = id, ["content"] = content, ["is_error"] = result.IsError };
         return ToolResultBlockParam.FromRawUnchecked(JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(raw.ToJsonString())!);
@@ -210,7 +210,10 @@ public sealed class ClaudeProvider : IChatProvider
     {
         var blocks = new List<ContentBlockParam>();
         foreach (var image in m.Images!)
-            blocks.Add(new ImageBlockParam { Source = new Base64ImageSource { Data = Convert.ToBase64String(image), MediaType = MediaType.ImagePng } });
+            blocks.Add(new ImageBlockParam { Source = new Base64ImageSource { Data = Convert.ToBase64String(image), MediaType = AiImages.MediaType(image) switch
+            {
+                "image/jpeg" => MediaType.ImageJpeg, "image/gif" => MediaType.ImageGif, "image/webp" => MediaType.ImageWebP, _ => MediaType.ImagePng,
+            } } });
         blocks.Add(new TextBlockParam { Text = m.Text });
         return blocks;
     }

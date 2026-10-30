@@ -69,7 +69,7 @@ public sealed class GeminiProvider : IChatProvider
         {
             var parts = new JsonArray { new JsonObject { ["text"] = m.Text } };
             foreach (var image in m.Images ?? Array.Empty<byte[]>())
-                parts.Add(new JsonObject { ["inline_data"] = new JsonObject { ["mime_type"] = "image/png", ["data"] = Convert.ToBase64String(image) } });
+                parts.Add(new JsonObject { ["inline_data"] = new JsonObject { ["mime_type"] = AiImages.MediaType(image), ["data"] = Convert.ToBase64String(image) } });
             contents.Add(new JsonObject { ["role"] = m.Role == ChatMessage.Assistant ? "model" : "user", ["parts"] = parts });
         }
         JsonArray? tools = context is { Tools.Tools.Count: > 0 }
@@ -132,7 +132,7 @@ public sealed class GeminiProvider : IChatProvider
                     },
                 });
                 if (result.Image is { } png)
-                    answers.Add(new JsonObject { ["inline_data"] = new JsonObject { ["mime_type"] = "image/png", ["data"] = Convert.ToBase64String(png) } });
+                    answers.Add(new JsonObject { ["inline_data"] = new JsonObject { ["mime_type"] = AiImages.MediaType(png), ["data"] = Convert.ToBase64String(png) } });
             }
             contents.Add(new JsonObject { ["role"] = "user", ["parts"] = answers });
             if (modelParts.Any(p => p?["text"] is not null)) yield return new ChatChunk("\n\n");

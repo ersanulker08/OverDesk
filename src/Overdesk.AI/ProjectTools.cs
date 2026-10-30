@@ -24,6 +24,7 @@ public static class ProjectTools
     };
 
     private const int MaxRead = 2000;
+    private static readonly HashSet<string> Images = new(StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
     private const long MaxFileBytes = 2_000_000;
 
     // ---------------------------------------------------------------- overview
@@ -153,7 +154,8 @@ public static class ProjectTools
             new()
             {
                 Name = "read_file", IsFileTool = true,
-                Description = $"Read a text file of the project with line numbers. Long files: read in parts with offset (first line, 1-based) and limit (max {MaxRead} lines).",
+                Description = $"Read a text file of the project with line numbers (long files in parts: offset is the first line, 1-based; limit max {MaxRead} lines). " +
+                              "PNG, JPEG, GIF and WebP images come back as pictures you can look at.",
                 Schema = AiTool.Object(("path", "string", "File path relative to the project root.", true),
                                        ("offset", "integer", "First line to read (1-based).", false),
                                        ("limit", "integer", $"Number of lines (default {MaxRead}).", false)),
@@ -239,6 +241,12 @@ public static class ProjectTools
         if (Directory.Exists(path)) return AiToolResult.Error("That is a folder. Use list_files.");
         if (!File.Exists(path)) return AiToolResult.Error("No such file.");
         if (new FileInfo(path).Length > MaxFileBytes * 5) return AiToolResult.Error("The file is too large to read.");
+        // Pictures go to the model as images, so it can look at screenshots, mockups and icons in the project.
+        if (Images.Contains(Path.GetExtension(path)))
+        {
+            if (new FileInfo(path).Length > 3_500_000) return AiToolResult.Error("The image is too large to look at (over 3.5 MB).");
+            return new AiToolResult($"The image {Relative(root, path)}:", await File.ReadAllBytesAsync(path, ct));
+        }
         var bytes = await File.ReadAllBytesAsync(path, ct);
         if (bytes.Take(8000).Contains((byte)0)) return AiToolResult.Error("This is a binary file.");
         var lines = Encoding.UTF8.GetString(bytes).Split('\n');

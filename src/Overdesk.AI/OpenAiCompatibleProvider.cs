@@ -173,7 +173,7 @@ public sealed class OpenAiCompatibleProvider : IChatProvider
             parts.Add(new JsonObject
             {
                 ["type"] = "image_url",
-                ["image_url"] = new JsonObject { ["url"] = "data:image/png;base64," + Convert.ToBase64String(image) },
+                ["image_url"] = new JsonObject { ["url"] = $"data:{AiImages.MediaType(image)};base64," + Convert.ToBase64String(image) },
             });
         return parts;
     }

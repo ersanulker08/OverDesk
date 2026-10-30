@@ -225,7 +225,7 @@ public sealed class McpServer : IDisposable
 
         var content = new JsonArray { new JsonObject { ["type"] = "text", ["text"] = result.Text } };
         if (result.Image is { } png)
-            content.Add(new JsonObject { ["type"] = "image", ["data"] = Convert.ToBase64String(png), ["mimeType"] = "image/png" });
+            content.Add(new JsonObject { ["type"] = "image", ["data"] = Convert.ToBase64String(png), ["mimeType"] = AiImages.MediaType(png) });
         return new JsonObject { ["content"] = content, ["isError"] = result.IsError };
     }
 

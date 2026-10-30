@@ -957,6 +957,9 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
             // The last answer can be asked again (after an error, or for a different answer).
             if (_ai?.Conversation.LastOrDefault() == turn && _ai.IsBusy == false)
                 row.Children.Add(BubbleButton("IconRefresh", turn.Error is null ? "Answer again" : "Try again", () => { _ = _ai.RetryLastAsync(); return Task.CompletedTask; }));
+            // A failed answer (limit reached, server down): another model is one click away.
+            if (turn.Error is not null && _ai?.Conversation.LastOrDefault() == turn)
+                row.Children.Add(BubbleButton("IconSliders", "Choose another model", () => { ShowModelSheet(); return Task.CompletedTask; }));
             if (row.Children.Count > 0) content.Children.Add(row);
         }
         return new Border { Classes = { "bubble", user ? "user" : "assistant" }, Child = content };

@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\Overdesk.AI\Overdesk.AI.csproj" />
     <ProjectReference Include="..\..\src\Overdesk.Core\Overdesk.Core.csproj" />
     <ProjectReference Include="..\..\tools\converter\Overdesk.Tool.Converter.csproj" />
+    <ProjectReference Include="..\..\tools\devkit\Overdesk.Tool.DevKit.csproj" />
   </ItemGroup>
 
 </Project>

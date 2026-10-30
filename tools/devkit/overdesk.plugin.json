@@ -6,5 +6,6 @@
   "run": "inProcess",
   "assembly": "bin/Overdesk.Tool.DevKit.dll",
   "typeName": "Overdesk.Tool.DevKit.DevKitPlugin",
-  "icon": "IconTerminal"
+  "icon": "IconTerminal",
+  "ai": true
 }

@@ -273,9 +273,12 @@ public static class ProjectTools
 
         var sb = new StringBuilder();
         var matches = 0;
+        var scanned = 0;
         foreach (var file in Walk(start, 30))
         {
             ct.ThrowIfCancellationRequested();
+            // Huge folders: stop after 30,000 files rather than search for minutes.
+            if (++scanned > 30_000) return new AiToolResult(sb + $"… (stopped after 30,000 files; search a sub-folder with path)");
             if (glob is not null && !glob.IsMatch(Path.GetFileName(file))) continue;
             try
             {

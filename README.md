@@ -12,8 +12,9 @@
   <img src="docs/screenshots/home.png" alt="OverDesk home page" width="900">
 </p>
 
-> **Status: early (0.2).** The UI is complete and runs on macOS. The Windows layer compiles and CI builds it,
-> but nobody has run it on a real Windows machine yet. Testers and contributors are very welcome.
+> **Status: early (0.2).** The UI is complete and runs on macOS. On Windows, CI starts the app on every commit and
+> renders every screen (programs, icons and system gauges work), but hosting other programs' windows has not been tried
+> by a person yet. Testers and contributors are very welcome.
 
 ## What it does
 

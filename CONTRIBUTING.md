@@ -4,7 +4,7 @@ Thanks for helping! A few things keep the project easy to work on.
 
 ## Most wanted
 
-- **Windows testing.** The Windows layer compiles but has never run on a real machine. It covers Win32 window reparenting,
+- **Windows testing.** The Windows app starts and renders in CI, but nobody has used it on a real machine yet. It covers Win32 window reparenting,
   WebView2, the GPU/NPU gauges and Credential Manager. Bug reports with steps to reproduce are gold.
 - **Tools.** New tools for the right-hand panel. Start from [samples/HelloTool](samples/HelloTool) and
   [docs/PLUGINS.md](docs/PLUGINS.md).

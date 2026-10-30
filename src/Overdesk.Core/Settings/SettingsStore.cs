@@ -18,6 +18,9 @@ public sealed class SettingsStore
 
     public AppSettings Load()
     {
+        // A backup restored last time is applied now, before anything reads the data folder.
+        try { DataBackup.ApplyPending(Directory); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* keep the current data */ }
         try
         {
             if (File.Exists(FilePath))

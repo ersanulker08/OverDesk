@@ -129,6 +129,11 @@ public partial class MainWindow : Window
         };
         Settings.CloseRequested += CloseSettings;
         Settings.SettingsFilePath = _store.FilePath;
+        Settings.BeforeBackup = () =>
+        {
+            SaveSettings();
+            _works.Flush();
+        };
         Settings.Ai = _ai;
         Settings.AddProject = AddProjectAsync;
         Settings.IsGaugeAvailable = id => _stats.Read(id) is not null;

@@ -326,6 +326,20 @@
                             </Grid>
                         </Border>
                         <Border Classes="pagecard">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border Classes="pageicon"><Path Classes="icon accent" Data="{StaticResource IconDownload}"/></Border>
+                                <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Backup" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="BackupStatus" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                               Text="Settings, works, AI chats and memory, and added tools in one file. API keys stay in the keychain."/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <Button x:Name="BackupButton" Classes="ghost" Content="Back up…" Padding="14,7"/>
+                                    <Button x:Name="RestoreButton" Classes="ghost" Content="Restore…" Padding="14,7"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        <Border Classes="pagecard">
                             <Grid ColumnDefinitions="Auto,*">
                                 <Border Classes="pageicon"><Path Classes="icon accent" Data="{StaticResource IconFolder}"/></Border>
                                 <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">

@@ -1,3 +1,4 @@
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia;
 using Avalonia.Controls;
@@ -29,6 +30,8 @@ public partial class SettingsView : UserControl
         CloseButton.Click += (_, _) => CloseRequested?.Invoke();
         PermissionButton.Click += (_, _) => _embedder?.RequestPermissions();
         MirrorButton.Click += (_, _) => _embedder?.RequestMirrorPermission();
+        BackupButton.Click += (_, _) => _ = BackupAsync();
+        RestoreButton.Click += (_, _) => _ = RestoreAsync();
         ClearRecentButton.Click += (_, _) =>
         {
             _settings.RecentPrograms.Clear();
@@ -62,6 +65,52 @@ public partial class SettingsView : UserControl
 
     /// <summary>Shown under "Data" so people can find their settings.</summary>
     public string SettingsFilePath { set => DataPath.Text = value; }
+
+    /// <summary>Save everything that is still in memory (settings, works) before a backup is made.</summary>
+    internal Action? BeforeBackup { get; set; }
+
+    private string DataFolder => Path.GetDirectoryName(DataPath.Text ?? "") ?? "";
+
+    private async Task BackupAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
+        var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Back up OverDesk", SuggestedFileName = $"OverDesk backup {DateTime.Now:yyyy-MM-dd}", DefaultExtension = "zip",
+            FileTypeChoices = new[] { new FilePickerFileType("Zip archive") { Patterns = new[] { "*.zip" } } },
+        });
+        if (file?.TryGetLocalPath() is not { } path) return;
+        try
+        {
+            BeforeBackup?.Invoke();
+            var count = await Task.Run(() => DataBackup.Create(DataFolder, path));
+            BackupStatus.Text = $"Saved {count} files to {Path.GetFileName(path)}.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            BackupStatus.Text = "The backup failed: " + ex.Message;
+        }
+    }
+
+    private async Task RestoreAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
+        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Restore an OverDesk backup", AllowMultiple = false,
+            FileTypeFilter = new[] { new FilePickerFileType("Zip archive") { Patterns = new[] { "*.zip" } } },
+        });
+        if (files.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
+        try
+        {
+            var count = await Task.Run(() => DataBackup.Stage(path, DataFolder));
+            BackupStatus.Text = $"Ready: {count} files. Quit and reopen OverDesk to finish restoring (your current data is kept in .before-restore).";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            BackupStatus.Text = "Could not restore: " + ex.Message;
+        }
+    }
 
     /// <summary>Asked by the gauge list: can this machine measure the gauge?</summary>
     internal Func<string, bool>? IsGaugeAvailable { get; set; }

@@ -28,7 +28,9 @@ Thanks for helping! A few things keep the project easy to work on.
 1. Fork, then create a branch: `git checkout -b my-change`.
 2. Make your change. Run it with `dotnet run --project src/Overdesk.App`.
    Use `OVERDESK_DATA_DIR=/tmp/od` so your real settings stay untouched.
-3. For UI changes, add a screenshot to the pull request. `OVERDESK_SNAPSHOT=/tmp/shots` renders the main screens for you.
+3. Run `dotnet test tests/Overdesk.Tests`. For UI changes, add a screenshot to the pull request:
+   `OVERDESK_SNAPSHOT=/tmp/shots` renders the main screens for you (add `OVERDESK_HEADLESS=1` to do it without a window).
+   CI does the same on macOS and Windows and uploads the screens.
 4. Open a pull request that explains what changed and why, and on which OS you tested it.
 
 By contributing you agree that your work is released under the [MIT License](LICENSE).

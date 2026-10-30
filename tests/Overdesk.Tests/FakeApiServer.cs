@@ -12,7 +12,7 @@ namespace Overdesk.Tests;
 internal sealed class FakeApiServer : IDisposable
 {
     private readonly HttpListener _listener = new();
-    private readonly Queue<(string ContentType, string Body)> _responses = new();
+    private readonly Queue<(string ContentType, string Body, int Status)> _responses = new();
 
     public FakeApiServer()
     {
@@ -29,7 +29,7 @@ internal sealed class FakeApiServer : IDisposable
     public string Url { get; }
     public List<(string Path, JsonNode? Body)> Requests { get; } = new();
 
-    public void Enqueue(string contentType, string body) => _responses.Enqueue((contentType, body));
+    public void Enqueue(string contentType, string body, int status = 200) => _responses.Enqueue((contentType, body, status));
 
     /// <summary>Server-sent events: one "event:/data:" pair per (type, json).</summary>
     public static string Sse(params (string? Event, string Data)[] events)
@@ -53,9 +53,9 @@ internal sealed class FakeApiServer : IDisposable
             string body;
             using (var reader = new StreamReader(context.Request.InputStream)) body = await reader.ReadToEndAsync();
             lock (Requests) Requests.Add((context.Request.Url!.AbsolutePath, body.Length > 0 ? JsonNode.Parse(body) : null));
-            var (type, text) = _responses.Count > 0 ? _responses.Dequeue() : ("application/json", "{\"error\":\"no more responses\"}");
+            var (type, text, status) = _responses.Count > 0 ? _responses.Dequeue() : ("application/json", "{\"error\":\"no more responses\"}", 500);
             var bytes = Encoding.UTF8.GetBytes(text);
-            context.Response.StatusCode = text.Contains("no more responses") ? 500 : 200;
+            context.Response.StatusCode = status;
             context.Response.ContentType = type;
             context.Response.ContentLength64 = bytes.Length;
             await context.Response.OutputStream.WriteAsync(bytes);

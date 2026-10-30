@@ -108,4 +108,66 @@ public class ProviderLoopTests
         Assert.Equal("echo", contents[2]!["parts"]![0]!["functionResponse"]!["name"]!.GetValue<string>());
         Assert.Equal("echoed yo", contents[2]!["parts"]![0]!["functionResponse"]!["response"]!["result"]!.GetValue<string>());
     }
+
+    [Fact]
+    public async Task OpenAi_compatible_joins_split_arguments_and_keeps_calls_with_new_ids_apart()
+    {
+        using var server = new FakeApiServer();
+        static string Delta(object delta) => J(new { choices = new[] { new { delta } } });
+        server.Enqueue("text/event-stream", FakeApiServer.Sse(
+            (null, Delta(new { content = "On it. " })),
+            (null, Delta(new { tool_calls = new[] { new { index = 0, id = "c1", function = new { name = "echo", arguments = "{\"te" } } } })),
+            (null, Delta(new { tool_calls = new[] { new { index = 0, function = new { arguments = "xt\":\"a\"}" } } } })),
+            // A server that numbers every call 0: a new id must start a new call.
+            (null, Delta(new { tool_calls = new[] { new { index = 0, id = "c2", function = new { name = "echo", arguments = "{\"text\":\"b\"}" } } } })),
+            (null, "[DONE]")));
+        server.Enqueue("text/event-stream", FakeApiServer.Sse((null, Delta(new { content = "Both echoed." })), (null, "[DONE]")));
+
+        var provider = new OpenAiCompatibleProvider("test", "Test", server.Url, isLocal: true);
+        var text = await Collect(provider.StreamAsync("m", "sys", new[] { new ChatMessage("user", "hi") }, Context(), CancellationToken.None));
+
+        Assert.Equal(new[] { "a", "b" }, _echoed);
+        Assert.Contains("Both echoed.", text);
+        var messages = server.Requests[1].Body!["messages"]!.AsArray();
+        Assert.Equal(2, messages[^3]!["tool_calls"]!.AsArray().Count);
+        Assert.Equal("c1", messages[^2]!["tool_call_id"]!.GetValue<string>());
+        Assert.Equal("echoed b", messages[^1]!["content"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task OpenAi_compatible_retries_without_tools_when_the_model_cannot_use_them()
+    {
+        using var server = new FakeApiServer();
+        server.Enqueue("application/json", "{\"error\":\"this model does not support tools\"}", status: 400);
+        server.Enqueue("text/event-stream", FakeApiServer.Sse((null, J(new { choices = new[] { new { delta = new { content = "Plain answer." } } } })), (null, "[DONE]")));
+
+        var provider = new OpenAiCompatibleProvider("test", "Test", server.Url, isLocal: true);
+        var text = await Collect(provider.StreamAsync("m", null, new[] { new ChatMessage("user", "hi") }, Context(), CancellationToken.None));
+
+        Assert.Equal("Plain answer.", text);
+        Assert.NotNull(server.Requests[0].Body!["tools"]);
+        Assert.Null(server.Requests[1].Body!["tools"]);
+    }
+
+    [Fact]
+    public async Task Ollama_runs_tools_from_ndjson_and_asks_for_a_larger_context()
+    {
+        using var server = new FakeApiServer();
+        server.Enqueue("application/x-ndjson",
+            J(new { message = new { role = "assistant", content = "", tool_calls = new[] { new { function = new { name = "echo", arguments = new { text = "z" } } } } }, done = false }) + "\n" +
+            J(new { message = new { role = "assistant", content = "" }, done = true }) + "\n");
+        server.Enqueue("application/x-ndjson",
+            J(new { message = new { role = "assistant", content = "Fine." }, done = false }) + "\n" +
+            J(new { message = new { role = "assistant", content = "" }, done = true, eval_count = 10, eval_duration = 1_000_000_000 }) + "\n");
+
+        var provider = new OllamaProvider(server.Url);
+        var text = await Collect(provider.StreamAsync("m", null, new[] { new ChatMessage("user", "hi") }, Context(), CancellationToken.None));
+
+        Assert.Equal(new[] { "z" }, _echoed);
+        Assert.Equal("Fine.", text);
+        Assert.Equal(16384, server.Requests[0].Body!["options"]!["num_ctx"]!.GetValue<int>());
+        var last = server.Requests[1].Body!["messages"]!.AsArray()[^1]!;
+        Assert.Equal("tool", last["role"]!.GetValue<string>());
+        Assert.Equal("echo", last["tool_name"]!.GetValue<string>());
+    }
 }

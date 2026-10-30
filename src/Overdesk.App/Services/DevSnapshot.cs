@@ -52,6 +52,30 @@ internal static class DevSnapshot
             return;
         }
 
+        // OVERDESK_SNAPSHOT_EMBED="a;b" opens real programs, waits for them to be embedded and captures the screen
+        // (Windows CI: proves the hosted window is drawn inside the stage, also after switching tabs and back).
+        if (Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT_EMBED") is { Length: > 0 } embed)
+        {
+            var paths = embed.Split(';', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var path in paths) main.DevOpenProgram(path);
+            for (var i = 0; i < paths.Length; i++)
+            {
+                main.DevSelectTab(i);
+                for (var wait = 0; wait < 100 && main.DevActiveStatus() == "Starting"; wait++) await Task.Delay(200);
+                await Task.Delay(1500);
+                Console.WriteLine($"EMBED {paths[i]}: {main.DevActiveStatus()}");
+                Save(main, Path.Combine(dir, $"embed-{i + 1}.png"));
+            }
+            main.DevShowHome();
+            await Task.Delay(800);
+            Save(main, Path.Combine(dir, "embed-home.png"));
+            main.DevSelectTab(0);
+            await Task.Delay(1200);
+            Save(main, Path.Combine(dir, "embed-back.png"));
+            main.Close();
+            return;
+        }
+
         if (Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT_WORKS") == "1")
         {
             await RunWorksAsync(main, dir);
@@ -220,6 +244,22 @@ internal static class DevSnapshot
     private static void Save(TopLevel top, string path)
     {
         Dispatcher.UIThread.RunJobs();
+#if WINDOWS
+        if (top is Window win && Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT_SCREEN") == "1")
+        {
+            // Real screen pixels: hosted child windows (drawn by other processes) never show up in RenderTargetBitmap.
+            var s = win.RenderScaling;
+            int w = (int)(win.Bounds.Width * s), h = (int)(win.Bounds.Height * s);
+            var pixels = Overdesk.Platform.Windows.WinScreen.Capture(win.Position.X, win.Position.Y, w, h);
+            using var shot = new WriteableBitmap(new PixelSize(w, h), new Vector(96, 96),
+                Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Opaque);
+            using (var fb = shot.Lock())
+                for (var row = 0; row < h; row++)
+                    System.Runtime.InteropServices.Marshal.Copy(pixels, row * w * 4, fb.Address + row * fb.RowBytes, w * 4);
+            shot.Save(path, new PngBitmapEncoderOptions());
+            return;
+        }
+#endif
         if (OperatingSystem.IsMacOS() && top is Window window && Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT_SCREEN") == "1")
         {
             // Real screen pixels (includes OS window chrome); needs Screen Recording permission.

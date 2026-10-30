@@ -90,6 +90,7 @@
                                             <Button Grid.Column="2" Classes="icon tabclose" Tag="close" ToolTip.Tip="Close tab">
                                                 <Path Classes="icon small" Data="{StaticResource IconClose}"/>
                                             </Button>
+                                            <Border Grid.ColumnSpan="3" Classes="tabline"/>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
@@ -110,6 +111,19 @@
                 <!-- Room for the Windows caption buttons -->
                 <Border x:Name="WinCaptionSpace" Grid.Column="6" Width="0"/>
             </Grid>
+        </Border>
+
+        <!-- A thin accent light along the bottom edge of the top bar, fading out toward both sides -->
+        <Border x:Name="TopGlowLine" Grid.Row="0" Height="1" VerticalAlignment="Bottom" IsHitTestVisible="False" Opacity="0.6"
+                Background="{DynamicResource AccentGradient}">
+            <Border.OpacityMask>
+                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+                    <GradientStop Color="Transparent" Offset="0"/>
+                    <GradientStop Color="Black" Offset="0.35"/>
+                    <GradientStop Color="Black" Offset="0.65"/>
+                    <GradientStop Color="Transparent" Offset="1"/>
+                </LinearGradientBrush>
+            </Border.OpacityMask>
         </Border>
 
         <!-- ======================================================== web strip: websites live apart from programs -->
@@ -173,6 +187,10 @@
                                     <Image x:Name="Mirror" Stretch="Fill" IsVisible="False" Cursor="Hand"/>
                                 </Border>
                             </Border>
+                            <!-- Flashes along the frame when the tab changes (see PulseStage) -->
+                            <Border x:Name="StagePulse" Grid.Column="0" CornerRadius="14" BorderThickness="1.5" Opacity="0"
+                                    IsHitTestVisible="False" BorderBrush="{DynamicResource AccentGradientDiagonal}"
+                                    BoxShadow="{DynamicResource AccentGlowLarge}"/>
                             <GridSplitter x:Name="SplitHandle" Grid.Column="1" Background="Transparent" ResizeDirection="Columns"
                                           IsVisible="False"/>
                             <Border x:Name="SplitFrame" Grid.Column="2" CornerRadius="14" BorderThickness="1" IsVisible="False"
@@ -262,6 +280,15 @@
                                 HorizontalAlignment="Center" VerticalAlignment="Center">
                             <StackPanel Spacing="14">
                                 <Panel Width="96" Height="96" HorizontalAlignment="Center">
+                                    <Ellipse x:Name="OverlayHalo" Classes="halo" Width="150" Height="150" Margin="-40"
+                                             Fill="{DynamicResource AccentBrush}">
+                                        <Ellipse.OpacityMask>
+                                            <RadialGradientBrush>
+                                                <GradientStop Color="#70000000" Offset="0"/>
+                                                <GradientStop Color="Transparent" Offset="1"/>
+                                            </RadialGradientBrush>
+                                        </Ellipse.OpacityMask>
+                                    </Ellipse>
                                     <c:Spinner x:Name="OverlaySpinner" Thickness="3" Accent="{DynamicResource AccentColor}"/>
                                     <c:AppIcon x:Name="OverlayIcon" Width="58" Height="58"/>
                                     <Border x:Name="OverlayBadge" Width="26" Height="26" CornerRadius="13"

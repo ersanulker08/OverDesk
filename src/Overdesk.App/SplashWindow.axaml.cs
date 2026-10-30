@@ -39,7 +39,19 @@ public partial class SplashWindow : Window
             halo.GradientStops[1].Color = AccentThemes.WithAlpha(accent, 0);
         }
         Card.RenderTransform = new ScaleTransform(0.96, 0.96);
-        Opened += (_, _) => RequestAnimationFrame(OnFrame);
+        Opened += (_, _) =>
+        {
+            // Windows renders through a redirection surface (see Program.cs), which has no see-through windows:
+            // fill the whole window with the card instead of showing black corners around it.
+            if (ActualTransparencyLevel == WindowTransparencyLevel.None)
+            {
+                Card.Margin = default;
+                Card.CornerRadius = default;
+                Card.BorderThickness = default;
+                Background = new SolidColorBrush(Color.Parse("#0C0B11"));
+            }
+            RequestAnimationFrame(OnFrame);
+        };
         PointerPressed += OnPointerPressed;
     }
 

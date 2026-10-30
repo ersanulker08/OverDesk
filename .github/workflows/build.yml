@@ -45,6 +45,22 @@ jobs:
           count=$(ls shots/*.png 2>/dev/null | wc -l)
           echo "Rendered $count screens"
           test "$count" -ge 10
+      # Windows only: embed real programs (non-headless, the runner has a desktop) and capture the real screen, so
+      # the screens show whether the hosted window is drawn inside the stage or the desktop shows through.
+      - name: Embedding test (real programs)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        timeout-minutes: 6
+        shell: bash
+        env:
+          OVERDESK_SNAPSHOT: ${{ github.workspace }}/shots
+          OVERDESK_SNAPSHOT_SCREEN: "1"
+          OVERDESK_SNAPSHOT_EMBED: C:\Windows\System32\notepad.exe;C:\Windows\System32\charmap.exe
+          OVERDESK_DATA_DIR: ${{ github.workspace }}/embed-data
+        run: |
+          dotnet run --no-build --project src/Overdesk.App 2>&1 | tee embed.log
+          grep "EMBED" embed.log
+          ! grep -q "EMBED.*Failed\|EMBED.*Starting" embed.log
       - name: Upload the screens
         if: always()
         uses: actions/upload-artifact@v4
@@ -53,4 +69,5 @@ jobs:
           path: |
             shots/*.png
             smoke.log
+            embed.log
           if-no-files-found: ignore

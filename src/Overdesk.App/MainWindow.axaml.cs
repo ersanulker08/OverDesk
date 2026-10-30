@@ -73,6 +73,7 @@ public partial class MainWindow : Window
         _toolPanelOpen = false;
 
         TabStrip.ItemsSource = _tabs.Tabs;
+        TabStrip.ContainerPrepared += (_, e) => AnimateTabIn(e.Container);
         DragDrop.SetAllowDrop(this, true);
         DragDrop.SetAllowDrop(ToolStrip, true);
 
@@ -213,6 +214,12 @@ public partial class MainWindow : Window
     internal void DevShowSettingsSection(string label) => Settings.ShowSection(label);
     internal void DevOpenProgram(string path) => OpenProgram(path);
     internal void DevShowHome() => ShowHome();
+    internal void DevSelectTab(int index)
+    {
+        var tabs = _tabs.Tabs.Where(t => !t.IsInternal).ToList();
+        if (index < tabs.Count) _tabs.Activate(tabs[index]);
+    }
+    internal string DevActiveStatus() => _tabs.Active is { } t ? $"{t.Status}{(t.Message is { } m ? " (" + m + ")" : "")}" : "none";
     internal void DevOpenPicker() => _ = AddProgramsAsync();
     internal void DevOpenPalette() => ShowPalette();
     internal void DevAskAi(string question) => OpenAi(question: question);
@@ -527,6 +534,57 @@ public partial class MainWindow : Window
         SaveSettings();
     }
 
+    /// <summary>A new tab rises into the bar: fades in, slides up a little and settles from a slightly smaller size.</summary>
+    private static void AnimateTabIn(Control container)
+    {
+        container.Opacity = 0;
+        Animator.Run(container, 0.34, t =>
+        {
+            var e = Ease.OutCubic(t);
+            var size = 0.92 + 0.08 * Ease.OutBack(t);
+            container.Opacity = e;
+            container.RenderTransform = new TransformGroup
+            {
+                Children = { new ScaleTransform(size, size), new TranslateTransform(0, 9 * (1 - e)) },
+            };
+        }, () =>
+        {
+            container.ClearValue(OpacityProperty);
+            container.ClearValue(RenderTransformProperty);
+        });
+    }
+
+    /// <summary>Close from the tab itself (x, middle click): the tab shrinks away first, then closes as usual.</summary>
+    private void CloseTabAnimated(HostedTab tab)
+    {
+        var border = TabStrip.GetVisualDescendants().OfType<Border>()
+            .FirstOrDefault(b => b.Classes.Contains("tab") && ReferenceEquals(b.DataContext, tab));
+        if (border is null || !_closingTabs.Add(tab))
+        {
+            if (border is null) CloseTab(tab);
+            return;
+        }
+        var width = border.Bounds.Width;
+        border.IsHitTestVisible = false;
+        Animator.Run(border, 0.18, t =>
+        {
+            var e = Ease.InOutCubic(t);
+            border.Opacity = 1 - e;
+            border.MinWidth = 0;
+            border.Width = Math.Max(width * (1 - e), 0);
+            border.RenderTransform = new ScaleTransform(1 - 0.08 * e, 1 - 0.08 * e);
+        }, () =>
+        {
+            _closingTabs.Remove(tab);
+            if (_tabs.Tabs.Contains(tab)) CloseTab(tab);
+            // The template may be recycled for another tab: leave nothing of the animation behind.
+            foreach (var p in new AvaloniaProperty[] { OpacityProperty, WidthProperty, MinWidthProperty, RenderTransformProperty, IsHitTestVisibleProperty })
+                border.ClearValue(p);
+        });
+    }
+
+    private readonly HashSet<HostedTab> _closingTabs = new();
+
     private void CloseOtherTabs(HostedTab keep)
     {
         foreach (var t in _tabs.Tabs.Where(t => t != keep).ToList()) CloseTab(t);
@@ -541,9 +599,23 @@ public partial class MainWindow : Window
         }
         UpdateTabContent();
         SaveSettings();
+        if (_tabs.Active is { Status: TabStatus.Running, IsInternal: false }) PulseStage();
         if (_tabs.Active is { Status: TabStatus.Starting } tab && !_tabStarts.ContainsKey(tab.Id))
             _ = StartTabAsync(tab);
     }
+
+    /// <summary>A short light run along the stage frame: the program in it just changed or just arrived.</summary>
+    private void PulseStage()
+    {
+        var run = ++_stagePulses;
+        Animator.Run(StagePulse, 0.7, t =>
+        {
+            if (run != _stagePulses) return; // a newer pulse took over
+            StagePulse.Opacity = t < 0.18 ? Ease.OutCubic(t / 0.18) : 1 - Ease.InOutCubic((t - 0.18) / 0.82);
+        });
+    }
+
+    private int _stagePulses;
 
     private async Task StartTabAsync(HostedTab tab)
     {
@@ -586,7 +658,10 @@ public partial class MainWindow : Window
         UpdateTabContent();
         SyncLayout();
         if (tab.Status == TabStatus.Running && ReferenceEquals(_tabs.Active, tab))
+        {
             _embedding.Focus(TabKey(tab));
+            PulseStage();
+        }
     }
 
     private void RestartTab(HostedTab tab)
@@ -655,6 +730,7 @@ public partial class MainWindow : Window
         if (tab is null || tab.Status == TabStatus.Running)
         {
             TabOverlay.IsVisible = false;
+            OverlayHalo.Classes.Set("breathing", false);
             return;
         }
 
@@ -664,6 +740,7 @@ public partial class MainWindow : Window
         var starting = tab.Status == TabStatus.Starting;
         OverlaySpinner.IsVisible = starting;
         OverlayBadge.IsVisible = !starting;
+        OverlayHalo.Classes.Set("breathing", starting);
 
         switch (tab.Status)
         {
@@ -689,11 +766,15 @@ public partial class MainWindow : Window
 
         if (!wasVisible)
         {
-            Animator.Run(OverlayCard, 0.35, t =>
+            Animator.Run(OverlayCard, 0.45, t =>
             {
                 var e = Ease.OutCubic(t);
+                var pop = 0.94 + 0.06 * Ease.OutBack(t);
                 OverlayCard.Opacity = e;
-                OverlayCard.RenderTransform = new TranslateTransform(0, 12 * (1 - e));
+                OverlayCard.RenderTransform = new TransformGroup
+                {
+                    Children = { new ScaleTransform(pop, pop), new TranslateTransform(0, 14 * (1 - e)) },
+                };
             });
         }
     }
@@ -753,7 +834,7 @@ public partial class MainWindow : Window
         if (kind == MouseButton.Left && e.Source is Visual v && v.FindAncestorOfType<Button>(includeSelf: true) is null)
             FocusHostedWindow(); // clicking a program's tab means "let me use that program"
         else if (kind == MouseButton.Middle)
-            CloseTab(tab);
+            CloseTabAnimated(tab);
         else if (kind == MouseButton.Right)
             ShowTabMenu(tab, (Control)e.Source!);
     }
@@ -762,7 +843,7 @@ public partial class MainWindow : Window
     {
         if (e.Source is Button { Tag: "close" } && TabFromSource(e.Source) is { } tab)
         {
-            CloseTab(tab);
+            CloseTabAnimated(tab);
             e.Handled = true;
         }
     }

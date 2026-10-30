@@ -261,6 +261,12 @@ public partial class MainWindow : Window
         return _activeWeb is { } web ? (await ReadWebPageAsync(web)).Text : "no web tab";
     }
 
+    internal void DevAiError()
+    {
+        OpenAi();
+        _ai.DevShowError();
+    }
+
     internal void DevAiDemo(string folder)
     {
         OpenAi();

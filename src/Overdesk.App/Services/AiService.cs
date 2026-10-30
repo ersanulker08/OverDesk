@@ -507,6 +507,19 @@ internal sealed class AiService
         Changed?.Invoke();
     }
 
+    /// <summary>Development snapshots: a conversation whose last answer failed.</summary>
+    internal void DevShowError()
+    {
+        Current = new ChatThread { Title = "Limit" };
+        Current.Turns.Add(new AiTurn { Role = ChatMessage.User, Text = "Summarize my notes" });
+        Current.Turns.Add(new AiTurn
+        {
+            Role = ChatMessage.Assistant,
+            Error = "Your Claude plan's usage limit is reached (You've hit your session limit · resets 2:40am). Pick another model in the menu above (a local one is free), or wait until it resets.",
+        });
+        Changed?.Invoke();
+    }
+
     /// <summary>Fill a saved prompt's variables ("{{clipboard}}").</summary>
     public static string Expand(string template, string? clipboard)
         => template.Replace("{{clipboard}}", clipboard ?? "", StringComparison.OrdinalIgnoreCase);

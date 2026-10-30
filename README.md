@@ -143,6 +143,8 @@ The core never knows which OS it runs on. Everything OS-specific sits behind int
   `OVERDESK_SNAPSHOT_TOOL=<plugin id>` also opens a tool.
 - `OVERDESK_SNAPSHOT_AI_PROMPT="..."` (with `OVERDESK_SNAPSHOT`) sends one real message from inside the app and prints
   what the AI did; `OVERDESK_SNAPSHOT_AI_MODEL`, `_FOLDER` and `_ALLOW=1` pick the model, the project folder and auto-approval.
+- `OVERDESK_HEADLESS=1` (Debug builds) renders those snapshots without a display: no window appears, nothing
+  needs the screen to be awake, and shadows render correctly.
 - `dotnet test tests/Overdesk.Tests` runs the unit tests.
 - Check the Windows build from a Mac: `dotnet build src/Overdesk.App -p:OS=Windows_NT -p:EnableWindowsTargeting=true`.
 

@@ -71,6 +71,9 @@ internal static class DevSnapshot
         main.DevShowSettingsSection("AI");
         await Task.Delay(700);
         Save(main, Path.Combine(dir, "settings-ai.png"));
+        main.DevShowSettingsSection("Data");
+        await Task.Delay(700);
+        Save(main, Path.Combine(dir, "settings-data.png"));
         main.DevCloseSettings();
         await Task.Delay(400);
 
@@ -123,6 +126,9 @@ internal static class DevSnapshot
         main.DevAiDemo(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../..")));
         await Task.Delay(600);
         Save(main, Path.Combine(dir, "ai-actions.png"));
+        main.DevAiError();
+        await Task.Delay(600);
+        Save(main, Path.Combine(dir, "ai-error.png"));
         main.DevCloseTools();
         await Task.Delay(300);
 

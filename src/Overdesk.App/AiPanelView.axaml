@@ -124,6 +124,13 @@
             </Button>
             <TextBlock x:Name="RailTitle" DockPanel.Dock="Top" Classes="eyebrow" Text="HISTORY" FontSize="9" Margin="12,8,0,4"
                        Opacity="0"/>
+            <Border x:Name="RailSearchBox" DockPanel.Dock="Top" Margin="8,2,8,4" Opacity="0" CornerRadius="9" Padding="8,0"
+                    Background="{StaticResource Bg2Brush}" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="1">
+                <Grid ColumnDefinitions="Auto,*">
+                    <Path Classes="icon small" Data="{StaticResource IconSearch}" Height="11" VerticalAlignment="Center" Opacity="0.7"/>
+                    <TextBox x:Name="RailSearch" Grid.Column="1" Classes="search" FontSize="12" Margin="4,0,0,0" PlaceholderText="Search chats…"/>
+                </Grid>
+            </Border>
             <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden">
                 <StackPanel x:Name="HistoryList" Spacing="3" Margin="4,4,4,8"/>
             </ScrollViewer>

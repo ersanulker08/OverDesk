@@ -38,7 +38,10 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         ChatMenuButton.Click += (_, _) => ShowChatMenu();
         RailNewChat.Click += (_, _) => StartNewChat();
         HistoryRail.PointerEntered += (_, _) => SetRail(true);
-        HistoryRail.PointerExited += (_, _) => SetRail(false);
+        // Typing in the search keeps the rail open after the pointer leaves; it closes once the search loses focus.
+        HistoryRail.PointerExited += (_, _) => { if (!RailSearch.IsFocused) SetRail(false); };
+        RailSearch.TextChanged += (_, _) => RenderHistory();
+        RailSearch.LostFocus += (_, _) => { if (!HistoryRail.IsPointerOver) SetRail(false); };
         SendButton.Click += (_, _) => SendOrStop();
         AttachClipboard.Click += async (_, _) => await AttachClipboardAsync();
         AttachScreenshot.Click += async (_, _) => await AttachScreenshotAsync();
@@ -724,6 +727,7 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
     {
         yield return RailNewText;
         yield return RailTitle;
+        yield return RailSearchBox;
         foreach (var child in HistoryList.Children)
         {
             if (child is TextBlock header) yield return header;
@@ -735,7 +739,8 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
     private void RenderHistory()
     {
         if (_ai is null) return;
-        var signature = _ai.Current.Id + "|" + string.Join(",", _ai.Threads.Select(t => t.Id + t.Title));
+        var query = RailSearch.Text?.Trim() ?? "";
+        var signature = _ai.Current.Id + "|" + query + "|" + string.Join(",", _ai.Threads.Select(t => t.Id + t.Title));
         if (signature == _historySignature) return;
         _historySignature = signature;
 
@@ -748,7 +753,17 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
             return;
         }
         string? lastGroup = null;
-        foreach (var thread in _ai.Threads.Take(80))
+        // Search: titles and everything said in the chats.
+        var threads = query.Length == 0 ? _ai.Threads
+            : _ai.Threads.Where(t => t.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
+                                     || t.Turns.Any(turn => turn.Text.Contains(query, StringComparison.OrdinalIgnoreCase))).ToList();
+        if (threads.Count == 0)
+        {
+            HistoryList.Children.Add(new TextBlock { Text = $"No chats mention “{query}”.", Classes = { "faint" }, FontSize = 11,
+                TextWrapping = TextWrapping.Wrap, Width = RailOpen - 30, Margin = new Thickness(8, 4), Opacity = fade });
+            return;
+        }
+        foreach (var thread in threads.Take(80))
         {
             var group = DayGroup(thread.Updated);
             if (group != lastGroup)

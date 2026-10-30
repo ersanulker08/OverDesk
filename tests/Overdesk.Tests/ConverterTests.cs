@@ -136,6 +136,28 @@ public class ConverterTests
         Assert.True(new FileInfo(output).Length > 500);
     }
 
+    private static int PdfPages(string path) => System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(path, Encoding.Latin1), @"/Type\s*/Page\b").Count;
+
+    [Fact]
+    public async Task Markdown_becomes_a_pdf_with_page_breaks()
+    {
+        using var dir = new TempFolder();
+        var long_ = string.Join("\n\n", Enumerable.Range(1, 80).Select(i => $"Paragraph {i}: some **bold** words and a [link](https://example.com) that wrap across the line width of an A4 page."));
+        var input = dir.Write("notes.md", $"# Plan\n\n- [x] done\n- open\n\n> a quote\n\n```\nvar x = 1;\n```\n\n---\n\n{long_}");
+        var output = await Engine.ConvertAsync(input, "pdf", new ConvertOptions(), null, CancellationToken.None);
+        Assert.StartsWith("%PDF", File.ReadAllText(output, Encoding.Latin1));
+        Assert.True(PdfPages(output) >= 2);
+    }
+
+    [Fact]
+    public async Task Images_become_one_page_pdfs()
+    {
+        using var dir = new TempFolder();
+        var png = MakePng(dir, 300, 200);
+        var output = await Engine.ConvertAsync(png, "pdf", new ConvertOptions(), null, CancellationToken.None);
+        Assert.Equal(1, PdfPages(output));
+    }
+
     /// <summary>A 16-bit mono 22 kHz sine wave as a WAV file.</summary>
     private static byte[] Wave(int seconds)
     {

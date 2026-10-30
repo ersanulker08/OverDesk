@@ -55,7 +55,7 @@ public static partial class Engine
         var ext = Ext(path) switch { "jpeg" => "jpg", "htm" => "html", "markdown" => "md", "tif" => "tiff", "aif" => "aiff", var e => e };
         IEnumerable<string> targets = KindOf(path) switch
         {
-            FileKind.Image => new[] { "png", "jpg", "webp" }.Concat(Mac ? new[] { "heic", "tiff", "pdf" } : Array.Empty<string>()),
+            FileKind.Image => new[] { "png", "jpg", "webp", "pdf" }.Concat(Mac ? new[] { "heic", "tiff" } : Array.Empty<string>()),
             FileKind.Data => ext switch
             {
                 "json" => new[] { "csv", "xml", "tsv" },
@@ -64,9 +64,9 @@ public static partial class Engine
                 _ => new[] { "json" },
             },
             FileKind.Text => ext == "md"
-                ? new[] { "html" }.Concat(Mac ? new[] { "docx", "rtf", "odt" } : Array.Empty<string>())
-                : Mac ? new[] { "docx", "rtf", "html", "odt" } : new[] { "html" },
-            FileKind.Document => Mac ? new[] { "txt", "docx", "html", "rtf", "odt" } : ext == "html" ? new[] { "txt" } : Array.Empty<string>(),
+                ? new[] { "pdf", "html" }.Concat(Mac ? new[] { "docx", "rtf", "odt" } : Array.Empty<string>())
+                : Mac ? new[] { "pdf", "docx", "rtf", "html", "odt" } : new[] { "pdf", "html" },
+            FileKind.Document => Mac ? new[] { "pdf", "txt", "docx", "html", "rtf", "odt" } : ext == "html" ? new[] { "pdf", "txt" } : Array.Empty<string>(),
             FileKind.Audio => HasFfmpeg ? new[] { "mp3", "m4a", "wav", "flac", "ogg", "aiff" } : Mac ? new[] { "m4a", "wav", "aiff", "flac", "caf" } : Array.Empty<string>(),
             FileKind.Video => HasFfmpeg ? new[] { "mp4", "mov", "webm", "gif", "mp3", "m4a" } : Mac ? new[] { "mp4", "mov", "m4v" } : Array.Empty<string>(),
             _ => Array.Empty<string>(),
@@ -127,9 +127,21 @@ public static partial class Engine
 
     private static void ConvertImage(string input, string output, string target, ConvertOptions options)
     {
-        // HEIC / TIFF / PDF output, and inputs Skia cannot read (HEIC), go through macOS's sips.
+        // HEIC / TIFF output, and inputs Skia cannot read (HEIC), go through macOS's sips.
         using var codec = SKCodec.Create(input);
-        if (target is "heic" or "tiff" or "pdf" || codec is null)
+        if (codec is null && target == "pdf" && Mac)
+        {
+            // Read it through sips first (HEIC photos), then lay it out like any other image.
+            var png = Path.Combine(Path.GetTempPath(), $"overdesk-{Guid.NewGuid():N}.png");
+            try
+            {
+                Cli.Run("/usr/bin/sips", new[] { "-s", "format", "png", input, "--out", png }, CancellationToken.None).GetAwaiter().GetResult();
+                ConvertImage(png, output, target, options);
+            }
+            finally { File.Delete(png); }
+            return;
+        }
+        if (target is "heic" or "tiff" || codec is null)
         {
             if (!Mac) throw new InvalidOperationException("This image format cannot be read on this computer.");
             var args = new List<string> { "-s", "format", target == "tiff" ? "tiff" : target };
@@ -150,6 +162,13 @@ public static partial class Engine
             resized = bitmap.Resize(new SKImageInfo(Math.Max(1, (int)Math.Round(bitmap.Width * scale)), Math.Max(1, (int)Math.Round(bitmap.Height * scale))),
                 new SKSamplingOptions(SKCubicResampler.Mitchell));
             bitmap = resized ?? bitmap;
+        }
+
+        if (target == "pdf")
+        {
+            PdfWriter.WriteImage(bitmap, output);
+            resized?.Dispose();
+            return;
         }
 
         var format = target switch { "jpg" => SKEncodedImageFormat.Jpeg, "webp" => SKEncodedImageFormat.Webp, _ => SKEncodedImageFormat.Png };
@@ -189,6 +208,11 @@ public static partial class Engine
     {
         var text = await File.ReadAllTextAsync(input, cancellation);
         var title = Path.GetFileNameWithoutExtension(input);
+        if (target == "pdf")
+        {
+            await Task.Run(() => PdfWriter.WriteText(text, output, markdown: Ext(input) is "md" or "markdown", title), cancellation);
+            return;
+        }
         var html = Ext(input) is "md" or "markdown" ? Markdown.ToHtmlPage(text, title) : Markdown.PlainToHtmlPage(text, title);
         if (target == "html")
         {
@@ -210,6 +234,24 @@ public static partial class Engine
 
     private static async Task ConvertDocumentAsync(string input, string output, string target, CancellationToken cancellation)
     {
+        if (target == "pdf")
+        {
+            // The document's text (through textutil on macOS), laid out as a PDF.
+            string text;
+            if (Mac)
+            {
+                var temp = Path.Combine(Path.GetTempPath(), $"overdesk-{Guid.NewGuid():N}.txt");
+                try
+                {
+                    await Cli.Run("/usr/bin/textutil", new[] { "-convert", "txt", input, "-output", temp }, cancellation);
+                    text = await File.ReadAllTextAsync(temp, cancellation);
+                }
+                finally { File.Delete(temp); }
+            }
+            else text = Markdown.HtmlToText(await File.ReadAllTextAsync(input, cancellation));
+            await Task.Run(() => PdfWriter.WriteText(text, output, markdown: false, Path.GetFileNameWithoutExtension(input)), cancellation);
+            return;
+        }
         if (Mac)
         {
             await Cli.Run("/usr/bin/textutil", new[] { "-convert", target, input, "-output", output }, cancellation);

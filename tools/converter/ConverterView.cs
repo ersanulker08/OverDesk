@@ -62,7 +62,7 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
         _empty.Children.Add(new TextBlock { Text = "Drop files to convert", FontSize = 17, FontWeight = FontWeight.SemiBold, HorizontalAlignment = HorizontalAlignment.Center });
         _empty.Children.Add(new TextBlock
         {
-            Text = "Images, JSON / CSV / XML, Markdown, Word and RTF documents, audio and video.\nResults go next to the originals.",
+            Text = "Images, JSON / CSV / XML, Markdown, PDF, Word and RTF documents, audio and video.\nResults go next to the originals.",
             FontSize = 12, Opacity = 0.65, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 280,
         });
         var browse = new Button { Content = "Choose files…", HorizontalAlignment = HorizontalAlignment.Center, Padding = new Thickness(14, 7), Margin = new Thickness(0, 6, 0, 0) };

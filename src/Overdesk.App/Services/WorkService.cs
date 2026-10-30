@@ -46,6 +46,11 @@ internal sealed class WorkService
 
     public void AskAi(Work work, string? instruction) => AiRequested?.Invoke(work, instruction);
 
+    /// <summary>The user wants the AI to make a new work from a description.</summary>
+    public event Action? AiCreateRequested;
+
+    public void CreateWithAi() => AiCreateRequested?.Invoke();
+
     public void OpenInTab(Work work) => TabRequested?.Invoke(work);
     public void OpenInPanel(Work work) => PanelRequested?.Invoke(work);
 

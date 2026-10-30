@@ -21,6 +21,11 @@ public partial class MainWindow
         _works.TabRequested += OpenWorkTab;
         _works.PanelRequested += OpenWorkInPanel;
         _works.AiRequested += AskAiAboutWork;
+        _works.AiCreateRequested += () =>
+        {
+            OpenAi();
+            AiPanel().Draft("Create a work: ");
+        };
         _works.Library.Changed += OnWorksChanged;
         Home.InitializeWorks(_works);
     }

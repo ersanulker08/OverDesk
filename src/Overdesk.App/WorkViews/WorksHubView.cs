@@ -139,6 +139,26 @@ internal sealed class WorksHubView : UserControl
         head.Children.Add(titles);
         _column.Children.Add(head);
 
+        // Or skip the templates: describe the work and let the AI build it.
+        var aiRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+        aiRow.Children.Add(new Border
+        {
+            Width = 36, Height = 36, CornerRadius = new CornerRadius(11), Background = Res.Brush("AccentGradientDiagonal"),
+            Child = new Shapes.Path { Classes = { "icon" }, Data = Res.Icon("IconSparkle"), Stroke = Brushes.White, Height = 16 },
+        });
+        var aiText = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        aiText.Children.Add(new TextBlock { Text = "Describe it, the AI makes it", FontWeight = FontWeight.SemiBold, FontSize = 14 });
+        aiText.Children.Add(new TextBlock { Text = "“A packing list for a ski trip”, “an RPG character sheet for a dwarf smith”…", Classes = { "muted" }, FontSize = 11.5 });
+        aiRow.Children.Add(aiText);
+        var ai = new Button { Classes = { "wcard" }, Height = 64, Margin = new Thickness(0, 0, 16, 8), HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(14, 0, 22, 0), Content = aiRow };
+        ai.Click += (_, _) =>
+        {
+            _gallery = false;
+            Rebuild();
+            svc.CreateWithAi();
+        };
+        _column.Children.Add(ai);
+
         foreach (var category in new[] { WorkTemplates.Games, WorkTemplates.Writing, WorkTemplates.Lists, WorkTemplates.Life })
         {
             _column.Children.Add(new TextBlock { Text = category.ToUpperInvariant(), Classes = { "eyebrow" }, Margin = new Thickness(6, 14, 0, 10) });

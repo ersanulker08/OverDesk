@@ -28,3 +28,29 @@ jobs:
           dotnet build tools/converter -c Release
       - name: Run the tests
         run: dotnet test tests/Overdesk.Tests -c Release
+      # Start the real app without a display (Debug + OVERDESK_HEADLESS) and render every screen: catches startup crashes.
+      # On Windows this is the first time the app actually runs anywhere, so it reports but does not block yet.
+      - name: Smoke test (render all screens)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        timeout-minutes: 8
+        shell: bash
+        env:
+          OVERDESK_HEADLESS: "1"
+          OVERDESK_SNAPSHOT: ${{ github.workspace }}/shots
+          OVERDESK_DATA_DIR: ${{ github.workspace }}/smoke-data
+        run: |
+          dotnet build src/Overdesk.App -c Debug
+          dotnet run --no-build --project src/Overdesk.App 2>&1 | tee smoke.log
+          if grep -q "Unhandled exception\|SNAPSHOT FAILED" smoke.log; then echo "The app failed"; exit 1; fi
+          count=$(ls shots/*.png 2>/dev/null | wc -l)
+          echo "Rendered $count screens"
+          test "$count" -ge 10
+      - name: Upload the screens
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screens-${{ matrix.os }}
+          path: |
+            shots/*.png
+            smoke.log
+          if-no-files-found: ignore

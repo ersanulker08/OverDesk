@@ -29,9 +29,7 @@ jobs:
       - name: Run the tests
         run: dotnet test tests/Overdesk.Tests -c Release
       # Start the real app without a display (Debug + OVERDESK_HEADLESS) and render every screen: catches startup crashes.
-      # On Windows this is the first time the app actually runs anywhere, so it reports but does not block yet.
       - name: Smoke test (render all screens)
-        continue-on-error: ${{ matrix.os == 'windows-latest' }}
         timeout-minutes: 8
         shell: bash
         env:

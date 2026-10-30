@@ -66,7 +66,7 @@ changes, edits them. It can never leave that folder or touch `.git`.
 AI takes is listed in its answer.
 
 Every provider gets the same tools: the API ones call them directly, and installed AI apps (Claude Code, Gemini CLI)
-reach them through a small local MCP server that only this computer can use.
+reach them through a small local MCP server that only this computer can use. How it all fits together: [docs/AI.md](docs/AI.md).
 
 Shortcuts: **⌘J / Ctrl+J** opens the AI panel. In the command palette you can start a new chat, switch the project folder,
 or let the AI fix the last failed task. The ✨ button in a work asks the AI to continue, summarize, tidy or brainstorm it.

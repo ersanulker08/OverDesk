@@ -289,6 +289,7 @@ public partial class MainWindow : Window
     internal void DevHomeSearch(string text) => Home.DevSearch(text);
     internal void DevShowWorkspaces() => ShowWorkspaceMenu();
     internal void DevScrollDock(double y) => Dock.DevScroll(y);
+    internal SideDock DevDock => Dock;
     internal void DevCloseTools() => CloseToolPanel();
     internal void DevOpenWeb(string serviceId)
     {

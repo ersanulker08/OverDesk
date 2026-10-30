@@ -534,25 +534,6 @@
     </Style>
 
     <!-- ============================================================ side dock -->
-    <Style Selector="Border.dockcard">
-        <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource StrokeBrush}"/>
-        <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="14"/>
-        <Setter Property="Transitions">
-            <Transitions>
-                <BrushTransition Property="BorderBrush" Duration="0:0:0.2"/>
-                <BrushTransition Property="Background" Duration="0:0:0.2"/>
-            </Transitions>
-        </Setter>
-    </Style>
-    <Style Selector="Border.dockcard:pointerover">
-        <Setter Property="BorderBrush" Value="{StaticResource StrokeStrongBrush}"/>
-        <Setter Property="Background" Value="#181822"/>
-    </Style>
-    <Style Selector="Border.dockcard.media:pointerover">
-        <Setter Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
-    </Style>
 
     <Style Selector="Button.playbtn">
         <Setter Property="Width" Value="44"/>
@@ -574,11 +555,21 @@
         <Setter Property="Height" Value="32"/>
         <Setter Property="CornerRadius" Value="16"/>
     </Style>
+    <!-- A glossy orb: lit cap and dark underside drawn as inner shadows, a solid "foot" under it, accent bloom -->
+    <Style Selector="Button.playbtn /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="BoxShadow" Value="inset 0 2 3 -1 #A0FFFFFF, inset 0 -5 8 0 #66000000, 0 3 0 0 #B0000000, 0 8 18 0 #66000000"/>
+    </Style>
+    <Style Selector="Button.playbtn:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="BoxShadow" Value="inset 0 2 3 -1 #C0FFFFFF, inset 0 -5 8 0 #55000000, 0 4 0 0 #B0000000, 0 10 24 0 #80000000"/>
+    </Style>
+    <Style Selector="Button.playbtn:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="BoxShadow" Value="inset 0 3 6 0 #70000000, inset 0 -1 2 0 #40FFFFFF, 0 1 0 0 #B0000000"/>
+    </Style>
     <Style Selector="Button.playbtn:pointerover">
-        <Setter Property="RenderTransform" Value="scale(1.08)"/>
+        <Setter Property="RenderTransform" Value="translateY(-1px) scale(1.06)"/>
     </Style>
     <Style Selector="Button.playbtn:pressed">
-        <Setter Property="RenderTransform" Value="scale(0.94)"/>
+        <Setter Property="RenderTransform" Value="translateY(2px) scale(0.97)"/>
     </Style>
     <Style Selector="Button.playbtn:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.playbtn:pressed /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource AccentGradientDiagonal}"/>
@@ -624,31 +615,75 @@
     </Style>
 
     <!-- A clickable row inside a dock card (ports, clipboard entries) -->
+    <!-- Dock rows are keycaps: a raised top with a lit edge standing on a dark base; they press down when clicked -->
     <Style Selector="Button.dockrow">
         <Setter Property="HorizontalAlignment" Value="Stretch"/>
         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-        <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
-        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Background" Value="{StaticResource KeycapBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource KeycapEdgeBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="9"/>
         <Setter Property="Padding" Value="9,6"/>
+        <Setter Property="Margin" Value="0,0,0,3"/>
+        <Setter Property="RenderTransform" Value="none"/>
+        <Setter Property="Transitions">
+            <Transitions>
+                <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.12" Easing="CubicEaseOut"/>
+            </Transitions>
+        </Setter>
+    </Style>
+    <Style Selector="Button.dockrow /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="BoxShadow" Value="0 3 0 0 #E0050507, 0 5 8 0 #60000000"/>
     </Style>
     <Style Selector="Button.dockrow:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+        <Setter Property="Background" Value="{StaticResource KeycapBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+        <Setter Property="BoxShadow" Value="0 3 0 0 #E0050507, 0 6 14 0 #90000000"/>
+    </Style>
+    <Style Selector="Button.dockrow:pointerover">
+        <Setter Property="RenderTransform" Value="translateY(-1px)"/>
+    </Style>
+    <Style Selector="Button.dockrow:pressed">
+        <Setter Property="RenderTransform" Value="translateY(2px)"/>
+    </Style>
+    <Style Selector="Button.dockrow:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="BoxShadow" Value="0 1 0 0 #E0050507"/>
     </Style>
     <Style Selector="Button.dockrow:pointerover Path.icon">
         <Setter Property="Stroke" Value="{DynamicResource AccentBrush}"/>
     </Style>
+    <!-- The folded dock's rail: square keycaps -->
+    <Style Selector="Button.railkey /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{StaticResource KeycapBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource KeycapEdgeBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BoxShadow" Value="0 4 0 0 #E0050507, 0 7 12 0 #70000000"/>
+    </Style>
+    <Style Selector="Button.railkey:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{StaticResource KeycapBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+        <Setter Property="BoxShadow" Value="0 4 0 0 #E0050507, 0 7 16 0 #90000000"/>
+    </Style>
+    <Style Selector="Button.railkey:pressed">
+        <Setter Property="RenderTransform" Value="translateY(3px)"/>
+    </Style>
+    <Style Selector="Button.railkey:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="BoxShadow" Value="0 1 0 0 #E0050507"/>
+    </Style>
+
+    <!-- Read-only rows are wells pressed into the slab -->
     <Style Selector="Border.dockrowstatic">
-        <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+        <Setter Property="Background" Value="#0B0B10"/>
         <Setter Property="CornerRadius" Value="9"/>
         <Setter Property="Padding" Value="9,6"/>
+        <Setter Property="BoxShadow" Value="inset 0 2 4 0 #C0000000, inset 0 -1 0 0 #18FFFFFF"/>
     </Style>
     <Style Selector="TextBlock.mono">
         <Setter Property="FontFamily" Value="Menlo, Consolas, Cascadia Mono, monospace"/>
     </Style>
 
     <Style Selector="TextBox.notes">
-        <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+        <Setter Property="Background" Value="#0B0B10"/>
         <Setter Property="BorderBrush" Value="{StaticResource StrokeBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="10"/>
@@ -657,6 +692,10 @@
         <Setter Property="CaretBrush" Value="{DynamicResource AccentBrush}"/>
         <Setter Property="SelectionBrush" Value="{DynamicResource AccentSoftBrush}"/>
         <Setter Property="PlaceholderForeground" Value="{StaticResource FaintBrush}"/>
+    </Style>
+    <!-- The scratchpad is a well sunk into its slab -->
+    <Style Selector="TextBox.notes /template/ Border#PART_BorderElement">
+        <Setter Property="BoxShadow" Value="inset 0 3 6 0 #C0000000, inset 0 -1 0 0 #14FFFFFF"/>
     </Style>
     <Style Selector="TextBox.notes:pointerover /template/ Border#PART_BorderElement, TextBox.notes:focus /template/ Border#PART_BorderElement">
         <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>

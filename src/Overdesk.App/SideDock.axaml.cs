@@ -6,6 +6,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Overdesk.App.Controls;
+using Overdesk.App.Controls.Depth;
 using Overdesk.App.Services;
 using Overdesk.App.Theme;
 using Overdesk.Core.Platform;
@@ -184,6 +185,7 @@ public partial class SideDock : UserControl
         MediaBackdrop.Background = art is null ? null : new ImageBrush(art) { Stretch = Stretch.UniformToFill };
 
         var playing = current?.IsPlaying == true;
+        SmallArt.IsPlaying = BigArt.IsPlaying = playing;
         var playIcon = Res.Icon(playing ? "IconPause" : "IconPlay");
         CompactPlayIcon.Data = playIcon;
         BigPlayIcon.Data = playIcon;
@@ -269,53 +271,63 @@ public partial class SideDock : UserControl
 
     // ---------------------------------------------------------------- system
 
-    private sealed record MetricRow(MetricInfo Info, TextBlock Value, Sparkline? Chart, ProgressBar? Bar);
+    private sealed record MetricRow(MetricInfo Info, Readout3D Value, BarSkyline3D? Chart, SegmentTank3D? Tank);
 
     private readonly List<MetricRow> _metricRows = new();
 
-    /// <summary>One row per gauge the user switched on, in catalog order.</summary>
+    /// <summary>
+    /// One gauge per metric the user switched on, in catalog order. Charts are 3D block skylines with the name and
+    /// value floating over the empty sky; levels are rows of 3D cells; plain numbers are just the 3D readout.
+    /// </summary>
     internal void BuildMetricRows()
     {
         MetricRows.Children.Clear();
         _metricRows.Clear();
         foreach (var info in SystemStatsService.Catalog.Where(m => _settings.DockMetrics.Contains(m.Id) && (!m.WindowsOnly || OperatingSystem.IsWindows())))
         {
-            var row = new StackPanel { Spacing = 5 };
-            var header = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
-            header.Children.Add(new TextBlock { Text = info.Label, Classes = { "muted" }, FontSize = 12 });
-            var value = new TextBlock
+            var second = info.Id is "gpu" or "net" or "npu";
+            var value = new Readout3D { Size = info.Kind == MetricKind.Chart ? 15 : 13, VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Right };
+            value.Bind(Readout3D.ColorProperty, this.GetResourceObservable(second ? "Accent2Color" : "AccentColor"));
+            var label = new TextBlock
             {
-                FontWeight = FontWeight.SemiBold, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Right,
-                TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(8, 0, 0, 0),
+                Text = info.Label.ToUpperInvariant(), Classes = { "eyebrow" }, FontSize = 9.5, VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 4, 8, 0),
             };
+            var header = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), VerticalAlignment = VerticalAlignment.Top };
+            header.Children.Add(label);
             Grid.SetColumn(value, 1);
             header.Children.Add(value);
-            row.Children.Add(header);
 
-            Sparkline? chart = null;
-            ProgressBar? bar = null;
+            BarSkyline3D? chart = null;
+            SegmentTank3D? tank = null;
+            Control row;
             if (info.Kind == MetricKind.Chart)
             {
-                chart = new Sparkline { Height = 28 };
-                chart.Bind(Sparkline.ColorProperty, this.GetResourceObservable(info.Id is "gpu" or "net" or "npu" ? "Accent2Color" : "AccentColor"));
-                row.Children.Add(chart);
+                chart = new BarSkyline3D { Height = 78, Margin = new Thickness(-4, 14, -4, 0) };
+                chart.Bind(BarSkyline3D.ColorProperty, this.GetResourceObservable(second ? "Accent2Color" : "AccentColor"));
+                chart.Bind(BarSkyline3D.Color2Property, this.GetResourceObservable(second ? "AccentColor" : "Accent2Color"));
+                // The chart's sky is mostly empty: the header floats in it.
+                row = new Panel { Children = { chart, header } };
             }
             else if (info.Kind == MetricKind.Bar)
             {
-                bar = new ProgressBar
-                {
-                    Minimum = 0, Maximum = 1, Height = 5, MinHeight = 5, CornerRadius = new CornerRadius(3),
-                    Background = Res.Brush("Bg4Brush"),
-                };
-                bar.Bind(ProgressBar.ForegroundProperty, this.GetResourceObservable("AccentGradient"));
-                row.Children.Add(bar);
+                tank = new SegmentTank3D { Height = 26, Margin = new Thickness(-2, 0) };
+                BindTank(tank);
+                row = new StackPanel { Spacing = 4, Children = { header, tank } };
             }
+            else row = header;
 
-            _metricRows.Add(new MetricRow(info, value, chart, bar));
+            _metricRows.Add(new MetricRow(info, value, chart, tank));
             MetricRows.Children.Add(row);
         }
         MetricsEmpty.IsVisible = _metricRows.Count == 0;
         UpdateSystem();
+    }
+
+    private void BindTank(SegmentTank3D tank)
+    {
+        tank.Bind(SegmentTank3D.ColorProperty, this.GetResourceObservable("AccentColor"));
+        tank.Bind(SegmentTank3D.Color2Property, this.GetResourceObservable("Accent2Color"));
     }
 
     private void UpdateSystem()
@@ -331,13 +343,17 @@ public partial class SideDock : UserControl
                 chart.Maximum = reading.HistoryMax;
                 chart.SetValues(history);
             }
-            if (row.Bar is { } bar)
+            if (row.Tank is { } tank)
             {
-                bar.Value = reading?.Fraction ?? 0;
+                tank.Fraction = reading?.Fraction ?? 0;
                 // A nearly empty battery or a nearly full disk deserves a warning colour.
                 var alarm = (row.Info.Id == "battery" && reading?.Fraction < 0.2) || (row.Info.Id == "disk" && reading?.Fraction > 0.9);
-                if (alarm) bar.Foreground = Res.Brush("DangerBrush");
-                else bar.Bind(ProgressBar.ForegroundProperty, this.GetResourceObservable("AccentGradient"));
+                if (alarm)
+                {
+                    tank.Color = Res.Brush("DangerBrush") is ISolidColorBrush d ? d.Color : Colors.Red;
+                    tank.Color2 = tank.Color;
+                }
+                else BindTank(tank);
             }
         }
         if (_stats.Read("cpu") is { } cpu) RailCpu.Text = cpu.Value;

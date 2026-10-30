@@ -1,10 +1,14 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="using:Overdesk.App.Controls"
+             xmlns:d="using:Overdesk.App.Controls.Depth"
              x:Class="Overdesk.App.SideDock"
              ClipToBounds="True">
     <Border Background="{StaticResource Bg1Brush}" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="0,0,1,0">
         <Grid RowDefinitions="Auto,*">
+            <!-- The room the widget slabs stand in -->
+            <d:DeckFloor Grid.Row="0" Grid.RowSpan="2" Accent="{DynamicResource AccentColor}" IsHitTestVisible="False"/>
+
             <!-- Header -->
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Height="44" Margin="14,4,8,0">
                 <TextBlock x:Name="HeaderText" Classes="eyebrow" Text="YOUR DESK" VerticalAlignment="Center"/>
@@ -19,7 +23,8 @@
                 <StackPanel Margin="12,2,12,14" Spacing="10">
 
                     <!-- Now playing -->
-                    <Border x:Name="MediaCard" Classes="dockcard media" ClipToBounds="True" Cursor="Hand">
+                    <d:DepthCard x:Name="MediaCard" Cursor="Hand" Accent="{DynamicResource AccentColor}">
+                        <Border CornerRadius="16" ClipToBounds="True">
                         <Panel>
                             <!-- Tinted artwork backdrop -->
                             <Border x:Name="MediaBackdrop" Opacity="0.35" IsHitTestVisible="False"/>
@@ -37,13 +42,7 @@
 
                                 <!-- Compact row -->
                                 <Grid x:Name="MediaCompact" ColumnDefinitions="Auto,*,Auto">
-                                    <Border x:Name="SmallArtFrame" Width="46" Height="46" CornerRadius="10" ClipToBounds="True"
-                                            Background="{DynamicResource AccentGradientDiagonal}">
-                                        <Panel>
-                                            <Path Classes="icon" Data="{StaticResource IconMusic}" Stroke="White" Height="20"/>
-                                            <Image x:Name="SmallArt" Stretch="UniformToFill"/>
-                                        </Panel>
-                                    </Border>
+                                    <d:AlbumDeck3D x:Name="SmallArt" CoverSize="46" VerticalAlignment="Center"/>
                                     <StackPanel Grid.Column="1" Margin="10,0,6,0" VerticalAlignment="Center" Spacing="1">
                                         <TextBlock x:Name="MediaTitle" FontWeight="SemiBold" FontSize="13"
                                                    TextTrimming="CharacterEllipsis"/>
@@ -61,14 +60,8 @@
 
                                 <!-- Expanded player -->
                                 <StackPanel x:Name="MediaDetails" Spacing="12" IsVisible="False">
-                                    <Border x:Name="BigArtFrame" Height="196" CornerRadius="14" ClipToBounds="True"
-                                            Background="{DynamicResource AccentGradientDiagonal}"
-                                            BoxShadow="{DynamicResource AccentGlow}">
-                                        <Panel>
-                                            <Path Classes="icon" Data="{StaticResource IconMusic}" Stroke="White" Height="56" StrokeThickness="1.4"/>
-                                            <Image x:Name="BigArt" Stretch="UniformToFill"/>
-                                        </Panel>
-                                    </Border>
+                                    <d:AlbumDeck3D x:Name="BigArt" CoverSize="150" Reflection="True" HorizontalAlignment="Center"
+                                                   Margin="0,6,0,-6"/>
                                     <StackPanel Spacing="2">
                                         <TextBlock x:Name="BigTitle" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                                         <TextBlock x:Name="BigArtist" Classes="muted" FontSize="12.5" TextTrimming="CharacterEllipsis"/>
@@ -124,10 +117,11 @@
                                 <TextBlock x:Name="MediaHint" Classes="faint" FontSize="11" TextWrapping="Wrap" IsVisible="False"/>
                             </StackPanel>
                         </Panel>
-                    </Border>
+                        </Border>
+                    </d:DepthCard>
 
                     <!-- Focus timer -->
-                    <Border x:Name="FocusCard" Classes="dockcard">
+                    <d:DepthCard x:Name="FocusCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="8">
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Classes="eyebrow" Text="FOCUS" FontSize="9.5" VerticalAlignment="Center"/>
@@ -135,10 +129,10 @@
                             </Grid>
                             <StackPanel x:Name="FocusBody" Spacing="6"/>
                         </StackPanel>
-                    </Border>
+                    </d:DepthCard>
 
                     <!-- System gauges: the gear picks which ones are shown -->
-                    <Border x:Name="SystemCard" Classes="dockcard">
+                    <d:DepthCard x:Name="SystemCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="10">
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Classes="eyebrow" Text="SYSTEM" FontSize="9.5" VerticalAlignment="Center"/>
@@ -152,10 +146,10 @@
                             <TextBlock x:Name="MetricsEmpty" Classes="faint" FontSize="11.5" TextWrapping="Wrap" IsVisible="False"
                                        Text="No gauges selected. Use the gear to pick some."/>
                         </StackPanel>
-                    </Border>
+                    </d:DepthCard>
 
                     <!-- Local AI monitor -->
-                    <Border x:Name="AiCard" Classes="dockcard">
+                    <d:DepthCard x:Name="AiCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="8">
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Classes="eyebrow" Text="LOCAL AI" FontSize="9.5" VerticalAlignment="Center"/>
@@ -163,10 +157,10 @@
                             </Grid>
                             <StackPanel x:Name="AiBody" Spacing="6"/>
                         </StackPanel>
-                    </Border>
+                    </d:DepthCard>
 
                     <!-- Projects + running tasks -->
-                    <Border x:Name="ProjectsCard" Classes="dockcard">
+                    <d:DepthCard x:Name="ProjectsCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="8">
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Classes="eyebrow" Text="PROJECTS" FontSize="9.5" VerticalAlignment="Center"/>
@@ -174,10 +168,10 @@
                             </Grid>
                             <StackPanel x:Name="ProjectsBody" Spacing="6"/>
                         </StackPanel>
-                    </Border>
+                    </d:DepthCard>
 
                     <!-- Git status of the active project -->
-                    <Border x:Name="GitCard" Classes="dockcard">
+                    <d:DepthCard x:Name="GitCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="8">
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Classes="eyebrow" Text="GIT" FontSize="9.5" VerticalAlignment="Center"/>
@@ -185,10 +179,10 @@
                             </Grid>
                             <StackPanel x:Name="GitBody" Spacing="6"/>
                         </StackPanel>
-                    </Border>
+                    </d:DepthCard>
 
                     <!-- Docker containers -->
-                    <Border x:Name="DockerCard" Classes="dockcard">
+                    <d:DepthCard x:Name="DockerCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="8">
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Classes="eyebrow" Text="DOCKER" FontSize="9.5" VerticalAlignment="Center"/>
@@ -196,10 +190,10 @@
                             </Grid>
                             <StackPanel x:Name="DockerBody" Spacing="6"/>
                         </StackPanel>
-                    </Border>
+                    </d:DepthCard>
 
                     <!-- Localhost ports -->
-                    <Border x:Name="PortsCard" Classes="dockcard">
+                    <d:DepthCard x:Name="PortsCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="8">
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Classes="eyebrow" Text="LOCALHOST" FontSize="9.5" VerticalAlignment="Center"/>
@@ -211,10 +205,10 @@
                             <StackPanel x:Name="PortList" Spacing="4"/>
                             <TextBlock x:Name="PortsEmpty" Classes="faint" FontSize="11.5" Text="No dev servers are listening."/>
                         </StackPanel>
-                    </Border>
+                    </d:DepthCard>
 
                     <!-- Clipboard -->
-                    <Border x:Name="ClipCard" Classes="dockcard">
+                    <d:DepthCard x:Name="ClipCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="8">
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Classes="eyebrow" Text="CLIPBOARD" FontSize="9.5" VerticalAlignment="Center"/>
@@ -228,23 +222,23 @@
                             <TextBlock x:Name="ClipsEmpty" Classes="faint" FontSize="11.5" TextWrapping="Wrap"
                                        Text="Copy some text anywhere; it shows up here. Click to copy it again."/>
                         </StackPanel>
-                    </Border>
+                    </d:DepthCard>
 
                     <!-- Notes -->
-                    <Border x:Name="NotesCard" Classes="dockcard">
+                    <d:DepthCard x:Name="NotesCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="8">
                             <TextBlock Classes="eyebrow" Text="SCRATCHPAD" FontSize="9.5"/>
                             <TextBox x:Name="Notes" Classes="notes" AcceptsReturn="True" TextWrapping="Wrap" Height="110"
                                      PlaceholderText="Quick notes, TODOs, snippets…"/>
                         </StackPanel>
-                    </Border>
+                    </d:DepthCard>
                 </StackPanel>
             </ScrollViewer>
 
             <!-- ============================================== collapsed: icon rail -->
-            <StackPanel x:Name="Rail" Grid.Row="1" Spacing="10" HorizontalAlignment="Center" Margin="0,6,0,0"
+            <StackPanel x:Name="Rail" Grid.Row="1" Spacing="14" HorizontalAlignment="Center" Margin="0,6,0,0"
                         IsVisible="False">
-                <Button x:Name="RailMedia" Classes="icon" Width="42" Height="42" CornerRadius="12" ToolTip.Tip="Now playing">
+                <Button x:Name="RailMedia" Classes="icon railkey" Width="42" Height="42" CornerRadius="12" ToolTip.Tip="Now playing">
                     <Border Width="34" Height="34" CornerRadius="9" ClipToBounds="True"
                             Background="{DynamicResource AccentGradientDiagonal}">
                         <Panel>
@@ -253,22 +247,22 @@
                         </Panel>
                     </Border>
                 </Button>
-                <Button x:Name="RailSystem" Classes="icon" Width="42" Height="42" CornerRadius="12" ToolTip.Tip="System">
+                <Button x:Name="RailSystem" Classes="icon railkey" Width="42" Height="42" CornerRadius="12" ToolTip.Tip="System">
                     <StackPanel Spacing="0">
                         <TextBlock x:Name="RailCpu" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                         <TextBlock Text="CPU" FontSize="8" Classes="faint" HorizontalAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                <Button x:Name="RailPorts" Classes="icon" Width="42" Height="42" CornerRadius="12" ToolTip.Tip="Localhost">
+                <Button x:Name="RailPorts" Classes="icon railkey" Width="42" Height="42" CornerRadius="12" ToolTip.Tip="Localhost">
                     <StackPanel Spacing="0">
                         <TextBlock x:Name="RailPortCount" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                         <TextBlock Text="PORTS" FontSize="8" Classes="faint" HorizontalAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                <Button x:Name="RailClips" Classes="icon" Width="42" Height="42" CornerRadius="12" ToolTip.Tip="Clipboard">
+                <Button x:Name="RailClips" Classes="icon railkey" Width="42" Height="42" CornerRadius="12" ToolTip.Tip="Clipboard">
                     <Path Classes="icon" Data="{StaticResource IconClipboard}"/>
                 </Button>
-                <Button x:Name="RailNotes" Classes="icon" Width="42" Height="42" CornerRadius="12" ToolTip.Tip="Scratchpad">
+                <Button x:Name="RailNotes" Classes="icon railkey" Width="42" Height="42" CornerRadius="12" ToolTip.Tip="Scratchpad">
                     <Path Classes="icon" Data="{StaticResource IconNote}"/>
                 </Button>
             </StackPanel>

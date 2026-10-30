@@ -5,6 +5,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Overdesk.App.Controls;
+using Overdesk.App.Controls.Depth;
 using Overdesk.App.Services;
 using Overdesk.App.Theme;
 using Overdesk.Core.Platform;
@@ -133,8 +134,7 @@ public partial class SideDock
             _focusLeft = TimeSpan.FromMinutes(_onBreak ? _settings.BreakMinutes : _settings.FocusMinutes);
             _actions?.Toast(finished, "IconTimer");
             _desktop?.Notify("OverDesk", finished);
-            Animator.Run(FocusCard, 0.9, t => FocusCard.BorderBrush = new SolidColorBrush(AccentThemes.WithAlpha(AccentThemes.Current.Primary, (byte)(255 * Math.Sin(t * Math.PI)))),
-                () => FocusCard.ClearValue(BorderBrushProperty));
+            FocusCard.Flash();
         }
         RenderFocus();
     }
@@ -164,32 +164,63 @@ public partial class SideDock
         RenderFocus();
     }
 
+    private DialRing3D? _focusDial;
+    private Readout3D? _focusTime;
+    private TextBlock? _focusState;
+    private Button? _focusPlay;
+
+    /// <summary>Development snapshots: a running focus session with 40% of it gone.</summary>
+    internal void DevFocusDemo()
+    {
+        ResetFocus();
+        _focusLeft = TimeSpan.FromMinutes(_settings.FocusMinutes * 0.6);
+        _focusRunning = true;
+        RenderFocus();
+    }
+
+    /// <summary>The timer is a 3D dial with the time in extruded digits floating in its middle; the play orb sits beside it.</summary>
     private void RenderFocus()
     {
-        FocusBody.Children.Clear();
-        var total = TimeSpan.FromMinutes(_onBreak ? _settings.BreakMinutes : _settings.FocusMinutes);
-        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        var text = new StackPanel();
-        text.Children.Add(new TextBlock { Text = _focusLeft.ToString(@"mm\:ss"), FontSize = 30, FontWeight = FontWeight.Light, LetterSpacing = -0.5 });
-        text.Children.Add(new TextBlock { Text = _onBreak ? "Break" : _focusRunning ? "Focusing" : "Ready to focus", Classes = { "muted" }, FontSize = 11.5 });
-        row.Children.Add(text);
-        var play = new Button { Classes = { "playbtn", "small" }, VerticalAlignment = VerticalAlignment.Center };
-        var icon = new Avalonia.Controls.Shapes.Path { Classes = { "icon" }, Data = Res.Icon(_focusRunning ? "IconPause" : "IconPlay"), Stroke = Brushes.White, Fill = Brushes.White, Height = 12, Margin = new Thickness(_focusRunning ? 0 : 2, 0, 0, 0) };
-        play.Content = icon;
-        ToolTip.SetTip(play, _focusRunning ? "Pause" : "Start");
-        play.Click += (_, _) =>
+        if (_focusDial is null)
         {
-            _focusRunning = !_focusRunning;
-            if (_focusRunning) _focusTick.Start(); else _focusTick.Stop();
-            RenderFocus();
+            _focusDial = new DialRing3D { Width = 176, Height = 118, HorizontalAlignment = HorizontalAlignment.Left };
+            _focusDial.Bind(DialRing3D.ColorProperty, this.GetResourceObservable("AccentColor"));
+            _focusDial.Bind(DialRing3D.Color2Property, this.GetResourceObservable("Accent2Color"));
+            _focusTime = new Readout3D { Size = 24, Weight = FontWeight.SemiBold, Depth = 4, HorizontalAlignment = HorizontalAlignment.Center };
+            _focusTime.Bind(Readout3D.ColorProperty, this.GetResourceObservable("AccentColor"));
+            _focusState = new TextBlock { Classes = { "eyebrow" }, FontSize = 8.5, HorizontalAlignment = HorizontalAlignment.Center };
+            var middle = new StackPanel
+            {
+                Spacing = 1, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 10), Children = { _focusTime, _focusState },
+            };
+            var dial = new Panel { Width = 176, HorizontalAlignment = HorizontalAlignment.Left, Children = { _focusDial, middle } };
+
+            _focusPlay = new Button { Classes = { "playbtn" }, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
+            _focusPlay.Click += (_, _) =>
+            {
+                _focusRunning = !_focusRunning;
+                if (_focusRunning) _focusTick.Start(); else _focusTick.Stop();
+                RenderFocus();
+            };
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(-6, -4, 0, -6) };
+            row.Children.Add(dial);
+            Grid.SetColumn(_focusPlay, 1);
+            row.Children.Add(_focusPlay);
+            FocusBody.Children.Add(row);
+        }
+
+        var total = TimeSpan.FromMinutes(_onBreak ? _settings.BreakMinutes : _settings.FocusMinutes);
+        _focusDial.Fraction = total.TotalSeconds <= 0 ? 1 : Math.Clamp(_focusLeft.TotalSeconds / total.TotalSeconds, 0, 1);
+        _focusDial.IsActive = _focusRunning;
+        _focusTime!.Text = _focusLeft.ToString(@"mm\:ss");
+        _focusState!.Text = _onBreak ? "BREAK" : _focusRunning ? "FOCUSING" : "READY";
+        _focusPlay!.Content = new Avalonia.Controls.Shapes.Path
+        {
+            Classes = { "icon" }, Data = Res.Icon(_focusRunning ? "IconPause" : "IconPlay"), Stroke = Brushes.White, Fill = Brushes.White,
+            Height = 15, Margin = new Thickness(_focusRunning ? 0 : 3, 0, 0, 0),
         };
-        Grid.SetColumn(play, 1);
-        row.Children.Add(play);
-        FocusBody.Children.Add(row);
-        var bar = new ProgressBar { Minimum = 0, Maximum = 1, Height = 4, MinHeight = 4, CornerRadius = new CornerRadius(2), Background = Res.Brush("Bg4Brush"),
-            Value = total.TotalSeconds <= 0 ? 0 : 1 - _focusLeft.TotalSeconds / total.TotalSeconds };
-        bar.Bind(ProgressBar.ForegroundProperty, this.GetResourceObservable(_onBreak ? "Accent2Brush" : "AccentGradient"));
-        FocusBody.Children.Add(bar);
+        ToolTip.SetTip(_focusPlay, _focusRunning ? "Pause" : "Start");
     }
 
     // ---------------------------------------------------------------- local AI

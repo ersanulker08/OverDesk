@@ -76,6 +76,29 @@ internal static class DevSnapshot
             return;
         }
 
+        // OVERDESK_SNAPSHOT_DOCK=1: only the left dock, at 2x, at a few scroll positions (plus the open player).
+        if (Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT_DOCK") == "1")
+        {
+            await Task.Delay(6500); // let the gauges collect a few samples
+            var dock = main.DevDock;
+            for (var i = 0; i < 4; i++)
+            {
+                main.DevScrollDock(i * 560);
+                await Task.Delay(400);
+                SaveControl(dock, Path.Combine(dir, $"dock-{i + 1}.png"));
+            }
+            main.DevScrollDock(0);
+            dock.DevFocusDemo();
+            dock.FocusCard.DevHover(0.8, 0.2);
+            await Task.Delay(1500);
+            SaveControl(dock, Path.Combine(dir, "dock-hover.png"));
+            dock.SetMediaOpen(true);
+            await Task.Delay(900);
+            SaveControl(dock, Path.Combine(dir, "dock-player.png"));
+            main.Close();
+            return;
+        }
+
         if (Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT_WORKS") == "1")
         {
             await RunWorksAsync(main, dir);
@@ -239,6 +262,21 @@ internal static class DevSnapshot
     private static async Task WaitUntil(Func<bool> condition)
     {
         while (!condition()) await Task.Delay(30);
+    }
+
+    /// <summary>One control at 2x: the whole window is rendered (children with transforms need their real parents) and cropped.</summary>
+    private static void SaveControl(Control control, string path, double scale = 1)
+    {
+        Dispatcher.UIThread.RunJobs();
+        if (TopLevel.GetTopLevel(control) is not { } top || control.TranslatePoint(default, top) is not { } at) return;
+        var full = new PixelSize((int)(top.Bounds.Width * scale), (int)(top.Bounds.Height * scale));
+        using var bitmap = new RenderTargetBitmap(full, new Vector(96 * scale, 96 * scale));
+        bitmap.Render(top);
+        var crop = new PixelRect((int)(at.X * scale), (int)(at.Y * scale), (int)(control.Bounds.Width * scale), (int)(control.Bounds.Height * scale));
+        using var cut = new WriteableBitmap(crop.Size, new Vector(96 * scale, 96 * scale), bitmap.Format ?? Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul);
+        using (var fb = cut.Lock())
+            bitmap.CopyPixels(crop, fb.Address, fb.RowBytes * crop.Height, fb.RowBytes);
+        cut.Save(path, new PngBitmapEncoderOptions());
     }
 
     private static void Save(TopLevel top, string path)

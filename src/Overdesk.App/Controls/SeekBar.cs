@@ -72,24 +72,58 @@ public sealed class SeekBar : Control
 
     private double FractionAt(Point p) => Bounds.Width <= 0 ? 0 : Math.Clamp(p.X / Bounds.Width, 0, 1);
 
+    /// <summary>
+    /// A groove cut into the card (dark channel, shadow on its upper lip, light on the lower one) with a glowing,
+    /// slightly raised fill and a polished ball riding at its end.
+    /// </summary>
     public override void Render(DrawingContext context)
     {
         var w = Bounds.Width;
         if (w <= 0) return;
         var active = _hover || _dragging;
-        var thickness = active ? 5 : 3;
+        var t = active ? 7.0 : 5.0;
         var y = Bounds.Height / 2;
         var f = _dragging ? _dragFraction : Math.Clamp(Fraction, 0, 1);
+        var groove = new Rect(0, y - t / 2, w, t);
 
-        var track = new RoundedRect(new Rect(0, y - thickness / 2.0, w, thickness), thickness / 2.0);
-        context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x30, 255, 255, 255)), null, track);
+        context.DrawRectangle(new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, groove.Top, RelativeUnit.Absolute),
+            EndPoint = new RelativePoint(0, groove.Bottom, RelativeUnit.Absolute),
+            GradientStops = { new GradientStop(Color.FromRgb(0x03, 0x03, 0x05), 0), new GradientStop(Color.FromRgb(0x14, 0x14, 0x1A), 1) },
+        }, null, new RoundedRect(groove, t / 2));
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0x2A, 255, 255, 255)), 1),
+            new Point(t / 2, groove.Bottom + 0.5), new Point(w - t / 2, groove.Bottom + 0.5));
+
+        var x = w * f;
         if (f > 0)
         {
-            var fill = new RoundedRect(new Rect(0, y - thickness / 2.0, Math.Max(w * f, thickness), thickness), thickness / 2.0);
-            context.DrawRectangle(AccentThemes.Gradient(Accent, Accent2, horizontal: true), null, fill,
-                new BoxShadows(new BoxShadow { Blur = 8, Color = AccentThemes.WithAlpha(Accent, 0x80) }));
+            var fill = new Rect(0.5, groove.Top + 1, Math.Max(x - 0.5, t), t - 2);
+            context.DrawRectangle(AccentThemes.Gradient(Accent2, Accent, horizontal: true), null, new RoundedRect(fill, (t - 2) / 2),
+                new BoxShadows(new BoxShadow { Blur = 10, Color = AccentThemes.WithAlpha(Accent, 0x90) }));
+            // Lit top of the raised fill.
+            context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0x70, 255, 255, 255)), 1),
+                new Point(fill.Left + 2, fill.Top + 0.8), new Point(Math.Max(fill.Right - 2, fill.Left + 2), fill.Top + 0.8));
         }
+
+        // The ball: shadow on the groove, then a sphere lit from the upper left.
+        var r = active ? 7.5 : 5.5;
+        var ball = new Point(Math.Clamp(x, r, w - r), y);
+        context.DrawEllipse(new SolidColorBrush(Color.FromArgb(0x70, 0, 0, 0)), null, new Point(ball.X + 1, ball.Y + 2), r, r * 0.9);
+        context.DrawEllipse(new RadialGradientBrush
+        {
+            Center = new RelativePoint(0.35, 0.3, RelativeUnit.Relative),
+            GradientOrigin = new RelativePoint(0.35, 0.3, RelativeUnit.Relative),
+            RadiusX = new RelativeScalar(0.75, RelativeUnit.Relative),
+            RadiusY = new RelativeScalar(0.75, RelativeUnit.Relative),
+            GradientStops =
+            {
+                new GradientStop(Colors.White, 0),
+                new GradientStop(Color.FromRgb(0xD8, 0xD8, 0xE2), 0.45),
+                new GradientStop(AccentThemes.WithAlpha(Accent, 0xFF) is var a ? Color.FromRgb((byte)(a.R * 0.45), (byte)(a.G * 0.45), (byte)(a.B * 0.45)) : Colors.Gray, 1),
+            },
+        }, null, ball, r, r);
         if (active)
-            context.DrawEllipse(Brushes.White, null, new Point(w * f, y), 6, 6);
+            context.DrawEllipse(null, new Pen(new SolidColorBrush(AccentThemes.WithAlpha(Accent, 0x90)), 1.2), ball, r + 2.5, r + 2.5);
     }
 }

@@ -54,6 +54,16 @@
             <BoxShadows x:Key="AccentGlow">0 0 18 0 #70FA1E4E</BoxShadows>
             <BoxShadows x:Key="AccentGlowSmall">0 0 10 0 #90FA1E4E</BoxShadows>
             <BoxShadows x:Key="AccentGlowLarge">0 0 40 2 #55FA1E4E</BoxShadows>
+            <!-- Dock keycaps (see Button.dockrow) -->
+            <LinearGradientBrush x:Key="KeycapBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+                <GradientStop Color="#24242F" Offset="0"/>
+                <GradientStop Color="#181821" Offset="1"/>
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="KeycapEdgeBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+                <GradientStop Color="#40FFFFFF" Offset="0"/>
+                <GradientStop Color="#08FFFFFF" Offset="0.6"/>
+                <GradientStop Color="#00FFFFFF" Offset="1"/>
+            </LinearGradientBrush>
             <BoxShadows x:Key="CardShadow">0 18 48 0 #A0000000</BoxShadows>
             <BoxShadows x:Key="NoShadow">0 0 0 0 #00000000</BoxShadows>
 

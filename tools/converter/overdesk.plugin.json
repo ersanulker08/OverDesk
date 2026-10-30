@@ -1,8 +1,8 @@
 {
   "id": "overdesk.converter",
   "name": "Converter",
-  "version": "1.0.0",
-  "description": "Convert files: images, data (JSON, CSV, XML), Markdown, documents, audio and video",
+  "version": "2.0.0",
+  "description": "Convert files: images, data (JSON, YAML, TOML, CSV, Excel, XML…), documents, audio, video, archives, fonts and 3D models",
   "run": "inProcess",
   "assembly": "bin/Overdesk.Tool.Converter.dll",
   "typeName": "Overdesk.Tool.Converter.ConverterPlugin",

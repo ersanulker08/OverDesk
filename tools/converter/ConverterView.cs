@@ -7,6 +7,8 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Overdesk.Core.Plugins;
+using Overdesk.Tools.Shared;
+using static Overdesk.Tools.Shared.ToolUi;
 
 namespace Overdesk.Tool.Converter;
 
@@ -32,6 +34,7 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
     private readonly Slider _quality = new() { Minimum = 40, Maximum = 100, Value = 90, SmallChange = 1, LargeChange = 5 };
     private readonly TextBlock _qualityText = new() { FontSize = 12, Width = 34, VerticalAlignment = VerticalAlignment.Center };
     private readonly ComboBox _size = new() { MinWidth = 150 };
+    private readonly CheckBox _combine = new() { Content = "Combine into one PDF", FontSize = 12, IsVisible = false };
     private readonly TextBlock _hint = new() { FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Opacity = 0.7, IsVisible = false };
     private readonly Button _convert = new() { Content = "Convert", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, Padding = new Thickness(12, 9) };
     private readonly Button _outputButton = new() { Padding = new Thickness(10, 4), FontSize = 12 };
@@ -53,17 +56,12 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
         _size.SelectedIndex = 0;
 
         // Empty state: what it does, and a way in besides dropping.
-        _empty.Children.Add(new Border
-        {
-            Width = 56, Height = 56, CornerRadius = new CornerRadius(16), HorizontalAlignment = HorizontalAlignment.Center,
-            [!Border.BackgroundProperty] = this.GetResourceObservable("AccentGradientDiagonal").ToBinding(),
-            Child = new Path { Data = Icon("IconRefresh"), Stroke = Brushes.White, StrokeThickness = 1.8, Height = 24, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
-        });
+        _empty.Children.Add(Badge(this, "IconRefresh"));
         _empty.Children.Add(new TextBlock { Text = "Drop files to convert", FontSize = 17, FontWeight = FontWeight.SemiBold, HorizontalAlignment = HorizontalAlignment.Center });
         _empty.Children.Add(new TextBlock
         {
-            Text = "Images, JSON / YAML / CSV / Excel / XML, Markdown, PDF, Word and RTF documents, audio and video.\nResults go next to the originals.",
-            FontSize = 12, Opacity = 0.65, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 280,
+            Text = "Images (PNG, JPG, WebP, HEIC, PSD, RAW, TGA…), data (JSON, YAML, TOML, CSV, Excel, XML, plist, .env…), Markdown, Word, PDF, audio, video, ZIP / TAR archives, fonts (TTF, OTF, WOFF) and 3D models (OBJ, STL, PLY → glTF).\nAnything else can be zipped. Results go next to the originals.",
+            FontSize = 12, Opacity = 0.65, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 300,
         });
         var browse = new Button { Content = "Choose files…", HorizontalAlignment = HorizontalAlignment.Center, Padding = new Thickness(14, 7), Margin = new Thickness(0, 6, 0, 0) };
         browse.Classes.Add("accent");
@@ -90,6 +88,8 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
         sizeRow.Children.Add(_size);
         _imageOptions.Children.Add(qualityRow);
         _imageOptions.Children.Add(sizeRow);
+        _imageOptions.Children.Add(_combine);
+        _combine.IsCheckedChanged += (_, _) => Render();
 
         var outputRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         outputRow.Children.Add(new TextBlock { Text = "Save to", FontSize = 12, Width = 62, VerticalAlignment = VerticalAlignment.Center });
@@ -174,12 +174,8 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
         _targets.Children.Clear();
         foreach (var target in targets)
         {
-            var chip = new Button { Content = target.ToUpperInvariant(), Margin = new Thickness(0, 0, 6, 6) };
-            chip.Classes.Add("modelchip");
-            chip.Classes.Set("selected", target == _target);
             var t = target;
-            chip.Click += (_, _) => { _target = t; Render(); };
-            _targets.Children.Add(chip);
+            _targets.Children.Add(Chip(Label(target), target == _target, () => { _target = t; Render(); }));
         }
         var kinds = _items.Where(i => i.Output is null).Select(i => Engine.KindOf(i.Path)).Distinct().ToList();
         var hint = kinds.Select(Engine.Hint).FirstOrDefault(h => h is not null);
@@ -189,10 +185,14 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
         _hint.IsVisible = hint is not null;
         _imageOptions.IsVisible = kinds.All(k => k == FileKind.Image) && kinds.Count > 0;
         _quality.IsEnabled = _target is "jpg" or "webp" or "heic";
+        _combine.IsVisible = _target == "pdf" && _items.Count(i => i.Output is null) > 1;
         _outputButton.Content = _outputFolder is null ? "Next to the originals" : $"{System.IO.Path.GetFileName(_outputFolder)} (click to reset)";
         _convert.IsEnabled = _running is null && _target is not null;
-        _convert.Content = _running is not null ? "Converting…" : _target is null ? "Convert" : $"Convert to {_target.ToUpperInvariant()}";
+        _convert.Content = _running is not null ? "Converting…" : _target is null ? "Convert"
+            : _target == "folder" ? "Unpack" : _combine.IsVisible && _combine.IsChecked == true ? "Combine into one PDF" : $"Convert to {Label(_target)}";
     }
+
+    private static string Label(string target) => target switch { "folder" => "Unpack to folder", "gz" => "GZIP", var t => t.ToUpperInvariant() };
 
     private Control Row(Item item)
     {
@@ -237,6 +237,22 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
         var cts = _running = new CancellationTokenSource();
         var options = new ConvertOptions { Quality = (int)_quality.Value, MaxSize = Sizes[Math.Max(0, _size.SelectedIndex)], OutputFolder = _outputFolder };
         Render();
+        if (target == "pdf" && _combine.IsVisible && _combine.IsChecked == true)
+        {
+            var pending = _items.Where(i => i.Output is null).ToList();
+            pending.ForEach(i => { i.Error = null; i.Progress = 0; });
+            Render();
+            try
+            {
+                var pdf = await Engine.CombineToPdfAsync(pending.Select(i => i.Path).ToList(), options, cts.Token);
+                pending.ForEach(i => i.Output = pdf);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException) { pending.ForEach(i => i.Error = ex.Message); }
+            pending.ForEach(i => i.Progress = null);
+            _running = null;
+            Render();
+            return;
+        }
         foreach (var item in _items.Where(i => i.Output is null).ToList())
         {
             item.Error = null;
@@ -256,52 +272,9 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
         Render();
     }
 
-    private static void Reveal(string path)
-    {
-        try
-        {
-            if (OperatingSystem.IsMacOS()) System.Diagnostics.Process.Start("open", new[] { "-R", path });
-            else if (OperatingSystem.IsWindows()) System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\"");
-        }
-        catch (Exception) { /* nothing to show it with */ }
-    }
-
     private static string Size(string path)
     {
-        try
-        {
-            var bytes = new FileInfo(path).Length;
-            return bytes switch { >= 1 << 30 => $"{bytes / (double)(1 << 30):0.0} GB", >= 1 << 20 => $"{bytes / (double)(1 << 20):0.0} MB", >= 1 << 10 => $"{bytes / 1024} KB", _ => $"{bytes} B" };
-        }
+        try { return FormatSize(new FileInfo(path).Length); }
         catch (IOException) { return ""; }
-    }
-
-    private static Geometry? Icon(string key) => Application.Current?.TryGetResource(key, null, out var value) == true ? value as Geometry : null;
-
-    private static TextBlock Eyebrow(string text)
-    {
-        var block = new TextBlock { Text = text, FontSize = 9.5, VerticalAlignment = VerticalAlignment.Center };
-        block.Classes.Add("eyebrow");
-        return block;
-    }
-
-    private static Button SmallButton(string text, Action click)
-    {
-        var button = new Button { Content = text, Padding = new Thickness(9, 3), FontSize = 11.5, Margin = new Thickness(6, 0, 0, 0) };
-        button.Classes.Add("ghost");
-        button.Click += (_, _) => click();
-        return button;
-    }
-
-    private static Button IconButton(string icon, string tip, Action click)
-    {
-        var path = new Path { Data = Icon(icon), Height = 12, Stretch = Stretch.Uniform };
-        path.Classes.Add("icon");
-        path.Classes.Add("small");
-        var button = new Button { Width = 28, Height = 28, Content = path };
-        button.Classes.Add("icon");
-        ToolTip.SetTip(button, tip);
-        button.Click += (_, _) => click();
-        return button;
     }
 }

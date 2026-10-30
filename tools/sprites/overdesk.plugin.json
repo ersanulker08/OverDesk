@@ -1,0 +1,11 @@
+{
+  "id": "overdesk.sprites",
+  "name": "Sprite Sheet",
+  "version": "1.0.0",
+  "description": "Pack sprites into an atlas (PNG + JSON for Phaser, PixiJS, Godot…) or slice a sheet into frames",
+  "run": "inProcess",
+  "assembly": "bin/Overdesk.Tool.Sprites.dll",
+  "typeName": "Overdesk.Tool.Sprites.SpritesPlugin",
+  "icon": "IconGrid",
+  "ai": true
+}

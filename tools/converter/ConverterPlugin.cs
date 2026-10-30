@@ -13,17 +13,21 @@ public sealed class ConverterPlugin : IToolPlugin, IAiToolSource
     {
         new PluginAiTool(
             "convert_files",
-            "Convert files to another format with OverDesk's Converter: images (PNG, JPG, WebP, PDF; HEIC, TIFF on macOS; optional resize), " +
-            "data (JSON, YAML, CSV, TSV, XML, Excel XLSX), Markdown and text to PDF, HTML or Word, documents to PDF (and DOCX, RTF, ODT, HTML, TXT on macOS), SRT <-> VTT subtitles, " +
-            "audio and video. " +
-            "Results are written next to the originals (never overwriting). Call without \"to\" to see which formats each file can become.",
+            "Convert files to another format with OverDesk's Converter: images (PNG, JPG, WebP, GIF, BMP, ICO, TGA, PDF; HEIC, AVIF, PSD, camera RAW, SVG, TIFF " +
+            "and PDF pages are read on macOS; optional resize), data (JSON, YAML, TOML, XML, plist, INI, .env, .properties, CSV, TSV, JSON Lines, Excel XLSX; " +
+            "tables also to Markdown, HTML or SQL), Markdown and text to PDF, HTML or Word, documents to PDF (and DOCX, RTF, ODT, HTML, TXT on macOS), " +
+            "SRT <-> VTT subtitles, audio and video (ffmpeg), archives (ZIP, TAR, TAR.GZ, GZ; to = \"folder\" unpacks), fonts (TTF/OTF <-> WOFF), " +
+            "3D models (OBJ, STL, PLY to GLB, glTF, OBJ, STL, PLY). Any file can be packed into zip or gz. " +
+            "Results are written next to the originals (never overwriting). Call without \"to\" to see which formats each file can become. " +
+            "combine_pdf puts several images into one PDF.",
             """
             {"type":"object","properties":{
               "paths":{"type":"array","items":{"type":"string"},"description":"Absolute paths of the files."},
               "to":{"type":"string","description":"Target extension, e.g. png, jpg, webp, csv, json, html, docx, mp3, mp4."},
               "max_size":{"type":"integer","description":"Images: longest edge in pixels."},
               "quality":{"type":"integer","description":"JPG / WebP / HEIC quality 1-100 (default 90)."},
-              "output_folder":{"type":"string","description":"Folder for the results; default next to each original."}
+              "output_folder":{"type":"string","description":"Folder for the results; default next to each original."},
+              "combine_pdf":{"type":"boolean","description":"With to = pdf and several images: one PDF with a page per image."}
             },"required":["paths"]}
             """,
             RunAsync)
@@ -58,6 +62,8 @@ public sealed class ConverterPlugin : IToolPlugin, IAiToolSource
             OutputFolder = args["output_folder"]?.ToString() is { Length: > 0 } folder ? folder : null,
         };
         if (options.OutputFolder is { } output) Directory.CreateDirectory(output);
+        if (to.Equals("pdf", StringComparison.OrdinalIgnoreCase) && args["combine_pdf"] is JsonValue c && c.GetValueKind() == System.Text.Json.JsonValueKind.True)
+            return $"Combined {paths.Count} images → {await Engine.CombineToPdfAsync(paths, options, cancellation)}";
         var failures = 0;
         foreach (var path in paths)
         {

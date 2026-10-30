@@ -82,8 +82,20 @@ When the user drops files on the side panel while your tool is open, OverDesk ha
 
 ## Bundled tools
 
-`tools/devkit` (JSON, Base64, hashes…) and `tools/converter` (images, data, documents, audio, video, with an AI tool)
-ship with OverDesk and are good examples. `scripts/package-*` copies every `tools/*` folder into the app.
+All of them ship with OverDesk, give the AI their abilities, and are good examples:
+
+- `tools/converter`: images (PNG, JPG, WebP, GIF, BMP, ICO, TGA; HEIC, AVIF, PSD, RAW, SVG, TIFF and PDF pages on macOS), data
+  (JSON, YAML, TOML, XML, plist, INI, .env, .properties, CSV, TSV, JSON Lines, Excel; tables to Markdown, HTML or SQL), Markdown and
+  documents, subtitles, audio and video (ffmpeg), archives (ZIP, TAR, TAR.GZ, GZ), fonts (TTF/OTF ↔ WOFF) and 3D models (OBJ, STL,
+  PLY → glTF, GLB). Any file can be zipped.
+- `tools/devkit`: about fifty developer utilities in groups (format, encode, hash, generate, text, time, web, numbers, code).
+- `tools/texture`: PBR maps from one texture (normal, height, AO, roughness, metallic, curvature, ORM / HDRP mask) for Unity, Unreal,
+  Godot and Blender.
+- `tools/icons`: every app icon file from one image (.icns, .ico, iOS AppIcon set, Android mipmaps, favicons).
+- `tools/sprites`: pack sprites into an atlas + JSON, or slice a sheet into frames.
+
+`tools/shared` is not a tool: it holds code the bundled tools link into their own assemblies (image reading and writing, panel
+building blocks). `scripts/package-*` copies every folder with a manifest into the app.
 
 ## Rules of thumb
 

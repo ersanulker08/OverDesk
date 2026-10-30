@@ -11,7 +11,7 @@ namespace Overdesk.Tool.Converter;
 /// Tables and trees: JSON, YAML, CSV, TSV and XML into each other. A table is a list of rows (objects with the same kind of
 /// keys); nested values in a table cell are written as JSON text.
 /// </summary>
-public static class DataFormats
+public static partial class DataFormats
 {
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
@@ -26,7 +26,7 @@ public static class DataFormats
             "tsv" => FromTable(ParseDelimited(text, '\t')),
             "xml" => FromXml(XDocument.Parse(text).Root!),
             "yaml" or "yml" => Yaml.Read(text),
-            _ => throw new InvalidOperationException($"Cannot read {from}."),
+            _ => ReadMore(text, from),
         };
         return to switch
         {
@@ -35,7 +35,8 @@ public static class DataFormats
             "tsv" => WriteDelimited(ToTable(tree), '\t'),
             "xml" => ToXml(tree),
             "yaml" or "yml" => Yaml.Write(tree),
-            _ => throw new InvalidOperationException($"Cannot write {to}."),
+            "md" or "html" or "sql" or "jsonl" => WriteTable(ToTable(tree), to),
+            _ => WriteMore(tree, to),
         };
     }
 

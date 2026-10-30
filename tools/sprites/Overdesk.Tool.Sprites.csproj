@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- The host loads this assembly from <manifest folder>/bin; host assemblies must not be copied next to it. -->
+    <OutDir>bin/</OutDir>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Image reading/writing and panel building blocks shared with the other bundled tools. -->
+    <Compile Include="..\shared\*.cs" LinkBase="Shared" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.4" ExcludeAssets="runtime" />
+    <!-- Avalonia draws with SkiaSharp, so the host already has it (and its native library). -->
+    <PackageReference Include="SkiaSharp" Version="3.119.4" ExcludeAssets="runtime;native" />
+    <ProjectReference Include="..\..\src\Overdesk.Core\Overdesk.Core.csproj" Private="false" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>

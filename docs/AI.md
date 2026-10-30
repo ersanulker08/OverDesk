@@ -52,7 +52,7 @@ src/Overdesk.App/
 | Desk | `read_tasks`, `dev_servers`, `media`, `scratchpad`, `remind_me`, `focus_timer`, `projects` (launch*) |
 | Other programs | `automate_app`* (AppleScript on macOS, PowerShell on Windows) |
 | Memory | `memory` |
-| Plugins | anything a plugin offers: the Converter's `convert_files`, DevKit's `devkit` (exact hashes, Base64, UUIDs, timestamps) and `hash_file` |
+| Plugins | anything a plugin offers: the Converter's `convert_files`, DevKit's `devkit` (exact hashes, encoders, generators, regex, diff, JWT, cron, colors, JSON to types) and `hash_file`, Texture Maps' `make_texture_maps`, App Icons' `make_app_icons`, Sprite Sheet's `pack_sprites` and `slice_sprite_sheet` |
 
 \* asks the user first (Allow / Allow all in this chat / Deny). Stopping the chat counts as Deny.
 

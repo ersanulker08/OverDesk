@@ -2,11 +2,12 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Overdesk.Core.Text;
+using Overdesk.Tools.Shared;
 using SkiaSharp;
 
 namespace Overdesk.Tool.Converter;
 
-public enum FileKind { Image, Data, Text, Document, Audio, Video, Unknown }
+public enum FileKind { Image, Data, Text, Document, Audio, Video, Archive, Font, Model, Unknown }
 
 public sealed record ConvertOptions
 {
@@ -21,30 +22,48 @@ public sealed record ConvertOptions
 }
 
 /// <summary>
-/// What can become what, and doing it. Images go through SkiaSharp (the library OverDesk draws with), data and
-/// Markdown are converted in code, and documents, audio and video use tools already on the computer: ffmpeg when it
-/// is installed, otherwise the converters macOS ships (sips, textutil, afconvert, avconvert).
+/// What can become what, and doing it. Images go through SkiaSharp (the library OverDesk draws with), data, Markdown,
+/// archives, fonts and 3D models are converted in code, and documents, audio and video use tools already on the
+/// computer: ffmpeg when it is installed, otherwise the converters macOS ships (sips, textutil, afconvert, avconvert).
+/// Every file, whatever it is, can at least be packed into a ZIP or GZ.
 /// </summary>
 public static partial class Engine
 {
     private static readonly Dictionary<string, FileKind> Kinds = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["png"] = FileKind.Image, ["jpg"] = FileKind.Image, ["jpeg"] = FileKind.Image, ["webp"] = FileKind.Image, ["gif"] = FileKind.Image,
-        ["bmp"] = FileKind.Image, ["ico"] = FileKind.Image, ["heic"] = FileKind.Image, ["heif"] = FileKind.Image, ["tif"] = FileKind.Image,
-        ["tiff"] = FileKind.Image,
         ["json"] = FileKind.Data, ["yaml"] = FileKind.Data, ["xlsx"] = FileKind.Data, ["yml"] = FileKind.Data, ["csv"] = FileKind.Data, ["tsv"] = FileKind.Data, ["xml"] = FileKind.Data,
+        ["toml"] = FileKind.Data, ["ini"] = FileKind.Data, ["cfg"] = FileKind.Data, ["env"] = FileKind.Data, ["properties"] = FileKind.Data,
+        ["jsonl"] = FileKind.Data, ["ndjson"] = FileKind.Data, ["plist"] = FileKind.Data,
         ["md"] = FileKind.Text, ["markdown"] = FileKind.Text, ["txt"] = FileKind.Text, ["srt"] = FileKind.Text, ["vtt"] = FileKind.Text,
         ["docx"] = FileKind.Document, ["doc"] = FileKind.Document, ["rtf"] = FileKind.Document, ["odt"] = FileKind.Document,
         ["html"] = FileKind.Document, ["htm"] = FileKind.Document, ["webarchive"] = FileKind.Document,
         ["mp3"] = FileKind.Audio, ["wav"] = FileKind.Audio, ["m4a"] = FileKind.Audio, ["aac"] = FileKind.Audio, ["flac"] = FileKind.Audio,
         ["ogg"] = FileKind.Audio, ["opus"] = FileKind.Audio, ["aiff"] = FileKind.Audio, ["aif"] = FileKind.Audio, ["caf"] = FileKind.Audio,
+        ["wma"] = FileKind.Audio, ["amr"] = FileKind.Audio,
         ["mp4"] = FileKind.Video, ["mov"] = FileKind.Video, ["mkv"] = FileKind.Video, ["webm"] = FileKind.Video, ["avi"] = FileKind.Video,
-        ["m4v"] = FileKind.Video,
+        ["m4v"] = FileKind.Video, ["wmv"] = FileKind.Video, ["flv"] = FileKind.Video, ["mpg"] = FileKind.Video, ["mpeg"] = FileKind.Video,
+        ["3gp"] = FileKind.Video, ["ts"] = FileKind.Video, ["mts"] = FileKind.Video,
+        ["zip"] = FileKind.Archive, ["tar"] = FileKind.Archive, ["gz"] = FileKind.Archive, ["tgz"] = FileKind.Archive,
+        ["ttf"] = FileKind.Font, ["otf"] = FileKind.Font, ["woff"] = FileKind.Font,
+        ["obj"] = FileKind.Model, ["stl"] = FileKind.Model, ["ply"] = FileKind.Model,
+        ["pdf"] = FileKind.Image, // pages are rendered through macOS's sips
     };
 
-    public static string Ext(string path) => Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+    static Engine()
+    {
+        foreach (var ext in ImageIO.Readable) Kinds[ext] = FileKind.Image;
+    }
 
-    public static FileKind KindOf(string path) => Kinds.GetValueOrDefault(Ext(path), FileKind.Unknown);
+    /// <summary>Images any computer reads (SkiaSharp + our TGA reader); the rest need macOS.</summary>
+    private static readonly HashSet<string> PortableImages = new() { "png", "jpg", "jpeg", "webp", "gif", "bmp", "ico", "tga", "wbmp" };
+
+    /// <summary>Formats a tree of data can be written as, and the table ones.</summary>
+    private static readonly string[] TreeFormats = { "json", "yaml", "toml", "xml", "plist", "ini", "env", "properties" };
+    private static readonly string[] TableFormats = { "xlsx", "csv", "tsv", "jsonl", "md", "html", "sql" };
+
+    public static string Ext(string path) => Archives.Format(path) == "tar.gz" ? "tar.gz" : Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+
+    public static FileKind KindOf(string path) => Ext(path) == "tar.gz" ? FileKind.Archive : Kinds.GetValueOrDefault(Ext(path), FileKind.Unknown);
 
     private static bool Mac => OperatingSystem.IsMacOS();
     private static bool HasFfmpeg => Cli.Find("ffmpeg") is not null;
@@ -52,77 +71,120 @@ public static partial class Engine
     /// <summary>The formats this file can be turned into on this computer (extensions, best first).</summary>
     public static IReadOnlyList<string> TargetsFor(string path)
     {
-        var ext = Ext(path) switch { "jpeg" => "jpg", "htm" => "html", "markdown" => "md", "tif" => "tiff", "aif" => "aiff", var e => e };
+        var ext = Ext(path) switch { "jpeg" => "jpg", "htm" => "html", "markdown" => "md", "tif" => "tiff", "aif" => "aiff", "yml" => "yaml", "ndjson" => "jsonl", "tgz" => "tar.gz", var e => e };
         IEnumerable<string> targets = KindOf(path) switch
         {
-            FileKind.Image => new[] { "png", "jpg", "webp", "pdf" }.Concat(Mac ? new[] { "heic", "tiff" } : Array.Empty<string>()),
-            FileKind.Data => ext switch
-            {
-                "json" => new[] { "xlsx", "yaml", "csv", "xml", "tsv" },
-                "yaml" or "yml" => new[] { "json", "xlsx", "csv", "xml" },
-                "csv" => new[] { "xlsx", "json", "yaml", "tsv", "xml" },
-                "tsv" => new[] { "xlsx", "csv", "json", "yaml" },
-                "xlsx" => new[] { "csv", "json", "yaml", "tsv" },
-                _ => new[] { "json", "yaml" },
-            },
+            FileKind.Image when !Mac && !PortableImages.Contains(ext) => Array.Empty<string>(),
+            FileKind.Image => new[] { "png", "jpg", "webp", "pdf", "tga", "bmp", "ico" }.Concat(Mac ? new[] { "heic", "tiff" } : Array.Empty<string>()),
+            FileKind.Data => ext is "csv" or "tsv" or "xlsx" or "jsonl" ? TableFormats.Concat(TreeFormats) : TreeFormats.Concat(TableFormats),
             FileKind.Text when ext is "srt" or "vtt" => new[] { ext == "srt" ? "vtt" : "srt" },
             FileKind.Text => ext == "md"
                 ? new[] { "pdf", "html" }.Concat(Mac ? new[] { "docx", "rtf", "odt" } : Array.Empty<string>())
                 : Mac ? new[] { "pdf", "docx", "rtf", "html", "odt" } : new[] { "pdf", "html" },
             FileKind.Document => Mac ? new[] { "pdf", "txt", "docx", "html", "rtf", "odt" } : ext == "html" ? new[] { "pdf", "txt" } : Array.Empty<string>(),
-            FileKind.Audio => HasFfmpeg ? new[] { "mp3", "m4a", "wav", "flac", "ogg", "aiff" } : Mac ? new[] { "m4a", "wav", "aiff", "flac", "caf" } : Array.Empty<string>(),
-            FileKind.Video => HasFfmpeg ? new[] { "mp4", "mov", "webm", "gif", "mp3", "m4a" } : Mac ? new[] { "mp4", "mov", "m4v" } : Array.Empty<string>(),
+            FileKind.Audio => HasFfmpeg ? new[] { "mp3", "m4a", "wav", "flac", "ogg", "opus", "aiff", "aac" } : Mac ? new[] { "m4a", "wav", "aiff", "flac", "caf" } : Array.Empty<string>(),
+            FileKind.Video => HasFfmpeg
+                ? new[] { "mp4", "mov", "webm", "mkv", "avi", "gif", "jpg", "mp3", "m4a", "wav" }
+                : Mac ? new[] { "mp4", "mov", "m4v" } : Array.Empty<string>(),
+            FileKind.Archive => new[] { "folder", "zip", "tar", "tar.gz" },
+            FileKind.Font => ext == "woff" ? new[] { Fonts.WoffFlavor(path) } : new[] { "woff" },
+            FileKind.Model => new[] { "glb", "gltf", "obj", "stl", "ply" },
             _ => Array.Empty<string>(),
         };
-        return targets.Where(t => t != ext).Distinct().ToList();
+        // Anything at all can be packed.
+        var all = targets.Where(t => t != ext).Distinct().ToList();
+        if (KindOf(path) != FileKind.Archive) all.AddRange(new[] { "zip", "gz" }.Where(t => !all.Contains(t)));
+        return all;
     }
 
     /// <summary>What is missing for more formats of this kind, or null.</summary>
     public static string? Hint(FileKind kind) => kind switch
     {
         FileKind.Audio or FileKind.Video when !HasFfmpeg => Mac
-            ? "Install ffmpeg for more formats (MP3, WebM, GIF…): brew install ffmpeg"
+            ? "Install ffmpeg for more formats (MP3, WebM, MKV, GIF…): brew install ffmpeg"
             : "Install ffmpeg to convert audio and video: winget install ffmpeg",
         FileKind.Document when !Mac => "Word, RTF and ODT conversion uses macOS's textutil; on Windows only HTML → text works.",
+        FileKind.Image when !Mac => "HEIC, AVIF, PSD, RAW, TIFF, SVG and PDF pages are read with macOS's own converters; here they can only be zipped.",
+        FileKind.Model => "Geometry only: positions, normals and UVs. Materials and textures are not carried over.",
+        FileKind.Unknown => "OverDesk does not know this kind of file, but it can pack it.",
         _ => null,
     };
 
-    /// <summary>A free path for the result: "name.ext", else "name (2).ext"...</summary>
+    /// <summary>A free path for the result: "name.ext", else "name (2).ext"... "folder" is a new folder.</summary>
     public static string OutputPath(string input, string target, ConvertOptions options)
     {
         var folder = options.OutputFolder ?? Path.GetDirectoryName(input)!;
-        var name = Path.GetFileNameWithoutExtension(input);
-        var path = Path.Combine(folder, $"{name}.{target}");
-        for (var i = 2; File.Exists(path); i++) path = Path.Combine(folder, $"{name} ({i}).{target}");
-        return path;
+        var name = KindOf(input) == FileKind.Archive ? Archives.BaseName(input) : Path.GetFileNameWithoutExtension(input);
+        // Packing keeps the whole name: "photo.png.zip" says what is inside.
+        if (target is "zip" or "gz" && KindOf(input) != FileKind.Archive) name = Path.GetFileName(input);
+        return ToolUi.FreePath(folder, name, target == "folder" ? "" : target);
     }
 
-    /// <summary>Convert one file; returns the new file's path.</summary>
+    /// <summary>Convert one file; returns the new file's (or folder's) path.</summary>
     public static async Task<string> ConvertAsync(string input, string target, ConvertOptions options, IProgress<double>? progress, CancellationToken cancellation)
     {
         if (!File.Exists(input)) throw new FileNotFoundException("The file does not exist.", input);
-        target = target.TrimStart('.').ToLowerInvariant() switch { "jpeg" => "jpg", "htm" => "html", var t => t };
+        target = target.TrimStart('.').ToLowerInvariant() switch { "jpeg" => "jpg", "htm" => "html", "yml" => "yaml", "tgz" => "tar.gz", var t => t };
         if (!TargetsFor(input).Contains(target))
             throw new InvalidOperationException($"{Path.GetFileName(input)} cannot be converted to {target.ToUpperInvariant()} here. Possible: {string.Join(", ", TargetsFor(input))}.");
         var output = OutputPath(input, target, options);
         try
         {
-            switch (KindOf(input))
-            {
-                case FileKind.Image: await Task.Run(() => ConvertImage(input, output, target, options), cancellation); break;
-                case FileKind.Data: await Task.Run(() => ConvertData(input, output, target), cancellation); break;
-                case FileKind.Text: await ConvertTextAsync(input, output, target, cancellation); break;
-                case FileKind.Document: await ConvertDocumentAsync(input, output, target, cancellation); break;
-                case FileKind.Audio or FileKind.Video: await ConvertMediaAsync(input, output, target, progress, cancellation); break;
-            }
+            if (target is "zip" or "gz" or "tar" or "tar.gz" or "folder")
+                await Task.Run(() =>
+                {
+                    if (target == "folder") Archives.Extract(input, output, cancellation);
+                    else Archives.Pack(input, output, target, cancellation);
+                }, cancellation);
+            else
+                switch (KindOf(input))
+                {
+                    case FileKind.Image: await Task.Run(() => ConvertImage(input, output, target, options), cancellation); break;
+                    case FileKind.Data: await Task.Run(() => ConvertData(input, output, target), cancellation); break;
+                    case FileKind.Text: await ConvertTextAsync(input, output, target, cancellation); break;
+                    case FileKind.Document: await ConvertDocumentAsync(input, output, target, cancellation); break;
+                    case FileKind.Audio or FileKind.Video: await ConvertMediaAsync(input, output, target, progress, cancellation); break;
+                    case FileKind.Font:
+                        var font = await File.ReadAllBytesAsync(input, cancellation);
+                        await File.WriteAllBytesAsync(output, target == "woff" ? Fonts.ToWoff(font) : Fonts.FromWoff(font), cancellation);
+                        break;
+                    case FileKind.Model: await Task.Run(() => Models.Write(Models.Read(input), output, target), cancellation); break;
+                }
         }
         catch
         {
-            try { if (File.Exists(output)) File.Delete(output); } catch (IOException) { }
+            try
+            {
+                if (File.Exists(output)) File.Delete(output);
+                else if (Directory.Exists(output)) Directory.Delete(output, true);
+            }
+            catch (IOException) { }
             throw;
         }
-        if (!File.Exists(output)) throw new InvalidOperationException("The converter finished but wrote no file.");
+        if (!File.Exists(output) && !Directory.Exists(output)) throw new InvalidOperationException("The converter finished but wrote no file.");
         progress?.Report(1);
+        return output;
+    }
+
+    /// <summary>Several images as one PDF, one page each, in the given order.</summary>
+    public static async Task<string> CombineToPdfAsync(IReadOnlyList<string> images, ConvertOptions options, CancellationToken cancellation)
+    {
+        var first = images[0];
+        var output = ToolUi.FreePath(options.OutputFolder ?? Path.GetDirectoryName(first)!, Path.GetFileNameWithoutExtension(first) + " and more", "pdf");
+        await Task.Run(() =>
+        {
+            var bitmaps = new List<SKBitmap>();
+            try
+            {
+                foreach (var path in images)
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    bitmaps.Add(Fit(ImageIO.Load(path), options.MaxSize));
+                }
+                PdfWriter.WriteImages(bitmaps, output);
+            }
+            finally { bitmaps.ForEach(b => b.Dispose()); }
+        }, cancellation);
         return output;
     }
 
@@ -146,79 +208,17 @@ public static partial class Engine
 
     private static void ConvertImage(string input, string output, string target, ConvertOptions options)
     {
-        // HEIC / TIFF output, and inputs Skia cannot read (HEIC), go through macOS's sips.
-        using var codec = SKCodec.Create(input);
-        if (codec is null && target == "pdf" && Mac)
-        {
-            // Read it through sips first (HEIC photos), then lay it out like any other image.
-            var png = Path.Combine(Path.GetTempPath(), $"overdesk-{Guid.NewGuid():N}.png");
-            try
-            {
-                Cli.Run("/usr/bin/sips", new[] { "-s", "format", "png", input, "--out", png }, CancellationToken.None).GetAwaiter().GetResult();
-                ConvertImage(png, output, target, options);
-            }
-            finally { File.Delete(png); }
-            return;
-        }
-        if (target is "heic" or "tiff" || codec is null)
-        {
-            if (!Mac) throw new InvalidOperationException("This image format cannot be read on this computer.");
-            var args = new List<string> { "-s", "format", target == "tiff" ? "tiff" : target };
-            if (target == "heic") args.AddRange(new[] { "-s", "formatOptions", options.Quality.ToString(CultureInfo.InvariantCulture) });
-            if (options.MaxSize is { } max) args.AddRange(new[] { "-Z", max.ToString(CultureInfo.InvariantCulture) });
-            args.AddRange(new[] { input, "--out", output });
-            Cli.Run("/usr/bin/sips", args, CancellationToken.None).GetAwaiter().GetResult();
-            return;
-        }
-
-        using var decoded = SKBitmap.Decode(codec) ?? throw new InvalidOperationException("The image could not be read.");
-        using var upright = Orient(decoded, codec.EncodedOrigin);
-        var bitmap = upright;
-        SKBitmap? resized = null;
-        if (options.MaxSize is { } size && Math.Max(bitmap.Width, bitmap.Height) > size)
-        {
-            var scale = size / (double)Math.Max(bitmap.Width, bitmap.Height);
-            resized = bitmap.Resize(new SKImageInfo(Math.Max(1, (int)Math.Round(bitmap.Width * scale)), Math.Max(1, (int)Math.Round(bitmap.Height * scale))),
-                new SKSamplingOptions(SKCubicResampler.Mitchell));
-            bitmap = resized ?? bitmap;
-        }
-
-        if (target == "pdf")
-        {
-            PdfWriter.WriteImage(bitmap, output);
-            resized?.Dispose();
-            return;
-        }
-
-        var format = target switch { "jpg" => SKEncodedImageFormat.Jpeg, "webp" => SKEncodedImageFormat.Webp, _ => SKEncodedImageFormat.Png };
-        using var surface = SKSurface.Create(new SKImageInfo(bitmap.Width, bitmap.Height, SKColorType.Rgba8888, SKAlphaType.Premul));
-        // JPEG has no transparency: put transparent parts on white rather than black.
-        surface.Canvas.Clear(format == SKEncodedImageFormat.Jpeg ? SKColors.White : SKColors.Transparent);
-        surface.Canvas.DrawBitmap(bitmap, 0, 0);
-        using var image = surface.Snapshot();
-        using var data = image.Encode(format, Math.Clamp(options.Quality, 1, 100)) ?? throw new InvalidOperationException($"Could not write {target.ToUpperInvariant()}.");
-        using var file = File.Create(output);
-        data.SaveTo(file);
-        resized?.Dispose();
+        using var bitmap = Fit(ImageIO.Load(input), options.MaxSize);
+        if (target == "pdf") PdfWriter.WriteImage(bitmap, output);
+        else ImageIO.Save(bitmap, output, options.Quality);
     }
 
-    /// <summary>Phone photos store their rotation separately; bake it in, since PNG and WebP keep no such tag here.</summary>
-    private static SKBitmap Orient(SKBitmap source, SKEncodedOrigin origin)
+    /// <summary>Shrinks to the longest edge (never enlarges); takes ownership of <paramref name="bitmap"/>.</summary>
+    private static SKBitmap Fit(SKBitmap bitmap, int? maxSize)
     {
-        var (degrees, swap) = origin switch
-        {
-            SKEncodedOrigin.BottomRight => (180, false),
-            SKEncodedOrigin.RightTop => (90, true),
-            SKEncodedOrigin.LeftBottom => (270, true),
-            _ => (0, false),
-        };
-        var result = new SKBitmap(swap ? source.Height : source.Width, swap ? source.Width : source.Height, source.ColorType, source.AlphaType);
-        using var canvas = new SKCanvas(result);
-        canvas.Translate(result.Width / 2f, result.Height / 2f);
-        canvas.RotateDegrees(degrees);
-        canvas.Translate(-source.Width / 2f, -source.Height / 2f);
-        canvas.DrawBitmap(source, 0, 0);
-        return result;
+        if (maxSize is not { } size || Math.Max(bitmap.Width, bitmap.Height) <= size) return bitmap;
+        var scale = size / (double)Math.Max(bitmap.Width, bitmap.Height);
+        using (bitmap) return ImageIO.Resize(bitmap, (int)Math.Round(bitmap.Width * scale), (int)Math.Round(bitmap.Height * scale));
     }
 
     // ---------------------------------------------------------------- text and documents
@@ -300,6 +300,10 @@ public static partial class Engine
                 "mp3" => new[] { "-vn", "-q:a", "2" },
                 "m4a" => new[] { "-vn", "-c:a", "aac", "-b:a", "192k" },
                 "wav" or "flac" or "aiff" or "ogg" => new[] { "-vn" },
+                "opus" => new[] { "-vn", "-c:a", "libopus", "-b:a", "128k" },
+                "aac" => new[] { "-vn", "-c:a", "aac", "-b:a", "192k" },
+                "webm" => new[] { "-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-c:a", "libopus" },
+                "jpg" => new[] { "-vf", "thumbnail", "-frames:v", "1", "-q:v", "2" }, // a typical frame from the start
                 _ => Array.Empty<string>(),
             });
             args.Add(output);

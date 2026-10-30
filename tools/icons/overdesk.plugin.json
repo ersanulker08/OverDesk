@@ -1,0 +1,11 @@
+{
+  "id": "overdesk.icons",
+  "name": "App Icons",
+  "version": "1.0.0",
+  "description": "One image to every app icon: macOS .icns, Windows .ico, iOS AppIcon set, Android mipmaps, web favicons",
+  "run": "inProcess",
+  "assembly": "bin/Overdesk.Tool.Icons.dll",
+  "typeName": "Overdesk.Tool.Icons.IconsPlugin",
+  "icon": "IconApp",
+  "ai": true
+}

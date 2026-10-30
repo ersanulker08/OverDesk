@@ -47,20 +47,26 @@ public static partial class PdfWriter
         document.Close();
     }
 
-    /// <summary>One image per page, scaled to fit A4 (portrait or landscape, whichever suits it).</summary>
-    public static void WriteImage(SKBitmap bitmap, string output)
+    /// <summary>The image on one page, scaled to fit A4 (portrait or landscape, whichever suits it).</summary>
+    public static void WriteImage(SKBitmap bitmap, string output) => WriteImages(new[] { bitmap }, output);
+
+    /// <summary>One image per page, each scaled to fit A4 (portrait or landscape, whichever suits it).</summary>
+    public static void WriteImages(IEnumerable<SKBitmap> bitmaps, string output)
     {
         using var stream = File.Create(output);
         using var document = SKDocument.CreatePdf(stream, new SKDocumentPdfMetadata { Creator = "OverDesk Converter", Producer = "OverDesk" });
-        var landscape = bitmap.Width > bitmap.Height;
-        var (w, h) = landscape ? (PageHeight, PageWidth) : (PageWidth, PageHeight);
-        var canvas = document.BeginPage(w, h);
-        var scale = Math.Min((w - 2 * 36) / bitmap.Width, (h - 2 * 36) / bitmap.Height);
-        scale = Math.Min(scale, 1f * 72 / 96 * 2); // never blow small images up past 1.5x
-        var rect = SKRect.Create((w - bitmap.Width * scale) / 2, (h - bitmap.Height * scale) / 2, bitmap.Width * scale, bitmap.Height * scale);
-        using var image = SKImage.FromBitmap(bitmap);
-        canvas.DrawImage(image, rect, new SKSamplingOptions(SKCubicResampler.Mitchell));
-        document.EndPage();
+        foreach (var bitmap in bitmaps)
+        {
+            var landscape = bitmap.Width > bitmap.Height;
+            var (w, h) = landscape ? (PageHeight, PageWidth) : (PageWidth, PageHeight);
+            var canvas = document.BeginPage(w, h);
+            var scale = Math.Min((w - 2 * 36) / bitmap.Width, (h - 2 * 36) / bitmap.Height);
+            scale = Math.Min(scale, 1f * 72 / 96 * 2); // never blow small images up past 1.5x
+            var rect = SKRect.Create((w - bitmap.Width * scale) / 2, (h - bitmap.Height * scale) / 2, bitmap.Width * scale, bitmap.Height * scale);
+            using var image = SKImage.FromBitmap(bitmap);
+            canvas.DrawImage(image, rect, new SKSamplingOptions(SKCubicResampler.Mitchell));
+            document.EndPage();
+        }
         document.Close();
     }
 

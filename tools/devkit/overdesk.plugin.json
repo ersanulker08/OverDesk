@@ -1,8 +1,8 @@
 {
   "id": "overdesk.devkit",
   "name": "DevKit",
-  "version": "1.0.0",
-  "description": "Small developer utilities: JSON, Base64, URL, hashes, UUIDs, timestamps",
+  "version": "2.0.0",
+  "description": "Developer utilities: JSON, encoders, hashes, generators, regex, diff, JWT, cron, colors, number bases, JSON to types",
   "run": "inProcess",
   "assembly": "bin/Overdesk.Tool.DevKit.dll",
   "typeName": "Overdesk.Tool.DevKit.DevKitPlugin",

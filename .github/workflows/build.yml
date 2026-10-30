@@ -23,9 +23,11 @@ jobs:
       - name: Build the sample plugin
         run: dotnet build samples/HelloTool -c Release
       - name: Build the bundled tools
+        shell: bash
         run: |
-          dotnet build tools/devkit -c Release
-          dotnet build tools/converter -c Release
+          for tool in tools/*/; do
+            if [ -f "$tool/overdesk.plugin.json" ]; then dotnet build "$tool" -c Release; fi
+          done
       - name: Run the tests
         run: dotnet test tests/Overdesk.Tests -c Release
       # Start the real app without a display (Debug + OVERDESK_HEADLESS) and render every screen: catches startup crashes.

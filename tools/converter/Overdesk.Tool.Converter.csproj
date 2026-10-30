@@ -11,6 +11,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Image reading/writing and panel building blocks shared with the other bundled tools. -->
+    <Compile Include="..\shared\*.cs" LinkBase="Shared" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.4" ExcludeAssets="runtime" />
     <!-- Avalonia draws with SkiaSharp, so the host already has it (and its native library). -->
     <PackageReference Include="SkiaSharp" Version="3.119.4" ExcludeAssets="runtime;native" />

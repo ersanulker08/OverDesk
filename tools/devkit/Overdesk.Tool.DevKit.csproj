@@ -11,6 +11,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Panel building blocks shared with the other bundled tools. -->
+    <Compile Include="..\shared\ToolUi.cs" LinkBase="Shared" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.4" ExcludeAssets="runtime" />
     <ProjectReference Include="..\..\src\Overdesk.Core\Overdesk.Core.csproj" Private="false" ExcludeAssets="runtime" />
   </ItemGroup>

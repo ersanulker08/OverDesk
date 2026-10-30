@@ -7,7 +7,12 @@ namespace Overdesk.Tests;
 public class PluginAiToolTests
 {
     private static IReadOnlyList<PluginAiTool> All() =>
-        new Overdesk.Tool.DevKit.DevKitPlugin().AiTools.Concat(new Overdesk.Tool.Converter.ConverterPlugin().AiTools).ToList();
+        new Overdesk.Tool.DevKit.DevKitPlugin().AiTools
+            .Concat(new Overdesk.Tool.Converter.ConverterPlugin().AiTools)
+            .Concat(new Overdesk.Tool.Texture.TexturePlugin().AiTools)
+            .Concat(new Overdesk.Tool.Icons.IconsPlugin().AiTools)
+            .Concat(new Overdesk.Tool.Sprites.SpritesPlugin().AiTools)
+            .ToList();
 
     [Fact]
     public void Every_schema_is_a_json_object_with_properties()

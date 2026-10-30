@@ -1,0 +1,11 @@
+{
+  "id": "overdesk.texture",
+  "name": "Texture Maps",
+  "version": "1.0.0",
+  "description": "Normal, height, AO, roughness, metallic, curvature and packed ORM / mask maps from any texture, for Unity, Unreal, Godot and Blender",
+  "run": "inProcess",
+  "assembly": "bin/Overdesk.Tool.Texture.dll",
+  "typeName": "Overdesk.Tool.Texture.TexturePlugin",
+  "icon": "IconSliders",
+  "ai": true
+}

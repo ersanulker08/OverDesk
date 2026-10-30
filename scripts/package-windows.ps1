@@ -6,8 +6,8 @@ $root = Split-Path -Parent $PSScriptRoot
 $out = Join-Path $root "dist\OverDesk-$Rid"
 if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 dotnet publish (Join-Path $root "src\Overdesk.App") -c Release -r $Rid --self-contained true -o $out
-# Bundled tools (DevKit, Converter): each tool folder ships its manifest and bin\ next to the app.
-Get-ChildItem (Join-Path $root "tools") -Directory | ForEach-Object {
+# Bundled tools (Converter, DevKit, Texture Maps, App Icons, Sprite Sheet): each tool folder ships its manifest and bin\ next to the app.
+Get-ChildItem (Join-Path $root "tools") -Directory | Where-Object { Test-Path (Join-Path $_.FullName "overdesk.plugin.json") } | ForEach-Object {
     dotnet build $_.FullName -c Release
     $dest = Join-Path $out "tools\$($_.Name)"
     New-Item -ItemType Directory -Force $dest | Out-Null

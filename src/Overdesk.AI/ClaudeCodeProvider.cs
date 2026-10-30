@@ -46,8 +46,37 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
     public IAsyncEnumerable<ChatChunk> StreamAsync(string model, string? system, IReadOnlyList<ChatMessage> messages, AiContext? context, CancellationToken cancellation)
         => StreamTurnAsync(model, system, messages[^1], null, context, cancellation);
 
+    /// <summary>Set once an older Claude Code refused --append-system-prompt-file; the prompt then goes inline.</summary>
+    private static bool _promptFileUnsupported;
+
+    private sealed class PromptFileUnsupportedException : Exception;
+
     public async IAsyncEnumerable<ChatChunk> StreamTurnAsync(string model, string? system, ChatMessage message, string? sessionId, AiContext? context,
         [EnumeratorCancellation] CancellationToken cancellation)
+    {
+        var useFile = !_promptFileUnsupported;
+        var retry = false;
+        await using (var run = RunAsync(model, system, message, sessionId, context, useFile, cancellation).GetAsyncEnumerator(cancellation))
+        {
+            while (true)
+            {
+                bool more;
+                try { more = await run.MoveNextAsync(); }
+                catch (PromptFileUnsupportedException)
+                {
+                    _promptFileUnsupported = retry = true;
+                    break;
+                }
+                if (!more) break;
+                yield return run.Current;
+            }
+        }
+        if (retry)
+            await foreach (var chunk in RunAsync(model, system, message, sessionId, context, false, cancellation)) yield return chunk;
+    }
+
+    private async IAsyncEnumerable<ChatChunk> RunAsync(string model, string? system, ChatMessage message, string? sessionId, AiContext? context,
+        bool promptFile, [EnumeratorCancellation] CancellationToken cancellation)
     {
         var exe = CliTools.Find("claude") ?? throw new InvalidOperationException("Claude Code is not installed.");
         Directory.CreateDirectory(_workspace);
@@ -61,14 +90,19 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
         foreach (var arg in new[] { "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages" }) info.ArgumentList.Add(arg);
         if (model is { Length: > 0 } && model != "default") { info.ArgumentList.Add("--model"); info.ArgumentList.Add(model); }
         if (sessionId is { Length: > 0 }) { info.ArgumentList.Add("--resume"); info.ArgumentList.Add(sessionId); }
-        if (!string.IsNullOrWhiteSpace(system))
+        if (!string.IsNullOrWhiteSpace(system) && !promptFile)
+        {
+            info.ArgumentList.Add("--append-system-prompt");
+            info.ArgumentList.Add(system);
+        }
+        else if (!string.IsNullOrWhiteSpace(system))
         {
             // From a file: the prompt is long and multi-line (project overview, memory), which a command line on
             // Windows (claude.cmd goes through cmd.exe) would mangle.
-            var promptFile = Path.Combine(_workspace, "system-prompt.md");
-            await File.WriteAllTextAsync(promptFile, system, cancellation);
+            var promptPath = Path.Combine(_workspace, "system-prompt.md");
+            await File.WriteAllTextAsync(promptPath, system, cancellation);
             info.ArgumentList.Add("--append-system-prompt-file");
-            info.ArgumentList.Add(promptFile);
+            info.ArgumentList.Add(promptPath);
         }
         if (inProject) { info.ArgumentList.Add("--add-dir"); info.ArgumentList.Add(_workspace); }
         if (edits) { info.ArgumentList.Add("--permission-mode"); info.ArgumentList.Add("acceptEdits"); }
@@ -167,6 +201,7 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
         if (process.ExitCode != 0 && session is null)
         {
             var error = (await errors).Trim();
+            if (promptFile && error.Contains("append-system-prompt-file", StringComparison.Ordinal)) throw new PromptFileUnsupportedException();
             throw new InvalidOperationException(error.Contains("login", StringComparison.OrdinalIgnoreCase) || error.Contains("auth", StringComparison.OrdinalIgnoreCase)
                 ? "Claude Code is not signed in. Open a terminal and run: claude  (then /login)."
                 : "Claude Code stopped: " + (error.Length > 300 ? error[..300] + "…" : error));

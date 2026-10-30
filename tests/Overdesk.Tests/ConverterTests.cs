@@ -51,6 +51,71 @@ public class ConverterTests
     }
 
     [Fact]
+    public void Yaml_reads_the_common_subset()
+    {
+        const string yaml = """
+            # a config
+            name: OverDesk
+            version: 0.2
+            enabled: yes
+            empty:
+            zip: "02134"
+            tags: [ai, "tabs, tools", 3]
+            point: {x: 1, y: -2}
+            owner:
+              name: 'Ersan''s'
+              langs:
+              - tr
+              - en
+            servers:
+              - host: a.local   # primary
+                port: 8080
+              - host: b.local
+                port: 8081
+            notes: |
+              line one
+              line two
+            folded: >
+              one
+              two
+            """;
+        var json = DataFormats.Convert(yaml, "yaml", "json");
+        var node = JsonNode.Parse(json)!;
+        Assert.Equal("OverDesk", node["name"]!.GetValue<string>());
+        Assert.Equal(0.2, node["version"]!.GetValue<double>());
+        Assert.True(node["enabled"]!.GetValue<bool>());
+        Assert.Null(node["empty"]);
+        Assert.Equal("02134", node["zip"]!.GetValue<string>());
+        Assert.Equal("tabs, tools", node["tags"]![1]!.GetValue<string>());
+        Assert.Equal(-2, node["point"]!["y"]!.GetValue<long>());
+        Assert.Equal("Ersan's", node["owner"]!["name"]!.GetValue<string>());
+        Assert.Equal("en", node["owner"]!["langs"]![1]!.GetValue<string>());
+        Assert.Equal("a.local", node["servers"]![0]!["host"]!.GetValue<string>());
+        Assert.Equal(8081, node["servers"]![1]!["port"]!.GetValue<long>());
+        Assert.Equal("line one\nline two\n", node["notes"]!.GetValue<string>());
+        Assert.Equal("one two\n", node["folded"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Json_survives_a_round_trip_through_yaml()
+    {
+        const string json = """{"name":"x: y","n":"42","list":[{"a":1,"b":[true,null]},"plain",""],"nested":{"deep":{"text":"two\nlines","q":"say \"hi\""}},"emptyObj":{},"emptyList":[]}""";
+        var yaml = DataFormats.Convert(json, "json", "yaml");
+        var back = JsonNode.Parse(DataFormats.Convert(yaml, "yaml", "json"));
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(json), back), yaml);
+    }
+
+    [Theory]
+    [InlineData("""[[1,2],[3,[4,5]],[]]""")]
+    [InlineData("""{"a key: with colon":1,"#hash":"yes","-dash":"1.5","n":"null","t":" padded ","e":"","list":[{"x":{"y":[{"z":1}]}}]}""")]
+    [InlineData("""{"text":"ends\n\n","tab":"a\tb","quote":"'single'"}""")]
+    public void Tricky_json_survives_yaml(string json)
+    {
+        var back = JsonNode.Parse(DataFormats.Convert(DataFormats.Convert(json, "json", "yaml"), "yaml", "json"));
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(json), back), DataFormats.Convert(json, "json", "yaml"));
+    }
+
+    [Fact]
     public void Markdown_becomes_html()
     {
         var html = Markdown.ToHtml("# Title\n\nSome **bold** and *italic* and `a<b`.\n\n- [x] done\n- todo\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n```cs\nvar x = 1 < 2;\n```\n[site](https://example.com)");

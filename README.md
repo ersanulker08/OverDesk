@@ -37,8 +37,8 @@
   - focus timer;
   - projects, git and Docker cards.
 - **Workspaces, split view, command palette (⌘P), themes**: six accent colors that recolor everything live.
-- **Converter.** Drop files on it: images (PNG, JPG, WebP, PDF; HEIC and TIFF on macOS; resize), data (JSON, CSV, TSV,
-  XML), Markdown and text to PDF, HTML or Word, documents to PDF, audio and video. Results go next to the originals. The AI can use it too.
+- **Converter.** Drop files on it: images (PNG, JPG, WebP, PDF; HEIC and TIFF on macOS; resize), data (JSON, YAML, CSV,
+  TSV, XML), Markdown and text to PDF, HTML or Word, documents to PDF, audio and video. Results go next to the originals. The AI can use it too.
 - **Tools panel + plugins.** The right side hosts tools. A tool is a folder with an `overdesk.plugin.json`; it can be a
   C# plugin or any program in any language. See [docs/PLUGINS.md](docs/PLUGINS.md).
 

@@ -32,7 +32,7 @@ public static partial class Engine
         ["png"] = FileKind.Image, ["jpg"] = FileKind.Image, ["jpeg"] = FileKind.Image, ["webp"] = FileKind.Image, ["gif"] = FileKind.Image,
         ["bmp"] = FileKind.Image, ["ico"] = FileKind.Image, ["heic"] = FileKind.Image, ["heif"] = FileKind.Image, ["tif"] = FileKind.Image,
         ["tiff"] = FileKind.Image,
-        ["json"] = FileKind.Data, ["csv"] = FileKind.Data, ["tsv"] = FileKind.Data, ["xml"] = FileKind.Data,
+        ["json"] = FileKind.Data, ["yaml"] = FileKind.Data, ["yml"] = FileKind.Data, ["csv"] = FileKind.Data, ["tsv"] = FileKind.Data, ["xml"] = FileKind.Data,
         ["md"] = FileKind.Text, ["markdown"] = FileKind.Text, ["txt"] = FileKind.Text,
         ["docx"] = FileKind.Document, ["doc"] = FileKind.Document, ["rtf"] = FileKind.Document, ["odt"] = FileKind.Document,
         ["html"] = FileKind.Document, ["htm"] = FileKind.Document, ["webarchive"] = FileKind.Document,
@@ -58,10 +58,11 @@ public static partial class Engine
             FileKind.Image => new[] { "png", "jpg", "webp", "pdf" }.Concat(Mac ? new[] { "heic", "tiff" } : Array.Empty<string>()),
             FileKind.Data => ext switch
             {
-                "json" => new[] { "csv", "xml", "tsv" },
-                "csv" => new[] { "json", "tsv", "xml" },
-                "tsv" => new[] { "csv", "json" },
-                _ => new[] { "json" },
+                "json" => new[] { "yaml", "csv", "xml", "tsv" },
+                "yaml" or "yml" => new[] { "json", "csv", "xml" },
+                "csv" => new[] { "json", "yaml", "tsv", "xml" },
+                "tsv" => new[] { "csv", "json", "yaml" },
+                _ => new[] { "json", "yaml" },
             },
             FileKind.Text => ext == "md"
                 ? new[] { "pdf", "html" }.Concat(Mac ? new[] { "docx", "rtf", "odt" } : Array.Empty<string>())

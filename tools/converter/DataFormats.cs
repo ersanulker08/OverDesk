@@ -8,7 +8,7 @@ using System.Xml.Linq;
 namespace Overdesk.Tool.Converter;
 
 /// <summary>
-/// Tables and trees: JSON, CSV, TSV and XML into each other. A table is a list of rows (objects with the same kind of
+/// Tables and trees: JSON, YAML, CSV, TSV and XML into each other. A table is a list of rows (objects with the same kind of
 /// keys); nested values in a table cell are written as JSON text.
 /// </summary>
 public static class DataFormats
@@ -25,6 +25,7 @@ public static class DataFormats
             "csv" => FromTable(ParseDelimited(text, ',')),
             "tsv" => FromTable(ParseDelimited(text, '\t')),
             "xml" => FromXml(XDocument.Parse(text).Root!),
+            "yaml" or "yml" => Yaml.Read(text),
             _ => throw new InvalidOperationException($"Cannot read {from}."),
         };
         return to switch
@@ -33,6 +34,7 @@ public static class DataFormats
             "csv" => WriteDelimited(ToTable(tree), ','),
             "tsv" => WriteDelimited(ToTable(tree), '\t'),
             "xml" => ToXml(tree),
+            "yaml" or "yml" => Yaml.Write(tree),
             _ => throw new InvalidOperationException($"Cannot write {to}."),
         };
     }

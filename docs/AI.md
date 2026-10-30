@@ -52,7 +52,7 @@ src/Overdesk.App/
 | Desk | `read_tasks`, `dev_servers`, `media`, `scratchpad`, `remind_me`, `focus_timer`, `projects` (launch*) |
 | Other programs | `automate_app`* (AppleScript on macOS, PowerShell on Windows) |
 | Memory | `memory` |
-| Plugins | anything a plugin offers, e.g. the Converter's `convert_files` |
+| Plugins | anything a plugin offers: the Converter's `convert_files`, DevKit's `devkit` (exact hashes, Base64, UUIDs, timestamps) and `hash_file` |
 
 \* asks the user first (Allow / Allow all in this chat / Deny). Stopping the chat counts as Deny.
 

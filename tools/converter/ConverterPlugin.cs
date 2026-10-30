@@ -14,7 +14,7 @@ public sealed class ConverterPlugin : IToolPlugin, IAiToolSource
         new PluginAiTool(
             "convert_files",
             "Convert files to another format with OverDesk's Converter: images (PNG, JPG, WebP, PDF; HEIC, TIFF on macOS; optional resize), " +
-            "data (JSON, YAML, CSV, TSV, XML, Excel XLSX), Markdown and text to PDF, HTML or Word, documents to PDF (and DOCX, RTF, ODT, HTML, TXT on macOS), " +
+            "data (JSON, YAML, CSV, TSV, XML, Excel XLSX), Markdown and text to PDF, HTML or Word, documents to PDF (and DOCX, RTF, ODT, HTML, TXT on macOS), SRT <-> VTT subtitles, " +
             "audio and video. " +
             "Results are written next to the originals (never overwriting). Call without \"to\" to see which formats each file can become.",
             """

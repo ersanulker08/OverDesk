@@ -33,7 +33,7 @@ public static partial class Engine
         ["bmp"] = FileKind.Image, ["ico"] = FileKind.Image, ["heic"] = FileKind.Image, ["heif"] = FileKind.Image, ["tif"] = FileKind.Image,
         ["tiff"] = FileKind.Image,
         ["json"] = FileKind.Data, ["yaml"] = FileKind.Data, ["xlsx"] = FileKind.Data, ["yml"] = FileKind.Data, ["csv"] = FileKind.Data, ["tsv"] = FileKind.Data, ["xml"] = FileKind.Data,
-        ["md"] = FileKind.Text, ["markdown"] = FileKind.Text, ["txt"] = FileKind.Text,
+        ["md"] = FileKind.Text, ["markdown"] = FileKind.Text, ["txt"] = FileKind.Text, ["srt"] = FileKind.Text, ["vtt"] = FileKind.Text,
         ["docx"] = FileKind.Document, ["doc"] = FileKind.Document, ["rtf"] = FileKind.Document, ["odt"] = FileKind.Document,
         ["html"] = FileKind.Document, ["htm"] = FileKind.Document, ["webarchive"] = FileKind.Document,
         ["mp3"] = FileKind.Audio, ["wav"] = FileKind.Audio, ["m4a"] = FileKind.Audio, ["aac"] = FileKind.Audio, ["flac"] = FileKind.Audio,
@@ -65,6 +65,7 @@ public static partial class Engine
                 "xlsx" => new[] { "csv", "json", "yaml", "tsv" },
                 _ => new[] { "json", "yaml" },
             },
+            FileKind.Text when ext is "srt" or "vtt" => new[] { ext == "srt" ? "vtt" : "srt" },
             FileKind.Text => ext == "md"
                 ? new[] { "pdf", "html" }.Concat(Mac ? new[] { "docx", "rtf", "odt" } : Array.Empty<string>())
                 : Mac ? new[] { "pdf", "docx", "rtf", "html", "odt" } : new[] { "pdf", "html" },
@@ -226,6 +227,11 @@ public static partial class Engine
     {
         var text = await File.ReadAllTextAsync(input, cancellation);
         var title = Path.GetFileNameWithoutExtension(input);
+        if (target is "srt" or "vtt")
+        {
+            await File.WriteAllTextAsync(output, Subtitles.Convert(text, target), cancellation);
+            return;
+        }
         if (target == "pdf")
         {
             await Task.Run(() => PdfWriter.WriteText(text, output, markdown: Ext(input) is "md" or "markdown", title), cancellation);

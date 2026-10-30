@@ -162,6 +162,17 @@ public class ConverterTests
     }
 
     [Fact]
+    public async Task Subtitles_switch_between_srt_and_vtt()
+    {
+        using var dir = new TempFolder();
+        var srt = dir.Write("movie.srt", "1\r\n00:00:01,500 --> 00:00:03,000\r\nHello\r\nthere\r\n\r\n2\r\n01:02:03,004 --> 01:02:05,000\r\nBye\r\n");
+        var vtt = await Engine.ConvertAsync(srt, "vtt", new ConvertOptions(), null, CancellationToken.None);
+        Assert.Equal("WEBVTT\n\n00:00:01.500 --> 00:00:03.000\nHello\nthere\n\n01:02:03.004 --> 01:02:05.000\nBye\n\n", File.ReadAllText(vtt));
+        var back = await Engine.ConvertAsync(vtt, "srt", new ConvertOptions { OutputFolder = Directory.CreateDirectory(Path.Combine(dir.Path, "out")).FullName }, null, CancellationToken.None);
+        Assert.StartsWith("1\n00:00:01,500 --> 00:00:03,000\nHello\nthere\n\n2\n", File.ReadAllText(back));
+    }
+
+    [Fact]
     public void Markdown_becomes_html()
     {
         var html = Markdown.ToHtml("# Title\n\nSome **bold** and *italic* and `a<b`.\n\n- [x] done\n- todo\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n```cs\nvar x = 1 < 2;\n```\n[site](https://example.com)");

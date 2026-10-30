@@ -1,9 +1,11 @@
 name: Release
 
-# Push a tag like v0.2.0 to build the self-contained apps and attach them to a draft GitHub release.
+# Push a tag like v0.2.0 to build the self-contained apps and publish them as a GitHub release.
+# "Run workflow" (manual) builds the same files as workflow artifacts only, without releasing.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,7 +15,11 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
-        rid: [osx-arm64, osx-x64]
+        include:
+          - rid: osx-arm64
+            label: AppleSilicon
+          - rid: osx-x64
+            label: Intel
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -21,28 +27,59 @@ jobs:
           dotnet-version: 10.0.x
       - name: Package OverDesk.app
         run: scripts/package-macos.sh ${{ matrix.rid }}
-      - name: Zip
-        run: ditto -c -k --keepParent dist/OverDesk.app "OverDesk-${{ github.ref_name }}-${{ matrix.rid }}.zip"
-      - uses: softprops/action-gh-release@v2
+      - name: Disk image
+        run: |
+          VERSION="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props)"
+          STAGE="$RUNNER_TEMP/dmg"
+          mkdir -p "$STAGE" dist/release
+          cp -R dist/OverDesk.app "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname "OverDesk" -srcfolder "$STAGE" -ov -format UDZO \
+            "dist/release/OverDesk-$VERSION-macOS-${{ matrix.label }}.dmg"
+      - uses: actions/upload-artifact@v4
         with:
-          draft: true
-          files: OverDesk-${{ github.ref_name }}-${{ matrix.rid }}.zip
+          name: macos-${{ matrix.rid }}
+          path: dist/release/*
 
   windows:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        rid: [win-x64, win-arm64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-      - name: Package OverDesk
-        run: .\scripts\package-windows.ps1 -Rid ${{ matrix.rid }}
-      - name: Zip
-        run: Compress-Archive -Path "dist\OverDesk-${{ matrix.rid }}\*" -DestinationPath "OverDesk-${{ github.ref_name }}-${{ matrix.rid }}.zip"
+      - name: Package OverDesk (x64 + ARM64)
+        run: |
+          .\scripts\package-windows.ps1 -Rid win-x64
+          .\scripts\package-windows.ps1 -Rid win-arm64
+      - name: Installer
+        run: |
+          $version = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc "/DAppVersion=$version" installer\overdesk.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+          New-Item -ItemType Directory -Force dist\release | Out-Null
+          Move-Item "dist\OverDesk-Setup-$version.exe" "dist\release\OverDesk-$version-Windows-Setup.exe"
+          Compress-Archive -Path "dist\OverDesk-win-x64\*" -DestinationPath "dist\release\OverDesk-$version-Windows-x64-portable.zip"
+          Compress-Archive -Path "dist\OverDesk-win-arm64\*" -DestinationPath "dist\release\OverDesk-$version-Windows-ARM64-portable.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/release/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          draft: true
-          files: OverDesk-${{ github.ref_name }}-${{ matrix.rid }}.zip
+          name: OverDesk ${{ github.ref_name }}
+          body_path: .github/RELEASE_NOTES.md
+          files: release/*

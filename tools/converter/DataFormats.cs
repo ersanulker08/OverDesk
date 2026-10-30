@@ -39,6 +39,29 @@ public static class DataFormats
         };
     }
 
+    /// <summary>Any readable format as a table: a header row of column names, then one row per item.</summary>
+    public static List<List<string>> Rows(string text, string from)
+    {
+        var tree = from.ToLowerInvariant() switch
+        {
+            "csv" => FromTable(ParseDelimited(text, ',')),
+            "tsv" => FromTable(ParseDelimited(text, '\t')),
+            _ => JsonNode.Parse(Convert(text, from, "json")),
+        };
+        var items = ToTable(tree);
+        var columns = new List<string>();
+        foreach (var item in items)
+            foreach (var key in item.Select(p => p.Key))
+                if (!columns.Contains(key)) columns.Add(key);
+        var rows = new List<List<string>> { columns };
+        rows.AddRange(items.Select(item => columns.Select(c => Cell(item[c])).ToList()));
+        return rows;
+    }
+
+    /// <summary>A table (header row first) written as any text format.</summary>
+    public static string FromRows(List<List<string>> rows, string to)
+        => Convert(FromTable(rows).ToJsonString(), "json", to);
+
     // ---------------------------------------------------------------- tables
 
     /// <summary>RFC 4180 style: quotes around fields with the delimiter, quotes or line breaks; "" inside quotes.</summary>

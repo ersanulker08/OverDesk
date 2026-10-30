@@ -32,7 +32,7 @@ public static partial class Engine
         ["png"] = FileKind.Image, ["jpg"] = FileKind.Image, ["jpeg"] = FileKind.Image, ["webp"] = FileKind.Image, ["gif"] = FileKind.Image,
         ["bmp"] = FileKind.Image, ["ico"] = FileKind.Image, ["heic"] = FileKind.Image, ["heif"] = FileKind.Image, ["tif"] = FileKind.Image,
         ["tiff"] = FileKind.Image,
-        ["json"] = FileKind.Data, ["yaml"] = FileKind.Data, ["yml"] = FileKind.Data, ["csv"] = FileKind.Data, ["tsv"] = FileKind.Data, ["xml"] = FileKind.Data,
+        ["json"] = FileKind.Data, ["yaml"] = FileKind.Data, ["xlsx"] = FileKind.Data, ["yml"] = FileKind.Data, ["csv"] = FileKind.Data, ["tsv"] = FileKind.Data, ["xml"] = FileKind.Data,
         ["md"] = FileKind.Text, ["markdown"] = FileKind.Text, ["txt"] = FileKind.Text,
         ["docx"] = FileKind.Document, ["doc"] = FileKind.Document, ["rtf"] = FileKind.Document, ["odt"] = FileKind.Document,
         ["html"] = FileKind.Document, ["htm"] = FileKind.Document, ["webarchive"] = FileKind.Document,
@@ -58,10 +58,11 @@ public static partial class Engine
             FileKind.Image => new[] { "png", "jpg", "webp", "pdf" }.Concat(Mac ? new[] { "heic", "tiff" } : Array.Empty<string>()),
             FileKind.Data => ext switch
             {
-                "json" => new[] { "yaml", "csv", "xml", "tsv" },
-                "yaml" or "yml" => new[] { "json", "csv", "xml" },
-                "csv" => new[] { "json", "yaml", "tsv", "xml" },
-                "tsv" => new[] { "csv", "json", "yaml" },
+                "json" => new[] { "xlsx", "yaml", "csv", "xml", "tsv" },
+                "yaml" or "yml" => new[] { "json", "xlsx", "csv", "xml" },
+                "csv" => new[] { "xlsx", "json", "yaml", "tsv", "xml" },
+                "tsv" => new[] { "xlsx", "csv", "json", "yaml" },
+                "xlsx" => new[] { "csv", "json", "yaml", "tsv" },
                 _ => new[] { "json", "yaml" },
             },
             FileKind.Text => ext == "md"
@@ -108,7 +109,7 @@ public static partial class Engine
             switch (KindOf(input))
             {
                 case FileKind.Image: await Task.Run(() => ConvertImage(input, output, target, options), cancellation); break;
-                case FileKind.Data: await Task.Run(() => File.WriteAllText(output, DataFormats.Convert(File.ReadAllText(input), Ext(input), target)), cancellation); break;
+                case FileKind.Data: await Task.Run(() => ConvertData(input, output, target), cancellation); break;
                 case FileKind.Text: await ConvertTextAsync(input, output, target, cancellation); break;
                 case FileKind.Document: await ConvertDocumentAsync(input, output, target, cancellation); break;
                 case FileKind.Audio or FileKind.Video: await ConvertMediaAsync(input, output, target, progress, cancellation); break;
@@ -122,6 +123,22 @@ public static partial class Engine
         if (!File.Exists(output)) throw new InvalidOperationException("The converter finished but wrote no file.");
         progress?.Report(1);
         return output;
+    }
+
+    // ---------------------------------------------------------------- data
+
+    /// <summary>Text formats convert directly; Excel goes through a table (header row + rows).</summary>
+    private static void ConvertData(string input, string output, string target)
+    {
+        var from = Ext(input);
+        if (from == "xlsx")
+        {
+            File.WriteAllText(output, DataFormats.FromRows(Xlsx.Read(input), target));
+            return;
+        }
+        var text = File.ReadAllText(input);
+        if (target == "xlsx") Xlsx.Write(output, DataFormats.Rows(text, from));
+        else File.WriteAllText(output, DataFormats.Convert(text, from, target));
     }
 
     // ---------------------------------------------------------------- images

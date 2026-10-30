@@ -116,6 +116,52 @@ public class ConverterTests
     }
 
     [Fact]
+    public async Task Csv_goes_to_excel_and_back()
+    {
+        using var dir = new TempFolder();
+        var csv = dir.Write("people.csv", "name,age,zip,member,note\nAria,31,02134,true,\"<b>&\"\nBo,,10001,false,\"two\nlines\"\n");
+        var xlsx = await Engine.ConvertAsync(csv, "xlsx", new ConvertOptions(), null, CancellationToken.None);
+
+        // A real workbook: the parts Excel needs, numbers as numbers, the header bold.
+        using (var zip = System.IO.Compression.ZipFile.OpenRead(xlsx))
+        {
+            Assert.NotNull(zip.GetEntry("[Content_Types].xml"));
+            var sheet = new StreamReader(zip.GetEntry("xl/worksheets/sheet1.xml")!.Open()).ReadToEnd();
+            System.Xml.Linq.XDocument.Parse(sheet); // well-formed
+            Assert.Contains("<c r=\"B2\"><v>31</v></c>", sheet);
+            Assert.Contains("t=\"b\"", sheet);
+            Assert.Contains("&lt;b&gt;&amp;", sheet);
+            Assert.Contains("s=\"1\"", sheet);
+        }
+
+        var json = JsonNode.Parse(File.ReadAllText(await Engine.ConvertAsync(xlsx, "json", new ConvertOptions(), null, CancellationToken.None)))!.AsArray();
+        Assert.Equal(31, json[0]!["age"]!.GetValue<long>());
+        Assert.Equal("02134", json[0]!["zip"]!.GetValue<string>());
+        Assert.True(json[0]!["member"]!.GetValue<bool>());
+        Assert.Equal("<b>&", json[0]!["note"]!.GetValue<string>());
+        Assert.Null(json[1]!["age"]);
+        Assert.Equal("two\nlines", json[1]!["note"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Excel_files_with_shared_strings_are_read()
+    {
+        using var dir = new TempFolder();
+        var path = Path.Combine(dir.Path, "shared.xlsx");
+        using (var zip = System.IO.Compression.ZipFile.Open(path, System.IO.Compression.ZipArchiveMode.Create))
+        {
+            void Add(string name, string xml) { using var w = new StreamWriter(zip.CreateEntry(name).Open()); w.Write(xml); }
+            Add("xl/workbook.xml", """<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId7"/></sheets></workbook>""");
+            Add("xl/_rels/workbook.xml.rels", """<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId7" Type="worksheet" Target="worksheets/data.xml"/></Relationships>""");
+            Add("xl/sharedStrings.xml", """<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>city</t></si><si><r><t>Ist</t></r><r><t>anbul</t></r></si></sst>""");
+            Add("xl/worksheets/data.xml", """<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="C1" t="inlineStr"><is><t>pop</t></is></c></row><row r="2"><c r="A2" t="s"><v>1</v></c><c r="C2"><v>15.6</v></c></row></sheetData></worksheet>""");
+        }
+        var rows = Xlsx.Read(path);
+        Assert.Equal(new[] { "city", "", "pop" }, rows[0]);
+        Assert.Equal(new[] { "Istanbul", "", "15.6" }, rows[1]);
+    }
+
+    [Fact]
     public void Markdown_becomes_html()
     {
         var html = Markdown.ToHtml("# Title\n\nSome **bold** and *italic* and `a<b`.\n\n- [x] done\n- todo\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n```cs\nvar x = 1 < 2;\n```\n[site](https://example.com)");

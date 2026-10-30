@@ -1,0 +1,48 @@
+name: Release
+
+# Push a tag like v0.2.0 to build the self-contained apps and attach them to a draft GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        rid: [osx-arm64, osx-x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Package OverDesk.app
+        run: scripts/package-macos.sh ${{ matrix.rid }}
+      - name: Zip
+        run: ditto -c -k --keepParent dist/OverDesk.app "OverDesk-${{ github.ref_name }}-${{ matrix.rid }}.zip"
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: OverDesk-${{ github.ref_name }}-${{ matrix.rid }}.zip
+
+  windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        rid: [win-x64, win-arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Package OverDesk
+        run: .\scripts\package-windows.ps1 -Rid ${{ matrix.rid }}
+      - name: Zip
+        run: Compress-Archive -Path "dist\OverDesk-${{ matrix.rid }}\*" -DestinationPath "OverDesk-${{ github.ref_name }}-${{ matrix.rid }}.zip"
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: OverDesk-${{ github.ref_name }}-${{ matrix.rid }}.zip

@@ -106,6 +106,8 @@ The same command works on macOS and Windows. Each OS builds its own flavor autom
 | Windows | `.\scripts\package-windows.ps1` | `dist\OverDesk-win-x64\Overdesk.App.exe` |
 
 Both are self-contained, so no .NET install is needed to run them.
+Pushing a version tag (`git tag v0.2.0 && git push origin v0.2.0`) builds both (Apple Silicon + Intel, x64 + ARM64)
+in CI and attaches them to a draft GitHub release.
 
 ### macOS permissions
 

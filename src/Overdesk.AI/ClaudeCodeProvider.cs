@@ -20,14 +20,23 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
     private readonly string _workspace;
 
     /// <param name="workspace">An empty folder chats without a project run in (and where screenshots are dropped).</param>
-    public ClaudeCodeProvider(string workspace) => _workspace = workspace;
+    private readonly string? _executable;
+
+    /// <param name="executable">The claude command to run; null finds the installed one (tests pass a fake).</param>
+    public ClaudeCodeProvider(string workspace, string? executable = null)
+    {
+        _workspace = workspace;
+        _executable = executable;
+    }
+
+    private string? Executable => _executable ?? CliTools.Find("claude");
 
     public string Id => "claude-code";
     public string Name => "Claude Code";
     public bool IsLocal => false;
 
     public Task<string?> CheckAsync(CancellationToken cancellation)
-        => Task.Run(() => CliTools.Find("claude") is null
+        => Task.Run(() => Executable is null
             ? "Claude Code is not installed. Install it from claude.com/claude-code (it uses your Claude account)."
             : null, cancellation);
 
@@ -47,7 +56,7 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
         => StreamTurnAsync(model, system, messages[^1], null, context, cancellation);
 
     /// <summary>Set once an older Claude Code refused --append-system-prompt-file; the prompt then goes inline.</summary>
-    private static bool _promptFileUnsupported;
+    private bool _promptFileUnsupported;
 
     private sealed class PromptFileUnsupportedException : Exception;
 
@@ -78,7 +87,7 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
     private async IAsyncEnumerable<ChatChunk> RunAsync(string model, string? system, ChatMessage message, string? sessionId, AiContext? context,
         bool promptFile, [EnumeratorCancellation] CancellationToken cancellation)
     {
-        var exe = CliTools.Find("claude") ?? throw new InvalidOperationException("Claude Code is not installed.");
+        var exe = Executable ?? throw new InvalidOperationException("Claude Code is not installed.");
         Directory.CreateDirectory(_workspace);
         var folder = WorkingFolder(context);
         var inProject = folder != _workspace;
@@ -190,7 +199,13 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
                     break;
                 case "result":
                     if (node!["is_error"]?.GetValue<bool>() == true)
-                        throw new InvalidOperationException("Claude Code: " + (node["result"]?.ToString() ?? "the request failed."));
+                    {
+                        var reason = node["result"]?.ToString() ?? "the request failed.";
+                        // The plan's usage limit: say what it means and what to do instead.
+                        throw new InvalidOperationException(reason.Contains("limit", StringComparison.OrdinalIgnoreCase)
+                            ? $"Your Claude plan's usage limit is reached ({reason.Trim()}). Pick another model in the menu above (a local one is free), or wait until it resets."
+                            : "Claude Code: " + reason);
+                    }
                     var outputTokens = node["usage"]?["output_tokens"]?.GetValue<double>() ?? 0;
                     double? speed = outputTokens > 0 && clock.Elapsed.TotalSeconds > 0 ? outputTokens / clock.Elapsed.TotalSeconds : null;
                     yield return new ChatChunk("", speed, node["session_id"]?.GetValue<string>() ?? session);

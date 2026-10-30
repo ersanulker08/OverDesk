@@ -24,6 +24,8 @@ public class DepthCard : Decorator
     private double _hover, _hoverTarget;
     private double _tiltX, _tiltY, _tiltXTarget, _tiltYTarget;
     private double _flash;
+    private double _enter = 1;      // 0 = still below and tipped back, 1 = in place
+    private double _enterDelay;
     private bool _animating;
 
     static DepthCard()
@@ -47,6 +49,18 @@ public class DepthCard : Decorator
         _tiltX = _tiltXTarget = -(y - 0.5) * 2 * MaxTiltX;
         _tiltY = _tiltYTarget = (x - 0.5) * 2 * MaxTiltY;
         Apply();
+    }
+
+    /// <summary>
+    /// Rise into place: the slab comes up from below, tipped back, and settles flat. A short delay per card
+    /// makes a column of them arrive one after another.
+    /// </summary>
+    public void Enter(double delaySeconds)
+    {
+        _enter = 0;
+        _enterDelay = delaySeconds;
+        Opacity = 0;
+        Animate();
     }
 
     /// <summary>A pulse of accent light around the slab (the focus timer finishing, for example).</summary>
@@ -90,7 +104,7 @@ public class DepthCard : Decorator
         if (_animating) return;
         if (TopLevel.GetTopLevel(this) is not { } top)
         {
-            _hover = _hoverTarget; _tiltX = _tiltXTarget; _tiltY = _tiltYTarget; _flash = 0;
+            _hover = _hoverTarget; _tiltX = _tiltXTarget; _tiltY = _tiltYTarget; _flash = 0; _enter = 1;
             Apply();
             return;
         }
@@ -106,9 +120,14 @@ public class DepthCard : Decorator
             _tiltX += (_tiltXTarget - _tiltX) * k;
             _tiltY += (_tiltYTarget - _tiltY) * k;
             _flash = Math.Max(0, _flash - dt * 1.1);
+            if (_enter < 1)
+            {
+                if (_enterDelay > 0) _enterDelay -= dt;
+                else _enter = Math.Min(1, _enter + dt / 0.55);
+            }
             Apply();
             var settled = Math.Abs(_hoverTarget - _hover) < 0.002 && Math.Abs(_tiltXTarget - _tiltX) < 0.01
-                          && Math.Abs(_tiltYTarget - _tiltY) < 0.01 && _flash <= 0;
+                          && Math.Abs(_tiltYTarget - _tiltY) < 0.01 && _flash <= 0 && _enter >= 1;
             if (settled) { _animating = false; Apply(); return; }
             top.RequestAnimationFrame(Frame);
         }
@@ -117,15 +136,19 @@ public class DepthCard : Decorator
 
     private void Apply()
     {
-        var lift = -2.5 * _hover;
-        if (Math.Abs(_tiltX) < 0.01 && Math.Abs(_tiltY) < 0.01 && Math.Abs(lift) < 0.01)
+        var e = Ease.OutCubic(_enter);
+        var lift = -2.5 * _hover + 28 * (1 - e);
+        var tipX = _tiltX + 24 * (1 - Ease.OutBack(_enter));
+        if (_enter < 1) Opacity = Math.Clamp(_enter * 1.6, 0, 1);
+        else ClearValue(OpacityProperty);
+        if (Math.Abs(tipX) < 0.01 && Math.Abs(_tiltY) < 0.01 && Math.Abs(lift) < 0.01)
             RenderTransform = null;
         else
             RenderTransform = new TransformGroup
             {
                 Children =
                 {
-                    new Rotate3DTransform(_tiltX, _tiltY, 0, 0, 0, 0, 900),
+                    new Rotate3DTransform(tipX, _tiltY, 0, 0, 0, 0, 900),
                     new TranslateTransform(0, lift),
                 },
             };

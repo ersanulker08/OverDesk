@@ -205,7 +205,7 @@ internal sealed class SystemStatsService : IDisposable
 
     private static string Gb(long bytes) => (bytes / 1024d / 1024 / 1024).ToString("0.0");
 
-    private static string Rate(double bytesPerSecond) => bytesPerSecond switch
+    internal static string Rate(double bytesPerSecond) => bytesPerSecond switch
     {
         >= 1024 * 1024 => $"{bytesPerSecond / 1024 / 1024:0.0} MB/s",
         >= 1024 => $"{bytesPerSecond / 1024:0} KB/s",

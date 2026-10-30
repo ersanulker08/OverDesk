@@ -90,6 +90,7 @@ internal static class DevSnapshot
             main.DevScrollDock(0);
             dock.DevFocusDemo();
             dock.FocusCard.DevHover(0.8, 0.2);
+            dock.DevInspectChart();
             await Task.Delay(1500);
             SaveControl(dock, Path.Combine(dir, "dock-hover.png"));
             dock.SetMediaOpen(true);

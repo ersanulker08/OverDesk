@@ -11,8 +11,11 @@
 
             <!-- Header -->
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Height="44" Margin="14,4,8,0">
-                <TextBlock x:Name="HeaderText" Classes="eyebrow" Text="YOUR DESK" VerticalAlignment="Center"/>
-                <Button x:Name="CollapseButton" Grid.Column="1" Classes="icon" Width="28" Height="28"
+                <StackPanel x:Name="HeaderText" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                    <d:IconGem3D Icon="IconGrid" Color="{DynamicResource AccentColor}" Color2="{DynamicResource Accent2Color}"/>
+                    <TextBlock Classes="eyebrow" Text="YOUR DESK" VerticalAlignment="Center" Margin="0,0,0,2"/>
+                </StackPanel>
+                <Button x:Name="CollapseButton" Grid.Column="1" Classes="icon capbtn" Width="28" Height="28"
                         HorizontalAlignment="Center">
                     <Path x:Name="CollapseIcon" Classes="icon small" Data="{StaticResource IconChevronLeft}"/>
                 </Button>
@@ -20,7 +23,15 @@
 
             <!-- ============================================== expanded: widget cards -->
             <ScrollViewer x:Name="Expanded" Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
-                <StackPanel Margin="12,2,12,14" Spacing="10">
+                <ScrollViewer.OpacityMask>
+                    <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+                        <GradientStop Color="Transparent" Offset="0"/>
+                        <GradientStop Color="Black" Offset="0.025"/>
+                        <GradientStop Color="Black" Offset="0.94"/>
+                        <GradientStop Color="Transparent" Offset="1"/>
+                    </LinearGradientBrush>
+                </ScrollViewer.OpacityMask>
+                <StackPanel x:Name="CardStack" Margin="12,2,12,14" Spacing="10">
 
                     <!-- Now playing -->
                     <d:DepthCard x:Name="MediaCard" Cursor="Hand" Accent="{DynamicResource AccentColor}">
@@ -38,7 +49,10 @@
                             </Border>
 
                             <StackPanel Margin="12" Spacing="10">
-                                <TextBlock Classes="eyebrow" Text="NOW PLAYING" FontSize="9.5"/>
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <d:IconGem3D Icon="IconMusic" Color="{DynamicResource AccentColor}" Color2="{DynamicResource Accent2Color}"/>
+                                    <TextBlock Classes="eyebrow" Text="NOW PLAYING" FontSize="9.5" VerticalAlignment="Center" Margin="0,0,0,2"/>
+                                </StackPanel>
 
                                 <!-- Compact row -->
                                 <Grid x:Name="MediaCompact" ColumnDefinitions="Auto,*,Auto">
@@ -87,20 +101,20 @@
                                         </Grid>
                                     </StackPanel>
                                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,*,Auto">
-                                        <Button x:Name="ShuffleButton" Grid.Column="0" Classes="icon modebtn" ToolTip.Tip="Shuffle">
+                                        <Button x:Name="ShuffleButton" Grid.Column="0" Classes="icon capbtn modebtn" ToolTip.Tip="Shuffle">
                                             <Path Classes="icon" Data="{StaticResource IconShuffle}"/>
                                         </Button>
-                                        <Button x:Name="PrevButton" Grid.Column="2" Classes="icon" ToolTip.Tip="Previous">
+                                        <Button x:Name="PrevButton" Grid.Column="2" Classes="icon capbtn" ToolTip.Tip="Previous">
                                             <Path Classes="icon" Data="{StaticResource IconPrev}" Fill="{StaticResource MutedBrush}"/>
                                         </Button>
                                         <Button x:Name="BigPlay" Grid.Column="3" Classes="playbtn" Margin="10,0">
                                             <Path x:Name="BigPlayIcon" Classes="icon" Data="{StaticResource IconPlay}"
                                                   Stroke="White" Fill="White" Height="16"/>
                                         </Button>
-                                        <Button x:Name="NextButton" Grid.Column="4" Classes="icon" ToolTip.Tip="Next">
+                                        <Button x:Name="NextButton" Grid.Column="4" Classes="icon capbtn" ToolTip.Tip="Next">
                                             <Path Classes="icon" Data="{StaticResource IconNext}" Fill="{StaticResource MutedBrush}"/>
                                         </Button>
-                                        <Button x:Name="RepeatButton" Grid.Column="6" Classes="icon modebtn" ToolTip.Tip="Repeat">
+                                        <Button x:Name="RepeatButton" Grid.Column="6" Classes="icon capbtn modebtn" ToolTip.Tip="Repeat">
                                             <Panel>
                                                 <Path Classes="icon" Data="{StaticResource IconRepeat}"/>
                                                 <Border x:Name="RepeatOneBadge" Width="11" Height="11" CornerRadius="6"
@@ -124,7 +138,10 @@
                     <d:DepthCard x:Name="FocusCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="8">
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="eyebrow" Text="FOCUS" FontSize="9.5" VerticalAlignment="Center"/>
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <d:IconGem3D Icon="IconTimer" Color="{DynamicResource AccentColor}" Color2="{DynamicResource Accent2Color}"/>
+                                    <TextBlock Classes="eyebrow" Text="FOCUS" FontSize="9.5" VerticalAlignment="Center" Margin="0,0,0,2"/>
+                                </StackPanel>
                                 <StackPanel x:Name="FocusActions" Grid.Column="1" Orientation="Horizontal" Spacing="2"/>
                             </Grid>
                             <StackPanel x:Name="FocusBody" Spacing="6"/>
@@ -135,8 +152,11 @@
                     <d:DepthCard x:Name="SystemCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="10">
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="eyebrow" Text="SYSTEM" FontSize="9.5" VerticalAlignment="Center"/>
-                                <Button x:Name="MetricsButton" Grid.Column="1" Classes="icon" Width="22" Height="22"
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <d:IconGem3D Icon="IconGauge" Color="{DynamicResource AccentColor}" Color2="{DynamicResource Accent2Color}"/>
+                                    <TextBlock Classes="eyebrow" Text="SYSTEM" FontSize="9.5" VerticalAlignment="Center" Margin="0,0,0,2"/>
+                                </StackPanel>
+                                <Button x:Name="MetricsButton" Grid.Column="1" Classes="icon capbtn" Width="24" Height="24"
                                         ToolTip.Tip="Choose what to show">
                                     <Path Classes="icon small" Data="{StaticResource IconSettingsSmall}" Height="12"
                                           StrokeThickness="1.6"/>
@@ -152,7 +172,10 @@
                     <d:DepthCard x:Name="AiCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="8">
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="eyebrow" Text="LOCAL AI" FontSize="9.5" VerticalAlignment="Center"/>
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <d:IconGem3D Icon="IconSparkle" Color="{DynamicResource AccentColor}" Color2="{DynamicResource Accent2Color}"/>
+                                    <TextBlock Classes="eyebrow" Text="LOCAL AI" FontSize="9.5" VerticalAlignment="Center" Margin="0,0,0,2"/>
+                                </StackPanel>
                                 <StackPanel x:Name="AiActions" Grid.Column="1" Orientation="Horizontal" Spacing="2"/>
                             </Grid>
                             <StackPanel x:Name="AiBody" Spacing="6"/>
@@ -163,7 +186,10 @@
                     <d:DepthCard x:Name="ProjectsCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="8">
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="eyebrow" Text="PROJECTS" FontSize="9.5" VerticalAlignment="Center"/>
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <d:IconGem3D Icon="IconRocket" Color="{DynamicResource AccentColor}" Color2="{DynamicResource Accent2Color}"/>
+                                    <TextBlock Classes="eyebrow" Text="PROJECTS" FontSize="9.5" VerticalAlignment="Center" Margin="0,0,0,2"/>
+                                </StackPanel>
                                 <StackPanel x:Name="ProjectsActions" Grid.Column="1" Orientation="Horizontal" Spacing="2"/>
                             </Grid>
                             <StackPanel x:Name="ProjectsBody" Spacing="6"/>
@@ -174,7 +200,10 @@
                     <d:DepthCard x:Name="GitCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="8">
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="eyebrow" Text="GIT" FontSize="9.5" VerticalAlignment="Center"/>
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <d:IconGem3D Icon="IconBranch" Color="{DynamicResource AccentColor}" Color2="{DynamicResource Accent2Color}"/>
+                                    <TextBlock Classes="eyebrow" Text="GIT" FontSize="9.5" VerticalAlignment="Center" Margin="0,0,0,2"/>
+                                </StackPanel>
                                 <StackPanel x:Name="GitActions" Grid.Column="1" Orientation="Horizontal" Spacing="2"/>
                             </Grid>
                             <StackPanel x:Name="GitBody" Spacing="6"/>
@@ -185,7 +214,10 @@
                     <d:DepthCard x:Name="DockerCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="8">
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="eyebrow" Text="DOCKER" FontSize="9.5" VerticalAlignment="Center"/>
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <d:IconGem3D Icon="IconBox" Color="{DynamicResource AccentColor}" Color2="{DynamicResource Accent2Color}"/>
+                                    <TextBlock Classes="eyebrow" Text="DOCKER" FontSize="9.5" VerticalAlignment="Center" Margin="0,0,0,2"/>
+                                </StackPanel>
                                 <StackPanel x:Name="DockerActions" Grid.Column="1" Orientation="Horizontal" Spacing="2"/>
                             </Grid>
                             <StackPanel x:Name="DockerBody" Spacing="6"/>
@@ -196,8 +228,11 @@
                     <d:DepthCard x:Name="PortsCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="8">
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="eyebrow" Text="LOCALHOST" FontSize="9.5" VerticalAlignment="Center"/>
-                                <Button x:Name="RefreshPorts" Grid.Column="1" Classes="icon" Width="22" Height="22"
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <d:IconGem3D Icon="IconServer" Color="{DynamicResource AccentColor}" Color2="{DynamicResource Accent2Color}"/>
+                                    <TextBlock Classes="eyebrow" Text="LOCALHOST" FontSize="9.5" VerticalAlignment="Center" Margin="0,0,0,2"/>
+                                </StackPanel>
+                                <Button x:Name="RefreshPorts" Grid.Column="1" Classes="icon capbtn" Width="24" Height="24"
                                         ToolTip.Tip="Refresh">
                                     <Path Classes="icon small" Data="{StaticResource IconRefresh}" Height="11"/>
                                 </Button>
@@ -211,8 +246,11 @@
                     <d:DepthCard x:Name="ClipCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="8">
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="eyebrow" Text="CLIPBOARD" FontSize="9.5" VerticalAlignment="Center"/>
-                                <Button x:Name="ClearClips" Grid.Column="1" Classes="icon" Width="22" Height="22"
+                                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                    <d:IconGem3D Icon="IconClipboard" Color="{DynamicResource AccentColor}" Color2="{DynamicResource Accent2Color}"/>
+                                    <TextBlock Classes="eyebrow" Text="CLIPBOARD" FontSize="9.5" VerticalAlignment="Center" Margin="0,0,0,2"/>
+                                </StackPanel>
+                                <Button x:Name="ClearClips" Grid.Column="1" Classes="icon capbtn" Width="24" Height="24"
                                         ToolTip.Tip="Clear history">
                                     <Path Classes="icon small" Data="{StaticResource IconClose}" Height="10"/>
                                 </Button>
@@ -227,7 +265,10 @@
                     <!-- Notes -->
                     <d:DepthCard x:Name="NotesCard" Accent="{DynamicResource AccentColor}">
                         <StackPanel Margin="12" Spacing="8">
-                            <TextBlock Classes="eyebrow" Text="SCRATCHPAD" FontSize="9.5"/>
+                            <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                <d:IconGem3D Icon="IconNote" Color="{DynamicResource AccentColor}" Color2="{DynamicResource Accent2Color}"/>
+                                <TextBlock Classes="eyebrow" Text="SCRATCHPAD" FontSize="9.5" VerticalAlignment="Center" Margin="0,0,0,2"/>
+                            </StackPanel>
                             <TextBox x:Name="Notes" Classes="notes" AcceptsReturn="True" TextWrapping="Wrap" Height="110"
                                      PlaceholderText="Quick notes, TODOs, snippets…"/>
                         </StackPanel>

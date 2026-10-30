@@ -145,6 +145,7 @@ public partial class SideDock : UserControl
         if (expanded) _ = _stats?.RefreshPortsAsync();
 
         var target = expanded ? ExpandedWidth : CollapsedWidth;
+        if (expanded) RiseCards(animate ? 0.12 : 0.35);
         if (!animate || double.IsNaN(Width))
         {
             Width = target;
@@ -157,6 +158,17 @@ public partial class SideDock : UserControl
             Width = from + (target - from) * Ease.OutCubic(t);
             WidthChanging?.Invoke(Width);
         });
+    }
+
+    /// <summary>The visible cards rise into place one after another (on start and when the dock unfolds).</summary>
+    private void RiseCards(double firstDelay)
+    {
+        var delay = firstDelay;
+        foreach (var card in CardStack.Children.OfType<DepthCard>().Where(c => c.IsVisible))
+        {
+            card.Enter(delay);
+            delay += 0.06;
+        }
     }
 
     // ---------------------------------------------------------------- now playing
@@ -303,7 +315,11 @@ public partial class SideDock : UserControl
             Control row;
             if (info.Kind == MetricKind.Chart)
             {
-                chart = new BarSkyline3D { Height = 78, Margin = new Thickness(-4, 14, -4, 0) };
+                chart = new BarSkyline3D
+                {
+                    Height = 78, Margin = new Thickness(-4, 14, -4, 0),
+                    Format = info.Id == "net" ? SystemStatsService.Rate : v => $"{v:0}%",
+                };
                 chart.Bind(BarSkyline3D.ColorProperty, this.GetResourceObservable(second ? "Accent2Color" : "AccentColor"));
                 chart.Bind(BarSkyline3D.Color2Property, this.GetResourceObservable(second ? "AccentColor" : "Accent2Color"));
                 // The chart's sky is mostly empty: the header floats in it.

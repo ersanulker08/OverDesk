@@ -90,7 +90,7 @@ public partial class SideDock
 
     private static Button CardButton(string icon, string tip, Action click)
     {
-        var button = new Button { Classes = { "icon" }, Width = 22, Height = 22, Content = new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small" }, Data = Res.Icon(icon), Height = 11 } };
+        var button = new Button { Classes = { "icon", "capbtn" }, Width = 24, Height = 24, Content = new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small" }, Data = Res.Icon(icon), Height = 11 } };
         ToolTip.SetTip(button, tip);
         button.Click += (_, _) => click();
         return button;
@@ -98,12 +98,9 @@ public partial class SideDock
 
     private static TextBlock Faint(string text) => new() { Text = text, Classes = { "faint" }, FontSize = 11.5, TextWrapping = TextWrapping.Wrap };
 
-    private static Border Dot(string brush, bool glow = false) => new()
-    {
-        Width = 7, Height = 7, CornerRadius = new CornerRadius(4), VerticalAlignment = VerticalAlignment.Center,
-        Background = Res.Brush(brush),
-        BoxShadow = glow ? new BoxShadows(new BoxShadow { Blur = 6, Color = ((ISolidColorBrush)Res.Brush(brush)).Color }) : default,
-    };
+    /// <summary>A glass status bead; live ones glow and breathe.</summary>
+    private static Control Dot(string brush, bool glow = false)
+        => new Led3D(Res.Brush(brush) is ISolidColorBrush b ? b.Color : Colors.Gray, glow);
 
     private async Task PollDevAsync()
     {
@@ -168,6 +165,9 @@ public partial class SideDock
     private Readout3D? _focusTime;
     private TextBlock? _focusState;
     private Button? _focusPlay;
+
+    /// <summary>Development snapshots: hover the third-newest block of the first chart.</summary>
+    internal void DevInspectChart() => _metricRows.FirstOrDefault(r => r.Chart is not null)?.Chart?.DevInspect(3);
 
     /// <summary>Development snapshots: a running focus session with 40% of it gone.</summary>
     internal void DevFocusDemo()

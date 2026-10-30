@@ -20,6 +20,16 @@ public sealed class BarSkyline3D : Control
     public int Slots { get; set; } = 20;
     public double Maximum { get; set; } = 100;
 
+    /// <summary>How a sample reads in the inspect label (hover a block). Null shows the raw number.</summary>
+    public Func<double, string>? Format { get; set; }
+
+    /// <summary>Seconds between samples, for the "12 s ago" part of the inspect label.</summary>
+    public double SampleSeconds { get; set; } = 1;
+
+    private int _hotAge = -1;   // the block under the pointer, by age (0 = newest); -1 = none
+    private Point? _pointer;
+    private readonly List<(int Age, Point Lid)> _lids = new();
+
     private const double BlockWidth = 0.74;
     private const double BlockDepth = 1.05;
     private const double WorldHeight = 3.0;
@@ -54,6 +64,7 @@ public sealed class BarSkyline3D : Control
         _seen++;
         _values = next;
         _peak = next.Length == 0 ? 0 : next.Max();
+        if (stepped && _hotAge >= 0) _hotAge = Math.Min(_hotAge + 1, Slots);
         if (stepped) StartStep();
         else InvalidateVisual();
     }
@@ -81,7 +92,47 @@ public sealed class BarSkyline3D : Control
         else { _shift = 0; _rise = 1; _stepping = false; }
     }
 
-    private readonly record struct Block(double X, double Height, double Fade, bool Newest, double Heat);
+    private readonly record struct Block(double X, double Height, double Fade, bool Newest, double Heat, int Age, double Value);
+
+    /// <summary>Development snapshots: inspect the block of this age as if the pointer were on it.</summary>
+    internal void DevInspect(int age)
+    {
+        _hotAge = age;
+        InvalidateVisual();
+    }
+
+    protected override void OnPointerMoved(Avalonia.Input.PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        _pointer = e.GetPosition(this);
+        PickHot();
+    }
+
+    protected override void OnPointerExited(Avalonia.Input.PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        _pointer = null;
+        _hotAge = -1;
+        InvalidateVisual();
+    }
+
+    /// <summary>The block whose lid is nearest the pointer horizontally (lids come from the last frame).</summary>
+    private void PickHot()
+    {
+        var hot = -1;
+        if (_pointer is { } p && _lids.Count > 0)
+        {
+            var best = double.MaxValue;
+            foreach (var (age, lid) in _lids)
+            {
+                var d = Math.Abs(lid.X - p.X);
+                if (d < best) { best = d; hot = age; }
+            }
+        }
+        if (hot == _hotAge) return;
+        _hotAge = hot;
+        InvalidateVisual();
+    }
 
     public override void Render(DrawingContext context)
     {
@@ -108,7 +159,8 @@ public sealed class BarSkyline3D : Control
             // Fog: blocks fade and sink as they approach the far end.
             var fade = Math.Clamp((x + 1) / 3.5, 0, 1);
             if (x < 0) height *= Math.Clamp(x + 1, 0, 1);
-            blocks.Add(new Block(x, height, fade, newest, frac));
+            if (age == _hotAge) height += 0.35; // the inspected block lifts out of the row
+            blocks.Add(new Block(x, height, fade, newest, frac, age, _values[i]));
         }
 
         // Reflections first, under everything.
@@ -117,6 +169,35 @@ public sealed class BarSkyline3D : Control
         foreach (var b in blocks.OrderByDescending(b => cam.Depth(new V3(b.X + 0.5, b.Height / 2, 0)))) DrawBlock(context, cam, b);
 
         DrawPeakLine(context, cam, n);
+
+        _lids.Clear();
+        foreach (var b in blocks)
+            _lids.Add((b.Age, cam.Project(new V3(b.X + 0.5, b.Height, 0))));
+        if (_hotAge >= 0 && blocks.FirstOrDefault(b => b.Age == _hotAge) is { Fade: > 0 } hot) DrawInspect(context, cam, hot);
+    }
+
+    /// <summary>A glass tag floating over the inspected block: its value and how long ago it was measured.</summary>
+    private void DrawInspect(DrawingContext context, Camera3D cam, Block b)
+    {
+        var lid = cam.Project(new V3(b.X + 0.5, b.Height, 0));
+        var when = b.Age == 0 ? "now" : $"{b.Age * SampleSeconds:0} s ago";
+        var text = new FormattedText($"{Format?.Invoke(b.Value) ?? b.Value.ToString("0")}  ·  {when}",
+            System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+            new Typeface(this.TryFindResource("UiFont", out var f) && f is FontFamily ff ? ff : FontFamily.Default, FontStyle.Normal, FontWeight.SemiBold),
+            10.5, Brushes.White);
+        var pad = new Thickness(7, 3);
+        var w = text.Width + pad.Left + pad.Right;
+        var h = text.Height + pad.Top + pad.Bottom;
+        var x = Math.Clamp(lid.X - w / 2, 0, Bounds.Width - w);
+        var y = Math.Max(lid.Y - h - 7, 0);
+        var tag = new RoundedRect(new Rect(x, y, w, h), h / 2);
+        context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0xE6, 0x16, 0x16, 0x1E)),
+            new Pen(new SolidColorBrush(Shade.Alpha(Color, 0.7)), 1), tag,
+            new BoxShadows(new BoxShadow { OffsetY = 3, Blur = 10, Color = Color.FromArgb(0xC0, 0, 0, 0) }));
+        context.DrawLine(new Pen(new SolidColorBrush(Shade.Alpha(Color, 0.8)), 1), new Point(lid.X, y + h), new Point(lid.X, lid.Y - 1));
+        context.DrawText(text, new Point(x + pad.Left, y + pad.Top));
+        // A ring of light on the block's lid.
+        Shade.Glow(context, lid, 14, 6, Shade.Alpha(Colors.White, 0.45));
     }
 
     private Color BlockColor(double heat) => Shade.Mix(Color2, Color, 0.25 + 0.75 * heat);

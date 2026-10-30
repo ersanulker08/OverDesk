@@ -1,3 +1,4 @@
+using Overdesk.Core.Tabs;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Overdesk.Core.Platform;
@@ -16,7 +17,9 @@ public sealed class Win32ProgramCatalog : IProgramCatalog
             Environment.GetFolderPath(Environment.SpecialFolder.StartMenu),
         };
 
-        var programs = new List<string>();
+        // Shortcut name → target. The name is what the Start menu shows ("Google Chrome"), so programs are listed by it,
+        // and several shortcuts with the same name (x86 / x64 copies of a tool) count once.
+        var programs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var root in roots.Where(Directory.Exists))
         {
             IEnumerable<string> links;
@@ -25,17 +28,18 @@ public sealed class Win32ProgramCatalog : IProgramCatalog
 
             foreach (var link in links)
             {
-                if (Shortcuts.Resolve(link) is { } target
-                    && target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-                    && !Path.GetFileName(target).Contains("unins", StringComparison.OrdinalIgnoreCase))
-                    programs.Add(target);
+                if (Shortcuts.Resolve(link) is not { } target
+                    || !target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                    || Path.GetFileName(target).Contains("unins", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var name = Path.GetFileNameWithoutExtension(link);
+                if (programs.ContainsKey(name) || programs.ContainsValue(target)) continue;
+                programs[name] = target;
+                ProgramNames.Register(target, name);
             }
         }
 
-        return programs
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(p => Path.GetFileNameWithoutExtension(p), StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        return programs.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase).Select(p => p.Value).ToList();
     }
 
     public ProgramIcon? GetIcon(string programPath, int size)

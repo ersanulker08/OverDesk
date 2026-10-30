@@ -944,7 +944,13 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
             content.Children.Add(new SelectableTextBlock { Classes = { "msg" }, Text = "⚠ " + error, Foreground = Res.Brush("DangerBrush") });
         else if (turn.Text.Length == 0 && turn.IsStreaming)
         {
-            if (turn.Pending is null) content.Children.Add(new TextBlock { Text = turn.Actions.Count > 0 ? "Working…" : "Thinking…", Classes = { "muted" }, FontSize = 12.5 });
+            if (turn.Pending is null)
+            {
+                var waiting = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                waiting.Children.Add(new Controls.Spinner { Width = 14, Height = 14, Thickness = 2, Accent = AccentThemes.Current.Primary, VerticalAlignment = VerticalAlignment.Center });
+                waiting.Children.Add(new TextBlock { Text = turn.Actions.Count > 0 ? "Working…" : "Thinking…", Classes = { "muted" }, FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center });
+                content.Children.Add(waiting);
+            }
         }
         else
             foreach (var part in user ? new Control[] { new SelectableTextBlock { Classes = { "msg" }, Text = Shortened(turn.Text) } } : ChatMarkdown.Render(turn.Text, CopyAsync)) content.Children.Add(part);

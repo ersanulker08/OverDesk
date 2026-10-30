@@ -267,6 +267,12 @@ public partial class MainWindow : Window
         _ai.DevShowError();
     }
 
+    internal void DevAiWorking()
+    {
+        OpenAi();
+        _ai.DevShowWorking();
+    }
+
     internal void DevAiDemo(string folder)
     {
         OpenAi();

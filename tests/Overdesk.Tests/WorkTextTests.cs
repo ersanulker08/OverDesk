@@ -81,3 +81,15 @@ public class WorkMarkdownTests
         Assert.Equal("```\ncode\n\nmore\n```", rows[7].Text);
     }
 }
+
+public class ProgramNameTests
+{
+    [Fact]
+    public void Registered_names_win_and_others_fall_back_to_the_file_name()
+    {
+        Overdesk.Core.Tabs.ProgramNames.Register(@"C:\Apps\chrome.exe", "Google Chrome");
+        Assert.Equal("Google Chrome", Overdesk.Core.Tabs.ProgramNames.FromPath(@"C:\Apps\chrome.exe"));
+        Assert.Equal("Calculator", Overdesk.Core.Tabs.ProgramNames.FromPath("/System/Applications/Calculator.app/"));
+        Assert.Equal("tool", Overdesk.Core.Tabs.ProgramNames.FromPath("/nowhere/tool.exe"));
+    }
+}

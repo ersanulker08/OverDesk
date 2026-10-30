@@ -507,6 +507,15 @@ internal sealed class AiService
         Changed?.Invoke();
     }
 
+    /// <summary>Development snapshots: an answer that is still on its way (after one tool call).</summary>
+    internal void DevShowWorking()
+    {
+        Current = new ChatThread { Title = "Working" };
+        Current.Turns.Add(new AiTurn { Role = ChatMessage.User, Text = "Tidy up my project's README" });
+        Current.Turns.Add(new AiTurn { Role = ChatMessage.Assistant, IsStreaming = true, Actions = { "Reading README.md" } });
+        Changed?.Invoke();
+    }
+
     /// <summary>Development snapshots: a conversation whose last answer failed.</summary>
     internal void DevShowError()
     {

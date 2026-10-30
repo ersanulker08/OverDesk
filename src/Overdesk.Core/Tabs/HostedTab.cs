@@ -66,12 +66,40 @@ public sealed class HostedTab : ObservableObject
     public bool HasProblem => _status is TabStatus.Failed or TabStatus.Exited;
 }
 
+/// <summary>
+/// The name a program is shown with. macOS apps are named by their bundle; on Windows the Start menu shortcut's name
+/// ("Google Chrome") is registered by the program catalog, and other .exe files use their file description.
+/// </summary>
 public static class ProgramNames
 {
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> Names = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Remember the display name of a program path (the catalog does this for Start menu shortcuts).</summary>
+    public static void Register(string path, string name)
+    {
+        if (!string.IsNullOrWhiteSpace(name)) Names[path.TrimEnd('/', '\\')] = name.Trim();
+    }
+
     public static string FromPath(string path)
     {
         var trimmed = path.TrimEnd('/', '\\');
+        if (Names.TryGetValue(trimmed, out var known)) return known;
         var name = Path.GetFileNameWithoutExtension(trimmed);
-        return string.IsNullOrWhiteSpace(name) ? trimmed : name;
+        if (string.IsNullOrWhiteSpace(name)) return trimmed;
+        if (trimmed.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) name = Describe(trimmed) ?? name;
+        Names[trimmed] = name;
+        return name;
+    }
+
+    /// <summary>An .exe's own description ("Google Chrome" for chrome.exe), when it has a short one.</summary>
+    private static string? Describe(string exe)
+    {
+        try
+        {
+            if (!File.Exists(exe)) return null;
+            var description = System.Diagnostics.FileVersionInfo.GetVersionInfo(exe).FileDescription?.Trim();
+            return description is { Length: > 1 and <= 40 } ? description : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
     }
 }

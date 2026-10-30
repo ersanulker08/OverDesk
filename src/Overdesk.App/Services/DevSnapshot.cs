@@ -129,6 +129,9 @@ internal static class DevSnapshot
         main.DevAiError();
         await Task.Delay(600);
         Save(main, Path.Combine(dir, "ai-error.png"));
+        main.DevAiWorking();
+        await Task.Delay(600);
+        Save(main, Path.Combine(dir, "ai-working.png"));
         main.DevCloseTools();
         await Task.Delay(300);
 

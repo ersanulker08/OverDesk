@@ -1344,6 +1344,8 @@ public partial class MainWindow : Window
 
         RebuildToolStrip();
         ToolTitle.Text = tool.Name;
+        ToolGem.Icon = tool.Icon;
+        ToolGem.IsVisible = tool.Icon is not null;
         UpdateToolPanel();
 
         var key = ToolKey(tool);

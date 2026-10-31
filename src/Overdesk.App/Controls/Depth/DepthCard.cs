@@ -17,7 +17,6 @@ public class DepthCard : Decorator
 
     /// <summary>Thickness of the slab in pixels (the side wall below the face).</summary>
     public const double Thickness = 6;
-    private const double Radius = 16;
     private const double MaxTiltX = 5.5, MaxTiltY = 7;
 
     private Point _pointer = new(0.5, 0.3);
@@ -30,7 +29,7 @@ public class DepthCard : Decorator
 
     static DepthCard()
     {
-        AffectsRender<DepthCard>(AccentProperty);
+        AffectsRender<DepthCard>(AccentProperty, RadiusProperty);
         PaddingProperty.OverrideDefaultValue<DepthCard>(new Thickness(0, 0, 0, Thickness));
     }
 
@@ -39,7 +38,16 @@ public class DepthCard : Decorator
         RenderTransformOrigin = RelativePoint.Center;
     }
 
+    public static readonly StyledProperty<double> RadiusProperty =
+        AvaloniaProperty.Register<DepthCard, double>(nameof(Radius), 16);
+
+    /// <summary>False for a big plate that holds a working view: no tilt, lift or glare under the pointer.</summary>
+    public static readonly StyledProperty<bool> TiltProperty =
+        AvaloniaProperty.Register<DepthCard, bool>(nameof(Tilt), true);
+
     public Color Accent { get => GetValue(AccentProperty); set => SetValue(AccentProperty, value); }
+    public double Radius { get => GetValue(RadiusProperty); set => SetValue(RadiusProperty, value); }
+    public bool Tilt { get => GetValue(TiltProperty); set => SetValue(TiltProperty, value); }
 
     /// <summary>Development snapshots: show the card as if the pointer rested at (x, y), 0..1 of its size.</summary>
     internal void DevHover(double x, double y)
@@ -73,6 +81,7 @@ public class DepthCard : Decorator
     protected override void OnPointerEntered(PointerEventArgs e)
     {
         base.OnPointerEntered(e);
+        if (!Tilt) return;
         _hoverTarget = 1;
         Animate();
     }
@@ -80,6 +89,7 @@ public class DepthCard : Decorator
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
+        if (!Tilt) return;
         var p = e.GetPosition(this);
         var w = Math.Max(Bounds.Width, 1);
         var h = Math.Max(Bounds.Height - Thickness, 1);
@@ -162,6 +172,7 @@ public class DepthCard : Decorator
         if (w < 4 || h < 4) return;
         var face = new Rect(0, 0, w, h);
         var accent = Accent;
+        var Radius = this.Radius;
 
         // Contact shadow on the dock floor, deeper when lifted, plus the accent pulse.
         var shadow = new BoxShadows(
@@ -200,6 +211,16 @@ public class DepthCard : Decorator
             var inset = y < Radius ? Radius - Math.Sqrt(Radius * Radius - (Radius - y) * (Radius - y)) + 1 : 1;
             context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb((byte)(7 * (1 - y / 70)), 255, 255, 255)), 1), new Point(inset, y), new Point(w - inset, y));
         }
+
+        // Molded surface: light pooling along the top, ambient occlusion where the face turns down into the wall.
+        var poolH = Math.Min(h * 0.5, 44);
+        context.DrawRectangle(Shade.Linear(new Point(0, 0), new Point(0, poolH),
+            Color.FromArgb(0x1E, 255, 255, 255), Color.FromArgb(0, 255, 255, 255)), null,
+            new RoundedRect(new Rect(1, 1, w - 2, poolH), Radius - 1));
+        var aoH = Math.Min(h * 0.4, 56);
+        context.DrawRectangle(Shade.Linear(new Point(0, h - aoH), new Point(0, h),
+            Color.FromArgb(0, 0, 0, 0), Color.FromArgb(0x58, 0, 0, 0)), null,
+            new RoundedRect(new Rect(1, h - aoH, w - 2, aoH - 1), Radius - 1));
 
         if (_hover > 0.01)
         {

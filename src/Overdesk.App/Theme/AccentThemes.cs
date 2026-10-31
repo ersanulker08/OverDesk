@@ -57,6 +57,13 @@ public static class AccentThemes
         res["AccentGlow"] = new BoxShadows(new BoxShadow { Blur = 18, Spread = 0, Color = WithAlpha(a, 0x70) });
         res["AccentGlowSmall"] = new BoxShadows(new BoxShadow { Blur = 10, Spread = 0, Color = WithAlpha(a, 0x90) });
         res["AccentGlowLarge"] = new BoxShadows(new BoxShadow { Blur = 40, Spread = 2, Color = WithAlpha(a, 0x55) });
+        // The accent as a physical key: a deep-colored wall under the face, plus its drop shadow.
+        var deep = Mix(a, Colors.Black, 0.62);
+        res["AccentDeepBrush"] = new SolidColorBrush(deep);
+        res["AccentKeyShadow"] = new BoxShadows(
+            new BoxShadow { OffsetY = 3, Color = deep },
+            [new BoxShadow { OffsetY = 6, Blur = 14, Color = WithAlpha(Mix(a, Colors.Black, 0.5), 0x70) }]);
+        res["AccentKeyPressedShadow"] = new BoxShadows(new BoxShadow { OffsetY = 1, Color = deep });
 
         // Fluent controls (toggle switches, focus rings, selection) follow the accent too.
         res["SystemAccentColor"] = a;

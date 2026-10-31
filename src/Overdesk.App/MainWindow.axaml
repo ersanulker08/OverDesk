@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:tabs="using:Overdesk.Core.Tabs"
         xmlns:c="using:Overdesk.App.Controls"
+        xmlns:d="using:Overdesk.App.Controls.Depth"
         xmlns:app="using:Overdesk.App"
         xmlns:chrome="using:Avalonia.Controls.Chrome"
         x:Class="Overdesk.App.MainWindow"
@@ -13,8 +14,9 @@
     <Grid x:Name="Root" RowDefinitions="Auto,Auto,*">
 
         <!-- ======================================================== top bar: logo, home, tabs, + -->
-        <Border x:Name="TopBar" Grid.Row="0" Height="48" Background="{StaticResource Bg1Brush}"
+        <Border x:Name="TopBar" Grid.Row="0" Height="48" Background="{StaticResource BarBrush}"
                 BorderBrush="{StaticResource StrokeBrush}" BorderThickness="0,0,0,1"
+                BoxShadow="inset 0 1 0 0 #14FFFFFF"
                 chrome:WindowDecorationProperties.ElementRole="TitleBar">
             <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto">
                 <!-- Room for the macOS traffic lights -->
@@ -127,7 +129,8 @@
         </Border>
 
         <!-- ======================================================== web strip: websites live apart from programs -->
-        <Border x:Name="WebBar" Grid.Row="1" Height="40" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="0,0,0,1">
+        <Border x:Name="WebBar" Grid.Row="1" Height="42" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="0,0,0,1"
+                BoxShadow="inset 0 4 8 -2 #90000000">
             <Border.Background>
                 <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
                     <GradientStop Color="#0C0C11" Offset="0"/>
@@ -316,22 +319,29 @@
                           ResizeDirection="Columns"/>
 
             <!-- Tool panel (opens when a tool is clicked) -->
-            <Border x:Name="ToolPanel" Grid.Column="3" Background="{StaticResource Bg2Brush}" ClipToBounds="True">
-                <Grid RowDefinitions="Auto,*">
-                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="14,10,8,10">
-                        <TextBlock x:Name="ToolTitle" FontWeight="SemiBold" VerticalAlignment="Center"
+            <Border x:Name="ToolPanel" Grid.Column="3" Background="{StaticResource Bg1Brush}" ClipToBounds="True">
+              <Grid>
+                <!-- The same room as the dock: the tool stands in it as one big slab -->
+                <d:DeckFloor Accent="{DynamicResource AccentColor}" IsHitTestVisible="False"/>
+                <d:DepthCard Tilt="False" Radius="18" Margin="10,10,10,4" Accent="{DynamicResource AccentColor}">
+                 <Border CornerRadius="17" ClipToBounds="True">
+                  <Grid RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto" Margin="14,12,10,10">
+                        <d:IconGem3D x:Name="ToolGem" Margin="0,0,10,0" Color="{DynamicResource AccentColor}"
+                                     Color2="{DynamicResource Accent2Color}"/>
+                        <TextBlock x:Name="ToolTitle" Grid.Column="1" FontWeight="SemiBold" VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis"/>
-                        <Button x:Name="ToolReloadButton" Grid.Column="1" Classes="icon" Width="28" Height="28"
-                                ToolTip.Tip="Restart tool">
+                        <Button x:Name="ToolReloadButton" Grid.Column="2" Classes="icon capbtn" Width="28" Height="28"
+                                Margin="0,0,6,0" ToolTip.Tip="Restart tool">
                             <Path Classes="icon small" Data="{StaticResource IconRefresh}"/>
                         </Button>
-                        <Button x:Name="ToolCloseButton" Grid.Column="2" Classes="icon" Width="28" Height="28"
+                        <Button x:Name="ToolCloseButton" Grid.Column="3" Classes="icon capbtn" Width="28" Height="28"
                                 ToolTip.Tip="Close panel">
                             <Path Classes="icon small" Data="{StaticResource IconClose}"/>
                         </Button>
                     </Grid>
                     <Grid Grid.Row="1">
-                        <Border x:Name="ToolHost" Background="{StaticResource Bg2Brush}"/>
+                        <Border x:Name="ToolHost" Background="Transparent"/>
                         <ContentControl x:Name="ToolViewHost" IsVisible="False"/>
                         <StackPanel x:Name="ToolOverlay" HorizontalAlignment="Center" VerticalAlignment="Center"
                                     Spacing="12" Margin="18">
@@ -340,12 +350,16 @@
                                     IsVisible="False"/>
                         </StackPanel>
                     </Grid>
-                </Grid>
+                  </Grid>
+                 </Border>
+                </d:DepthCard>
+              </Grid>
             </Border>
 
-            <!-- Tool strip: one button per tool, "+" adds your own -->
-            <Border x:Name="ToolStrip" Grid.Column="4" Background="{StaticResource Bg1Brush}"
-                    BorderBrush="{StaticResource StrokeBrush}" BorderThickness="1,0,0,0">
+            <!-- Tool strip: one key per tool, set into a recessed rail; "+" adds your own -->
+            <Border x:Name="ToolStrip" Grid.Column="4" Background="#0B0B10"
+                    BorderBrush="{StaticResource StrokeBrush}" BorderThickness="1,0,0,0"
+                    BoxShadow="inset 6 0 10 -4 #A0000000">
                 <DockPanel Margin="0,10">
                     <Button x:Name="AddToolButton" DockPanel.Dock="Bottom" Classes="icon" Width="40" Height="40"
                             HorizontalAlignment="Center" ToolTip.Tip="Add a tool (or drop a program here)">

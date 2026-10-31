@@ -54,10 +54,34 @@
             <BoxShadows x:Key="AccentGlow">0 0 18 0 #70FA1E4E</BoxShadows>
             <BoxShadows x:Key="AccentGlowSmall">0 0 10 0 #90FA1E4E</BoxShadows>
             <BoxShadows x:Key="AccentGlowLarge">0 0 40 2 #55FA1E4E</BoxShadows>
+            <SolidColorBrush x:Key="AccentDeepBrush" Color="#5F0B1F"/>
+            <BoxShadows x:Key="AccentKeyShadow">0 3 0 0 #5F0B1F, 0 6 14 0 #703A0F1D</BoxShadows>
+            <BoxShadows x:Key="AccentKeyPressedShadow">0 1 0 0 #5F0B1F</BoxShadows>
+            <!-- Slab edge: lit along the top, dark at the bottom seam -->
+            <LinearGradientBrush x:Key="SlabEdgeBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+                <GradientStop Color="#3CFFFFFF" Offset="0"/>
+                <GradientStop Color="#0CFFFFFF" Offset="0.35"/>
+                <GradientStop Color="#40000000" Offset="1"/>
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="SlabFaceBrush" StartPoint="0%,0%" EndPoint="30%,100%">
+                <GradientStop Color="#1F1F29" Offset="0"/>
+                <GradientStop Color="#16161E" Offset="0.55"/>
+                <GradientStop Color="#111117" Offset="1"/>
+            </LinearGradientBrush>
+            <BoxShadows x:Key="SlabShadow">0 4 0 0 #E0050507, 0 16 36 0 #A0000000</BoxShadows>
+            <BoxShadows x:Key="WellShadow">inset 0 3 6 0 #C0000000, inset 0 -1 0 0 #14FFFFFF</BoxShadows>
             <!-- Dock keycaps (see Button.dockrow) -->
             <LinearGradientBrush x:Key="KeycapBrush" StartPoint="0%,0%" EndPoint="0%,100%">
                 <GradientStop Color="#24242F" Offset="0"/>
                 <GradientStop Color="#181821" Offset="1"/>
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="BarBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+                <GradientStop Color="#181821" Offset="0"/>
+                <GradientStop Color="#0F0F15" Offset="1"/>
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="KeycapLitBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+                <GradientStop Color="#303040" Offset="0"/>
+                <GradientStop Color="#20202B" Offset="1"/>
             </LinearGradientBrush>
             <LinearGradientBrush x:Key="KeycapEdgeBrush" StartPoint="0%,0%" EndPoint="0%,100%">
                 <GradientStop Color="#40FFFFFF" Offset="0"/>

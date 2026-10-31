@@ -79,7 +79,7 @@ public sealed class AlbumDeck3D : Panel
         if (!IsEffectivelyVisible) return; // the folded player or a hidden dock: keep time, skip drawing
         _vinyl.Slide = _slide;
         _vinyl.InvalidateVisual();
-        InvalidateArrange();
+        if (_slide is > 0 and < 1) InvalidateArrange();
     }
 
     private void Restyle()

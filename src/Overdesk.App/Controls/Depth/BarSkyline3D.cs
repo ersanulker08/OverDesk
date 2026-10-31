@@ -40,6 +40,7 @@ public sealed class BarSkyline3D : Control
     private double _shift;      // 1 → 0 while a step plays (slots the row still has to travel)
     private double _rise = 1;   // 0 → 1: height of the newest block
     private TimeSpan? _stepStart;
+    private TimeSpan _lastDraw;
     private bool _stepping;
     private int _seen;
 
@@ -87,7 +88,12 @@ public sealed class BarSkyline3D : Control
         // The row moves with a mechanical settle (slight overshoot); the new block springs up a beat later.
         _shift = 1 - Ease.OutBack(Math.Min(t * 1.15, 1));
         _rise = Ease.OutBack(Math.Clamp((t - 0.12) / 0.88, 0, 1));
-        InvalidateVisual();
+        // Four charts step together every second: drawing them at 30 fps halves the render thread's work.
+        if (t >= 1 || (now - _lastDraw).TotalSeconds >= 1.0 / 30)
+        {
+            _lastDraw = now;
+            InvalidateVisual();
+        }
         if (t < 1 && TopLevel.GetTopLevel(this) is { } top) top.RequestAnimationFrame(OnFrame);
         else { _shift = 0; _rise = 1; _stepping = false; }
     }

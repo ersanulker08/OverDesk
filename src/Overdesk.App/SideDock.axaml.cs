@@ -127,6 +127,12 @@ public partial class SideDock : UserControl
 
     // ---------------------------------------------------------------- expand / collapse
 
+    public void SetAnimated(bool animated)
+    {
+        Embers.IsAnimated = animated;
+        DepthCard.SweepEnabled = animated;
+    }
+
     public void SetExpanded(bool expanded, bool animate)
     {
         if (_settings.SidebarExpanded != expanded)

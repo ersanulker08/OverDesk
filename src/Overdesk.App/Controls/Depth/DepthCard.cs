@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Threading;
 
 namespace Overdesk.App.Controls.Depth;
 
@@ -247,5 +248,84 @@ public class DepthCard : Decorator
             new RoundedRect(face.Deflate(0.5), Radius - 0.5));
         context.DrawRectangle(null, new Pen(Shade.Linear(new Point(0, h * 0.6), new Point(0, h),
             Color.FromArgb(0, 0, 0, 0), Color.FromArgb(0xB0, 0, 0, 0)), 1), new RoundedRect(face.Deflate(0.5), Radius - 0.5));
+
+        if (_sweep >= 0) DrawSweep(context, w, accent);
+    }
+
+    // A glint running along the top edge, like light catching a polished rim.
+    private void DrawSweep(DrawingContext context, double w, Color accent)
+    {
+        var inset = Radius;
+        var cx = (-0.2 + 1.4 * _sweep) * w;
+        var half = w * 0.22;
+        var glint = Shade.Mix(accent, Colors.White, 0.7);
+        var brush = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(cx - half, 0, RelativeUnit.Absolute),
+            EndPoint = new RelativePoint(cx + half, 0, RelativeUnit.Absolute),
+            GradientStops =
+            {
+                new GradientStop(Shade.Alpha(glint, 0), 0),
+                new GradientStop(Shade.Alpha(glint, 0.9), 0.5),
+                new GradientStop(Shade.Alpha(glint, 0), 1),
+            },
+        };
+        using (context.PushClip(new Rect(inset, 0, Math.Max(w - 2 * inset, 1), 24)))
+        {
+            context.DrawLine(new Pen(brush, 1.6), new Point(inset, 0.8), new Point(w - inset, 0.8));
+            var wash = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(cx - half, 0, RelativeUnit.Absolute),
+                EndPoint = new RelativePoint(cx + half, 0, RelativeUnit.Absolute),
+                GradientStops =
+                {
+                    new GradientStop(Shade.Alpha(accent, 0), 0),
+                    new GradientStop(Shade.Alpha(accent, 0.13), 0.5),
+                    new GradientStop(Shade.Alpha(accent, 0), 1),
+                },
+            };
+            context.DrawRectangle(wash, null, new Rect(inset, 1, Math.Max(w - 2 * inset, 1), 22));
+        }
+    }
+
+    private static readonly List<DepthCard> Cards = new();
+    private static DispatcherTimer? _sweepTimer;
+    private static int _sweepNext;
+    private double _sweep = -1;
+
+    /// <summary>Switches the idle edge glints on every card (follows the animated-background setting).</summary>
+    public static bool SweepEnabled { get; set; } = true;
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Cards.Add(this);
+        if (_sweepTimer is null)
+        {
+            _sweepTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.8) };
+            _sweepTimer.Tick += (_, _) => SweepNext();
+            _sweepTimer.Start();
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        Cards.Remove(this);
+    }
+
+    // One glint at a time, passed from card to card, so the idle cost is a single card redrawing.
+    private static void SweepNext()
+    {
+        if (!SweepEnabled || Cards.Count == 0) return;
+        for (var i = 0; i < Cards.Count; i++)
+        {
+            var card = Cards[(_sweepNext + i) % Cards.Count];
+            if (!card.Tilt || !card.IsEffectivelyVisible || card._enter < 1 || card._hover > 0.01 || card._sweep >= 0 || card.Bounds.Width < 60) continue;
+            _sweepNext = (_sweepNext + i + 1) % Cards.Count;
+            card._sweep = 0;
+            Animator.Run(card, 1.0, t => { card._sweep = t; card.InvalidateVisual(); }, () => { card._sweep = -1; card.InvalidateVisual(); });
+            return;
+        }
     }
 }

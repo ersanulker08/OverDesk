@@ -98,6 +98,7 @@ public partial class MainWindow : Window
         Home.SetAnimated(_settings.AnimatedBackground);
         OverlayWaves.IsAnimated = _settings.AnimatedBackground;
         StageWaves.IsAnimated = _settings.AnimatedBackground;
+        Dock.SetAnimated(_settings.AnimatedBackground);
         Home.ProgramRequested += OpenProgram;
         Home.AskAiRequested += question => OpenAi(question: question);
         Home.AddProgramRequested += () => _ = AddProgramsAsync();
@@ -1095,6 +1096,7 @@ public partial class MainWindow : Window
         Home.SetAnimated(_settings.AnimatedBackground);
         OverlayWaves.IsAnimated = _settings.AnimatedBackground;
         StageWaves.IsAnimated = _settings.AnimatedBackground;
+        Dock.SetAnimated(_settings.AnimatedBackground);
         Home.RebuildTiles();
         SaveSettings();
     }

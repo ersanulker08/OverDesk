@@ -267,6 +267,8 @@
                     </d:DepthCard>
                 </StackPanel>
             </ScrollViewer>
+            <d:EmberField x:Name="Embers" Grid.Row="1" Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"
+                          IsVisible="{Binding #Expanded.IsVisible}"/>
             <Border Grid.Row="1" Height="18" VerticalAlignment="Top" IsHitTestVisible="False"
                     IsVisible="{Binding #Expanded.IsVisible}">
                 <Border.Background>

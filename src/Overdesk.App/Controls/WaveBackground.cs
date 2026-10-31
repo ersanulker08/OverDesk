@@ -7,7 +7,7 @@ namespace Overdesk.App.Controls;
 
 /// <summary>
 /// Slowly flowing ribbon of thin strands with a few neon accent threads, in the spirit of gaming-browser
-/// wallpapers. Animates on the compositor's frame clock (capped at ~30 fps) only while visible.
+/// wallpapers. Animates on the compositor's frame clock (capped at ~20 fps) only while visible.
 /// </summary>
 public sealed class WaveBackground : Control
 {
@@ -18,11 +18,11 @@ public sealed class WaveBackground : Control
     public static readonly StyledProperty<bool> IsAnimatedProperty =
         AvaloniaProperty.Register<WaveBackground, bool>(nameof(IsAnimated), true);
     public static readonly StyledProperty<int> StrandCountProperty =
-        AvaloniaProperty.Register<WaveBackground, int>(nameof(StrandCount), 56);
+        AvaloniaProperty.Register<WaveBackground, int>(nameof(StrandCount), 36);
     public static readonly StyledProperty<double> IntensityProperty =
         AvaloniaProperty.Register<WaveBackground, double>(nameof(Intensity), 1.0);
 
-    private const double FrameInterval = 1.0 / 30;
+    private const double FrameInterval = 1.0 / 20;
     private static readonly double StartPhase = Random.Shared.NextDouble() * 100;
 
     private double _time = StartPhase;
@@ -118,7 +118,7 @@ public sealed class WaveBackground : Control
         }, null, new Rect(0, 0, w, h));
 
         var count = Math.Max(StrandCount, 8);
-        const int steps = 90;
+        const int steps = 32;
         var neonA = new LinearGradientBrush
         {
             StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
@@ -132,45 +132,45 @@ public sealed class WaveBackground : Control
             },
         };
 
+        // One geometry per brightness bucket (plus one for all neon threads): a handful of draw calls instead of one per strand.
+        const int buckets = 6;
+        var plain = new StreamGeometry[buckets];
+        var plainCtx = new StreamGeometryContext[buckets];
+        for (var k = 0; k < buckets; k++) { plain[k] = new StreamGeometry(); plainCtx[k] = plain[k].Open(); }
+        var neonGeometry = new StreamGeometry();
+        var neonCtx = neonGeometry.Open();
+
         for (var i = 0; i < count; i++)
         {
             var u = i / (double)(count - 1);
-            var neon = IsNeon(i, count);
-
-            var geometry = new StreamGeometry();
-            using (var ctx = geometry.Open())
+            var ctx = IsNeon(i, count) ? neonCtx : plainCtx[Math.Min(buckets - 1, (int)(u * buckets))];
+            for (var s = 0; s <= steps; s++)
             {
-                for (var s = 0; s <= steps; s++)
-                {
-                    var nx = -0.05 + 1.1 * s / steps;
-                    var center = 0.80 - 0.26 * nx + 0.05 * Math.Sin(nx * 2.6 + t * 0.22);
-                    var spread = 0.06 + 0.34 * nx * nx;
-                    var swirl = 0.035 * Math.Sin(nx * 6.0 + u * 4.2 + t * 0.55) * (0.35 + u)
-                                + 0.015 * Math.Sin(nx * 13.0 - t * 0.8 + u * 9.0);
-                    var y = (center + (u - 0.5) * spread + swirl) * h;
-                    var p = new Point(nx * w, y);
-                    if (s == 0) ctx.BeginFigure(p, false);
-                    else ctx.LineTo(p);
-                }
-                ctx.EndFigure(false);
+                var nx = -0.05 + 1.1 * s / steps;
+                var center = 0.80 - 0.26 * nx + 0.05 * Math.Sin(nx * 2.6 + t * 0.22);
+                var spread = 0.06 + 0.34 * nx * nx;
+                var swirl = 0.035 * Math.Sin(nx * 6.0 + u * 4.2 + t * 0.55) * (0.35 + u)
+                            + 0.015 * Math.Sin(nx * 13.0 - t * 0.8 + u * 9.0);
+                var p = new Point(nx * w, (center + (u - 0.5) * spread + swirl) * h);
+                if (s == 0) ctx.BeginFigure(p, false);
+                else ctx.LineTo(p);
             }
-
-            IPen pen;
-            if (neon)
-            {
-                // Faint wide halo under each neon thread, then the thread itself.
-                context.DrawGeometry(null, new Pen(new SolidColorBrush(AccentThemes.WithAlpha(accent, (byte)(0x1C * intensity))), 6), geometry);
-                pen = new Pen(neonA, 1.6);
-            }
-            else
-            {
-                // Strands near the top edge of the ribbon catch more light.
-                var shade = (byte)(26 + 40 * Math.Pow(u, 1.6));
-                var alpha = (byte)((70 + 120 * u) * intensity);
-                pen = new Pen(new SolidColorBrush(Color.FromArgb(alpha, shade, shade, (byte)Math.Min(shade + 12, 255))), 1.0);
-            }
-            context.DrawGeometry(null, pen, geometry);
+            ctx.EndFigure(false);
         }
+
+        for (var k = 0; k < buckets; k++)
+        {
+            plainCtx[k].Dispose();
+            // Strands near the top edge of the ribbon catch more light.
+            var u = (k + 0.5) / buckets;
+            var shade = (byte)(26 + 40 * Math.Pow(u, 1.6));
+            var alpha = (byte)((70 + 120 * u) * intensity);
+            context.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(alpha, shade, shade, (byte)Math.Min(shade + 12, 255))), 1.0), plain[k]);
+        }
+        neonCtx.Dispose();
+        // Faint wide halo under the neon threads, then the threads themselves.
+        context.DrawGeometry(null, new Pen(new SolidColorBrush(AccentThemes.WithAlpha(accent, (byte)(0x1C * intensity))), 6), neonGeometry);
+        context.DrawGeometry(null, new Pen(neonA, 1.6), neonGeometry);
     }
 
     private static bool IsNeon(int i, int count)

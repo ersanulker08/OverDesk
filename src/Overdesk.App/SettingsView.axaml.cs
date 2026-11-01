@@ -6,6 +6,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Overdesk.App.Controls;
+using Overdesk.App.Controls.Depth;
 using Overdesk.App.Services;
 using Overdesk.App.Theme;
 using Overdesk.Core.Platform;
@@ -122,6 +123,7 @@ public partial class SettingsView : UserControl
         Waves.IsAnimated = settings.AnimatedBackground;
         LoadToggles();
         BuildThemeCards();
+        BuildStyleCards();
         BuildGaugeChips();
         LoadSections();
         UpdatePermission();
@@ -320,6 +322,26 @@ public partial class SettingsView : UserControl
                 Changed?.Invoke();
             };
             ThemeCards.Children.Add(card);
+        }
+    }
+
+    private void BuildStyleCards()
+    {
+        StyleCards.Children.Clear();
+        foreach (var (style, description) in ArtStyles.All)
+        {
+            var text = new StackPanel { Spacing = 1 };
+            text.Children.Add(new TextBlock { Text = style.ToString(), FontWeight = FontWeight.SemiBold, FontSize = 12.5 });
+            text.Children.Add(new TextBlock { Text = description, Classes = { "faint" }, FontSize = 11, TextWrapping = TextWrapping.Wrap });
+            var chip = new ToggleButton { Classes = { "gaugechip" }, Content = text, IsChecked = ArtStyles.Current == style };
+            chip.Click += (_, _) =>
+            {
+                _settings.ArtStyle = style.ToString();
+                ArtStyles.Apply(_settings.ArtStyle);
+                BuildStyleCards();
+                Changed?.Invoke();
+            };
+            StyleCards.Children.Add(chip);
         }
     }
 

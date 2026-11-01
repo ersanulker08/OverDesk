@@ -289,7 +289,7 @@ public partial class SideDock : UserControl
 
     // ---------------------------------------------------------------- system
 
-    private sealed record MetricRow(MetricInfo Info, Readout3D Value, BarSkyline3D? Chart, SegmentTank3D? Tank);
+    private sealed record MetricRow(MetricInfo Info, Readout3D Value, MetricChart3D? Chart, SegmentTank3D? Tank);
 
     private readonly List<MetricRow> _metricRows = new();
 
@@ -316,18 +316,18 @@ public partial class SideDock : UserControl
             Grid.SetColumn(value, 1);
             header.Children.Add(value);
 
-            BarSkyline3D? chart = null;
+            MetricChart3D? chart = null;
             SegmentTank3D? tank = null;
             Control row;
             if (info.Kind == MetricKind.Chart)
             {
-                chart = new BarSkyline3D
+                chart = new MetricChart3D
                 {
                     Height = 78, Margin = new Thickness(-4, 14, -4, 0),
                     Format = info.Id == "net" ? SystemStatsService.Rate : v => $"{v:0}%",
                 };
-                chart.Bind(BarSkyline3D.ColorProperty, this.GetResourceObservable(second ? "Accent2Color" : "AccentColor"));
-                chart.Bind(BarSkyline3D.Color2Property, this.GetResourceObservable(second ? "AccentColor" : "Accent2Color"));
+                chart.Bind(MetricChart3D.ColorProperty, this.GetResourceObservable(second ? "Accent2Color" : "AccentColor"));
+                chart.Bind(MetricChart3D.Color2Property, this.GetResourceObservable(second ? "AccentColor" : "Accent2Color"));
                 // The chart's sky is mostly empty: the header floats in it.
                 row = new Panel { Children = { chart, header } };
             }

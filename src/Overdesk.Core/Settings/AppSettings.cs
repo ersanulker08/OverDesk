@@ -92,6 +92,9 @@ public sealed class AppSettings
     /// <summary>Name of the accent color theme (see the app's theme list).</summary>
     public string AccentTheme { get; set; } = "Crimson";
 
+    /// <summary>How the dock widgets and backdrops are drawn: "Classic", "Crystal", "Organic" or "Lumen".</summary>
+    public string ArtStyle { get; set; } = "Crystal";
+
     public bool ShowSplash { get; set; } = true;
     public bool AnimatedBackground { get; set; } = true;
     public bool RestoreTabs { get; set; } = true;

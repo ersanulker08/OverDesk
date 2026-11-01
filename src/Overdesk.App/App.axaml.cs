@@ -27,6 +27,7 @@ public partial class App : Application
                 : SettingsStore.DefaultDirectory());
             var settings = store.Load();
             AccentThemes.Apply(settings.AccentTheme);
+            Controls.Depth.ArtStyles.Apply(settings.ArtStyle);
 
             var catalog = PlatformFactory.CreateCatalog();
             IconCache.Catalog = catalog;

@@ -5,7 +5,7 @@
     <!-- OverDesk's own tab: a full page (navigation on the left, sections on the right) over the home backdrop -->
     <Grid>
         <Border Background="{StaticResource Bg0Brush}"/>
-        <c:WaveBackground x:Name="Waves" Intensity="0.55"
+        <c:SigilBackground x:Name="Waves" Intensity="0.55"
                           Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"/>
         <Border IsHitTestVisible="False">
             <Border.Background>
@@ -45,13 +45,18 @@
                             <TextBlock Classes="muted" Text="Pick your color. Everything in OverDesk follows it, live."/>
                         </StackPanel>
                         <WrapPanel x:Name="ThemeCards"/>
+                        <StackPanel Spacing="4" Margin="0,6,0,0">
+                            <TextBlock Text="Style" FontWeight="SemiBold" FontSize="15"/>
+                            <TextBlock Classes="muted" Text="How the dock widgets and the animated backdrop are drawn."/>
+                        </StackPanel>
+                        <WrapPanel x:Name="StyleCards"/>
                         <StackPanel x:Name="AppearanceToggles" Spacing="12">
                             <Border Classes="pagecard">
                                 <Grid ColumnDefinitions="Auto,*,Auto">
                                     <Border Classes="pageicon"><Path Classes="icon accent" Data="{StaticResource IconSparkle}"/></Border>
                                     <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
                                         <TextBlock Text="Animated background" FontWeight="SemiBold"/>
-                                        <TextBlock Classes="muted" FontSize="12" Text="Flowing strands behind home and programs"/>
+                                        <TextBlock Classes="muted" FontSize="12" Text="Moving backdrop behind home and programs"/>
                                     </StackPanel>
                                     <ToggleSwitch x:Name="AnimatedToggle" Grid.Column="2" OnContent="" OffContent=""/>
                                 </Grid>

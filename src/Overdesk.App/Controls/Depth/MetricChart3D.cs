@@ -5,16 +5,16 @@ using Avalonia.Media;
 namespace Overdesk.App.Controls.Depth;
 
 /// <summary>
-/// A live 3D bar chart: every sample is a lit block standing on a glass floor, seen from above and to the side.
-/// When a new sample arrives the whole row steps one slot back (a short eased "clunk") while the newest block
-/// rises out of the floor; the oldest one sinks into the fog at the far end. Replaces the flat sparkline.
+/// A live 3D chart: every sample stands in its own slot (a lit block in the classic style, a crystal on a rune circle
+/// otherwise). A new sample marches the row one slot back while the newest one grows out of the floor; the oldest
+/// ones sink into the fog. Replaces the flat sparkline.
 /// </summary>
-public sealed class BarSkyline3D : Control
+public sealed class MetricChart3D : Control
 {
     public static readonly StyledProperty<Color> ColorProperty =
-        AvaloniaProperty.Register<BarSkyline3D, Color>(nameof(Color), Color.Parse("#FA1E4E"));
+        AvaloniaProperty.Register<MetricChart3D, Color>(nameof(Color), Color.Parse("#FA1E4E"));
     public static readonly StyledProperty<Color> Color2Property =
-        AvaloniaProperty.Register<BarSkyline3D, Color>(nameof(Color2), Color.Parse("#FF6A3D"));
+        AvaloniaProperty.Register<MetricChart3D, Color>(nameof(Color2), Color.Parse("#FF6A3D"));
 
     /// <summary>Blocks on stage. Fewer, larger blocks read better than a dense comb at dock width.</summary>
     public int Slots { get; set; } = 20;
@@ -44,11 +44,23 @@ public sealed class BarSkyline3D : Control
     private bool _stepping;
     private int _seen;
 
-    static BarSkyline3D()
+    static MetricChart3D()
     {
-        AffectsRender<BarSkyline3D>(ColorProperty, Color2Property);
+        AffectsRender<MetricChart3D>(ColorProperty, Color2Property);
         // The newest block slides in from beyond the front edge, like a conveyor.
-        ClipToBoundsProperty.OverrideDefaultValue<BarSkyline3D>(true);
+        ClipToBoundsProperty.OverrideDefaultValue<MetricChart3D>(true);
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        ArtStyles.Changed += InvalidateVisual;
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        ArtStyles.Changed -= InvalidateVisual;
     }
 
     public Color Color { get => GetValue(ColorProperty); set => SetValue(ColorProperty, value); }
@@ -98,7 +110,7 @@ public sealed class BarSkyline3D : Control
         else { _shift = 0; _rise = 1; _stepping = false; }
     }
 
-    private readonly record struct Block(double X, double Height, double Fade, bool Newest, double Heat, int Age, double Value);
+    private readonly record struct Block(double X, double Height, double Fade, bool Newest, double Heat, int Age, double Value, long Id);
 
     /// <summary>Development snapshots: inspect the block of this age as if the pointer were on it.</summary>
     internal void DevInspect(int age)
@@ -147,10 +159,9 @@ public sealed class BarSkyline3D : Control
         if (w < 20 || h < 20) return;
 
         var n = Slots;
-        var cam = new Camera3D(new V3(n / 2.0, WorldHeight * 0.32, 0), yawDegrees: 19, pitchDegrees: 17, distance: n * 1.55, focal: 1.5);
-        cam.Fit(new V3(-0.6, 0, -BlockDepth / 2 - 0.8), new V3(n + 0.2, WorldHeight, BlockDepth / 2 + 0.6), new Rect(2, 2, w - 4, h - 4));
-
-        DrawFloor(context, cam, n);
+        var classic = ArtStyles.Current == ArtStyle.Classic;
+        var cam = new Camera3D(new V3(n / 2.0, WorldHeight * 0.32, 0), yawDegrees: 19, pitchDegrees: classic ? 17 : 21, distance: n * 1.55, focal: 1.5);
+        cam.Fit(new V3(-0.6, 0, -BlockDepth / 2 - 0.8), new V3(n + 0.2, WorldHeight + (classic ? 0 : 0.9), BlockDepth / 2 + 0.6), new Rect(2, 2, w - 4, h - 4));
 
         // Newest block sits in the front slot (x = n - 1); history marches toward x = 0, then sinks into the fog.
         var blocks = new List<Block>(_values.Length);
@@ -166,13 +177,26 @@ public sealed class BarSkyline3D : Control
             var fade = Math.Clamp((x + 1) / 3.5, 0, 1);
             if (x < 0) height *= Math.Clamp(x + 1, 0, 1);
             if (age == _hotAge) height += 0.35; // the inspected block lifts out of the row
-            blocks.Add(new Block(x, height, fade, newest, frac, age, _values[i]));
+            blocks.Add(new Block(x, height, fade, newest, frac, age, _values[i], _seen - age));
         }
 
-        // Reflections first, under everything.
-        foreach (var b in blocks) DrawReflection(context, cam, b);
-        // Painter's order: the farthest block first.
-        foreach (var b in blocks.OrderByDescending(b => cam.Depth(new V3(b.X + 0.5, b.Height / 2, 0)))) DrawBlock(context, cam, b);
+        if (ArtStyles.IsLumen) DrawStudio(context, cam, n, blocks);
+        else
+        {
+            if (classic) ClassicFloor(context, cam, n);
+            else DrawFloor(context, cam, n);
+            foreach (var b in blocks)
+            {
+                if (classic) ClassicReflection(context, cam, b);
+                else DrawRune(context, cam, b);
+            }
+            // Painter's order: the farthest block first.
+            foreach (var b in blocks.OrderByDescending(b => cam.Depth(new V3(b.X + 0.5, 0, 0))))
+            {
+                if (classic) ClassicBlock(context, cam, b);
+                else DrawBlock(context, cam, b);
+            }
+        }
 
         DrawPeakLine(context, cam, n);
 
@@ -180,6 +204,43 @@ public sealed class BarSkyline3D : Control
         foreach (var b in blocks)
             _lids.Add((b.Age, cam.Project(new V3(b.X + 0.5, b.Height, 0))));
         if (_hotAge >= 0 && blocks.FirstOrDefault(b => b.Age == _hotAge) is { Fade: > 0 } hot) DrawInspect(context, cam, hot);
+    }
+
+    /// <summary>Lumen: matte pillars on a glossy studio floor, lit by a warm key from the left and a colored rim; the live one stands in a spot cone.</summary>
+    private void DrawStudio(DrawingContext context, Camera3D cam, int n, List<Block> blocks)
+    {
+        const double lx = -0.6, radius = 0.36;
+        double z0 = -BlockDepth / 2 - 0.7, z1 = BlockDepth / 2 + 0.5, x0 = -0.8, x1 = n + 0.1;
+        context.DrawGeometry(Shade.Linear(cam.Project(new V3(0, 0, z0)), cam.Project(new V3(0, 0, z1)), Color.FromArgb(0, 0x18, 0x18, 0x22), Color.FromArgb(0xE6, 0x22, 0x20, 0x2E)), null,
+            Shade.Polygon(cam.Project(new V3(x0, 0, z0)), cam.Project(new V3(x1, 0, z0)), cam.Project(new V3(x1, 0, z1)), cam.Project(new V3(x0, 0, z1))));
+        var edgeA = cam.Project(new V3(x0, 0, z1));
+        var edgeB = cam.Project(new V3(x1, 0, z1));
+        context.DrawLine(new Pen(Shade.Linear(edgeA, edgeB, Shade.Alpha(Studio.WarmLight, 0), Shade.Alpha(Studio.WarmLight, 0.3)), 1), edgeA, edgeB);
+
+        var rim = Shade.Mix(Color, Colors.White, 0.1);
+        var neutral = Color.FromRgb(0x44, 0x42, 0x50);
+        var placed = new List<(Block B, Point Foot, double Rx, double Ry, double Height)>(blocks.Count);
+        foreach (var b in blocks)
+        {
+            var foot = cam.Project(new V3(b.X + 0.5, 0, 0));
+            var rx = Math.Abs(cam.Project(new V3(b.X + 0.5 + radius, 0, 0)).X - foot.X);
+            var ry = Math.Abs(cam.Project(new V3(b.X + 0.5, 0, radius)).Y - foot.Y);
+            var height = foot.Y - cam.Project(new V3(b.X + 0.5, b.Height, 0)).Y;
+            placed.Add((b, foot, rx, ry, height));
+        }
+
+        // Light first (pools, cone, shadows), then the forms standing in it.
+        foreach (var p in placed.Where(p => p.B.Newest))
+        {
+            var lamp = new Point(p.Foot.X - p.Rx * 3, -4);
+            Studio.Cone(context, lamp, new Point(p.Foot.X, p.Foot.Y), p.Rx * 3.4, Shade.Mix(Studio.WarmLight, Color, 0.25), 0.8 * _rise * p.B.Fade);
+        }
+        foreach (var p in placed) Studio.CastShadow(context, p.Foot, p.Rx, p.Ry, p.Height, lx, p.B.Fade);
+        foreach (var p in placed.OrderByDescending(p => cam.Depth(new V3(p.B.X + 0.5, 0, 0))))
+        {
+            var mat = Studio.Material(Shade.Mix(neutral, BlockColor(p.B.Heat), 0.2 + 0.5 * p.B.Heat), rim, Color2);
+            Studio.Pillar(context, p.Foot, p.Rx, p.Ry, p.Height, mat, lx, emit: 0.1 + 0.22 * p.B.Heat + (p.B.Newest ? 0.3 * _rise : 0), alpha: p.B.Fade);
+        }
     }
 
     /// <summary>A glass tag floating over the inspected block: its value and how long ago it was measured.</summary>
@@ -214,6 +275,55 @@ public sealed class BarSkyline3D : Control
         var floor = Shade.Polygon(cam.Project(new V3(x0, 0, z0)), cam.Project(new V3(x1, 0, z0)),
                                   cam.Project(new V3(x1, 0, z1)), cam.Project(new V3(x0, 0, z1)));
         context.DrawGeometry(Shade.Linear(cam.Project(new V3(x0, 0, 0)), cam.Project(new V3(x1, 0, 0)),
+            Color.FromArgb(0x00, 0x14, 0x14, 0x1C), Color.FromArgb(0xD0, 0x12, 0x10, 0x1A)), null, floor);
+
+        // A glowing ley line running under the row.
+        var a = cam.Project(new V3(x0, 0, 0));
+        var b = cam.Project(new V3(x1, 0, 0));
+        if (Ink.Rough) Ink.Line(context, a, b, Color, 0.3, 1.2);
+        else context.DrawLine(new Pen(Shade.Linear(a, b, Shade.Alpha(Color, 0), Shade.Alpha(Color, 0.35)), 1.2), a, b);
+    }
+
+    /// <summary>A rune circle on the floor: soft pool of light, an outer ring and a dashed inner ring with glyph ticks.</summary>
+    private void DrawRune(DrawingContext context, Camera3D cam, Block b)
+    {
+        var c = new V3(b.X + 0.5, 0, 0);
+        var heat = BlockColor(b.Heat);
+        var strength = b.Fade * (b.Newest ? _rise : 1);
+        if (strength < 0.02) return;
+        var centre = cam.Project(c);
+        var rx = Math.Abs(cam.Project(c + new V3(0.62, 0, 0)).X - centre.X);
+        var ry = Math.Abs(cam.Project(c + new V3(0, 0, 0.62)).Y - centre.Y);
+        Shade.Glow(context, centre, rx * 1.25, ry * 1.25, Shade.Alpha(heat, (0.10 + 0.22 * b.Heat) * strength));
+
+        Ink.Stroke(context, Crystal3D.Ring(cam, c, 0.62, 28), heat, 0.5 * strength, 0.9);
+        Ink.Stroke(context, Crystal3D.Ring(cam, c, 0.47, 24), Shade.Mix(heat, Colors.White, 0.3), 0.4 * strength, 0.7, new DashStyle(new double[] { 1.5, 2.5 }, 0));
+
+        // Glyph ticks between the rings.
+        var phase = Crystal3D.Hash(b.Id, 5) * Math.PI;
+        for (var i = 0; i < 6; i++)
+        {
+            var t = phase + i * Math.PI / 3;
+            var (s, co) = Math.SinCos(t);
+            Ink.Line(context, cam.Project(c + new V3(s * 0.50, 0, co * 0.50)), cam.Project(c + new V3(s * 0.60, 0, co * 0.60)), heat, 0.55 * strength, 0.8);
+        }
+    }
+
+    private void DrawBlock(DrawingContext context, Camera3D cam, Block b)
+    {
+        var r = 0.30 + 0.07 * Crystal3D.Hash(b.Id, 1);
+        Crystal3D.Draw(context, cam, new V3(b.X + 0.5, 0, 0), r, b.Height, BlockColor(b.Heat), b.Fade,
+            b.Newest ? 0.2 : 0.06, b.Heat, spark: b.Newest ? 0.7 : 0.35, motes: true, id: b.Id);
+    }
+
+    // ---- classic style: lit blocks on a glass grid
+
+    private void ClassicFloor(DrawingContext context, Camera3D cam, int n)
+    {
+        double z0 = -BlockDepth / 2 - 0.7, z1 = BlockDepth / 2 + 0.5, x0 = -0.8, x1 = n + 0.1;
+        var floor = Shade.Polygon(cam.Project(new V3(x0, 0, z0)), cam.Project(new V3(x1, 0, z0)),
+                                  cam.Project(new V3(x1, 0, z1)), cam.Project(new V3(x0, 0, z1)));
+        context.DrawGeometry(Shade.Linear(cam.Project(new V3(x0, 0, 0)), cam.Project(new V3(x1, 0, 0)),
             Color.FromArgb(0x00, 0x14, 0x14, 0x1C), Color.FromArgb(0xD0, 0x16, 0x16, 0x20)), null, floor);
 
         // Grid lines: one per slot, plus a few running front to back. Brighter toward the viewer.
@@ -232,7 +342,7 @@ public sealed class BarSkyline3D : Control
         }
     }
 
-    private void DrawBlock(DrawingContext context, Camera3D cam, Block b)
+    private void ClassicBlock(DrawingContext context, Camera3D cam, Block b)
     {
         double x0 = b.X + (1 - BlockWidth) / 2, x1 = x0 + BlockWidth, y1 = b.Height;
         Box3D.Draw(context, cam, Box3D.Aligned(new V3(x0, 0, -BlockDepth / 2), new V3(x1, y1, BlockDepth / 2)),
@@ -249,7 +359,7 @@ public sealed class BarSkyline3D : Control
     }
 
     /// <summary>Mirror image in the glass floor, front face only, fading out quickly.</summary>
-    private void DrawReflection(DrawingContext context, Camera3D cam, Block b)
+    private void ClassicReflection(DrawingContext context, Camera3D cam, Block b)
     {
         double x0 = b.X + (1 - BlockWidth) / 2, x1 = x0 + BlockWidth, z = BlockDepth / 2;
         var depth = Math.Min(b.Height, WorldHeight * 0.45);

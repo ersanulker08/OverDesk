@@ -177,7 +177,7 @@
                     <!-- The stage: the active program's window is placed exactly over TabHost, which floats
                          inside a softly glowing frame on top of the animated backdrop, never touching an edge. -->
                     <Grid x:Name="Stage" Background="{StaticResource Bg0Brush}">
-                        <c:WaveBackground x:Name="StageWaves" Intensity="0.7" StrandCount="44"
+                        <c:SigilBackground x:Name="StageWaves" Intensity="0.7"
                                           Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"/>
                         <!-- One frame, or two side by side in split view (the second column opens up) -->
                         <Grid x:Name="StageSplit" Margin="16" ColumnDefinitions="*,0,0">
@@ -217,7 +217,7 @@
 
                     <!-- A website from the web strip, inside the same glowing stage as programs -->
                     <Grid x:Name="WebArea" IsVisible="False" Background="{StaticResource Bg0Brush}">
-                        <c:WaveBackground x:Name="WebWaves" Intensity="0.6" StrandCount="40"
+                        <c:SigilBackground x:Name="WebWaves" Intensity="0.6"
                                           Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"/>
                         <Border x:Name="WebFrame" Margin="16" CornerRadius="14" BorderThickness="1"
                                 BorderBrush="{DynamicResource AccentBorderBrush}" BoxShadow="{DynamicResource AccentGlowLarge}"
@@ -277,7 +277,7 @@
 
                     <!-- Starting / failed / exited -->
                     <Grid x:Name="TabOverlay" Background="{StaticResource Bg0Brush}" IsVisible="False">
-                        <c:WaveBackground x:Name="OverlayWaves" Intensity="0.45" StrandCount="40"
+                        <c:SigilBackground x:Name="OverlayWaves" Intensity="0.45"
                                           Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"/>
                         <Border x:Name="OverlayCard" Classes="card" Width="460" Padding="34,32"
                                 HorizontalAlignment="Center" VerticalAlignment="Center">

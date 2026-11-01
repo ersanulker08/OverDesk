@@ -82,13 +82,12 @@ public sealed class WorkLibrary
     public void FlushDirty()
     {
         foreach (var id in _dirty.ToList())
-            if (Find(id) is { } work) Write(work);
-        _dirty.Clear();
+            if (Find(id) is not { } work || Write(work)) _dirty.Remove(id);
     }
 
     private string PathOf(Work work) => Path.Combine(Folder, work.Id + ".json");
 
-    private void Write(Work work)
+    private bool Write(Work work)
     {
         try
         {
@@ -96,11 +95,13 @@ public sealed class WorkLibrary
             var tmp = PathOf(work) + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(work, Json));
             File.Move(tmp, PathOf(work), overwrite: true);
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Keep it dirty so the next flush tries again.
             _dirty.Add(work.Id);
+            return false;
         }
     }
 }

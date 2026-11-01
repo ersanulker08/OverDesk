@@ -21,8 +21,8 @@
             </LinearGradientBrush>
         </Border.Background>
         <Grid>
-            <c:WaveBackground x:Name="Waves" Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"
-                              StrandCount="46" Opacity="0"/>
+            <c:SigilBackground x:Name="Waves" Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"
+                              Opacity="0"/>
 
             <!-- Halo behind the logo -->
             <Ellipse x:Name="Halo" Width="340" Height="340" Margin="0,-70,0,0" Opacity="0"

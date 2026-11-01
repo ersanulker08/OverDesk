@@ -14,7 +14,7 @@
                 </RadialGradientBrush>
             </Border.Background>
         </Border>
-        <c:WaveBackground x:Name="Waves" Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"/>
+        <c:SigilBackground x:Name="Waves" Accent="{DynamicResource AccentColor}" Accent2="{DynamicResource Accent2Color}"/>
 
         <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
             <Grid x:Name="Column" MaxWidth="920" Margin="32,0,32,40" RowDefinitions="Auto,Auto,Auto,Auto,Auto">

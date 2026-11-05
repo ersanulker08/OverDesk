@@ -94,7 +94,7 @@ public sealed class PluginRegistry
     {
         if (manifest.BuiltIn is { } create) return create();
         var assemblyPath = Path.GetFullPath(Path.Combine(manifest.Directory, manifest.Assembly!));
-        var assembly = Assembly.LoadFrom(assemblyPath);
+        var assembly = PluginLoadContext.For(assemblyPath).LoadFromAssemblyPath(assemblyPath);
         var type = assembly.GetType(manifest.TypeName!, throwOnError: true)!;
         return Activator.CreateInstance(type) as IToolPlugin
                ?? throw new InvalidOperationException($"{type.FullName} does not implement {nameof(IToolPlugin)}.");

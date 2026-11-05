@@ -23,6 +23,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Overdesk.AI\Overdesk.AI.csproj" />
     <ProjectReference Include="..\..\src\Overdesk.Core\Overdesk.Core.csproj" />
+    <!-- Built for the plugin loading test, which loads its DLL from samples/HelloTool/plugin. -->
+    <ProjectReference Include="..\..\samples\HelloTool\HelloTool.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\tools\converter\Overdesk.Tool.Converter.csproj" />
     <ProjectReference Include="..\..\tools\devkit\Overdesk.Tool.DevKit.csproj" />
     <ProjectReference Include="..\..\tools\icons\Overdesk.Tool.Icons.csproj" />

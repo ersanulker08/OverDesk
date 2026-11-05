@@ -44,7 +44,7 @@ public static partial class Engine
         ["m4v"] = FileKind.Video, ["wmv"] = FileKind.Video, ["flv"] = FileKind.Video, ["mpg"] = FileKind.Video, ["mpeg"] = FileKind.Video,
         ["3gp"] = FileKind.Video, ["ts"] = FileKind.Video, ["mts"] = FileKind.Video,
         ["zip"] = FileKind.Archive, ["tar"] = FileKind.Archive, ["gz"] = FileKind.Archive, ["tgz"] = FileKind.Archive,
-        ["ttf"] = FileKind.Font, ["otf"] = FileKind.Font, ["woff"] = FileKind.Font,
+        ["ttf"] = FileKind.Font, ["otf"] = FileKind.Font, ["woff"] = FileKind.Font, ["woff2"] = FileKind.Font,
         ["obj"] = FileKind.Model, ["stl"] = FileKind.Model, ["ply"] = FileKind.Model,
         ["pdf"] = FileKind.Image, // pages are rendered through macOS's sips
     };
@@ -109,7 +109,7 @@ public static partial class Engine
                 ? new[] { "mp4", "mov", "webm", "mkv", "avi", "gif", "jpg", "mp3", "m4a", "wav" }
                 : Mac ? new[] { "mp4", "mov", "m4v" } : Array.Empty<string>(),
             FileKind.Archive => new[] { "folder", "zip", "tar", "tar.gz" },
-            FileKind.Font => ext == "woff" ? new[] { Fonts.WoffFlavor(path) } : new[] { "woff" },
+            FileKind.Font => ext switch { "woff" => new[] { Fonts.WoffFlavor(path) }, "woff2" => new[] { Fonts.WoffFlavor(path), "woff" }, _ => new[] { "woff" } },
             FileKind.Model => new[] { "glb", "gltf", "obj", "stl", "ply" },
             _ => Array.Empty<string>(),
         };
@@ -186,7 +186,8 @@ public static partial class Engine
                     case FileKind.Audio or FileKind.Video: await ConvertMediaAsync(input, output, target, progress, cancellation); break;
                     case FileKind.Font:
                         var font = await File.ReadAllBytesAsync(input, cancellation);
-                        await File.WriteAllBytesAsync(output, target == "woff" ? Fonts.ToWoff(font) : Fonts.FromWoff(font), cancellation);
+                        var sfnt = Ext(input) switch { "woff2" => Fonts.FromWoff2(font), "woff" => Fonts.FromWoff(font), _ => font };
+                        await File.WriteAllBytesAsync(output, target == "woff" ? Fonts.ToWoff(sfnt) : sfnt, cancellation);
                         break;
                     case FileKind.Model: await Task.Run(() => Models.Write(Models.Read(input), output, target), cancellation); break;
                 }

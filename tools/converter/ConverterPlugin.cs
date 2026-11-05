@@ -18,7 +18,7 @@ public sealed class ConverterPlugin : IToolPlugin, IAiToolSource
             "Convert files to another format with OverDesk's Converter: images (PNG, JPG, WebP, GIF, BMP, ICO, TGA, PDF; HEIC, AVIF, PSD, camera RAW, SVG, TIFF " +
             "and PDF pages are read on macOS; optional resize), data (JSON, YAML, TOML, XML, plist, INI, .env, .properties, CSV, TSV, JSON Lines, Excel XLSX; " +
             "tables also to Markdown, HTML or SQL), Markdown and text to PDF, HTML or Word, documents to PDF (and DOCX, RTF, ODT, HTML, TXT on macOS), " +
-            "SRT <-> VTT subtitles, audio and video (ffmpeg), archives (ZIP, TAR, TAR.GZ, GZ; to = \"folder\" unpacks), fonts (TTF/OTF <-> WOFF), " +
+            "SRT <-> VTT subtitles, audio and video (ffmpeg), archives (ZIP, TAR, TAR.GZ, GZ; to = \"folder\" unpacks), fonts (TTF/OTF <-> WOFF, WOFF2 -> TTF/OTF/WOFF)," +
             "3D models (OBJ, STL, PLY to GLB, glTF, OBJ, STL, PLY). Any file can be packed into zip or gz. " +
             "Results are written next to the originals (never overwriting). Call without \"to\" to see which formats each file can become. " +
             "combine_pdf puts several images into one PDF.",

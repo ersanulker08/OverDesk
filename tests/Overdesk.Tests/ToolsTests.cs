@@ -177,6 +177,192 @@ public class ToolsTests
         Assert.Equal(sfnt.ToArray(), Fonts.FromWoff(woff));
     }
 
+
+    private static string RepoFile(params string[] parts)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "tests", "Overdesk.Tests", "Fixtures"))) dir = dir.Parent;
+        return Path.Combine(new[] { dir!.FullName }.Concat(parts).ToArray());
+    }
+
+    private static byte[] SilkscreenTtf => File.ReadAllBytes(RepoFile("src", "Overdesk.App", "Assets", "Fonts", "Silkscreen-Regular.ttf"));
+    private static byte[] Woff2Fixture(string name) => File.ReadAllBytes(RepoFile("tests", "Overdesk.Tests", "Fixtures", name));
+
+    /// <summary>Table tag → (checksum from the directory, data).</summary>
+    private static Dictionary<string, (uint Checksum, byte[] Data)> SfntTables(byte[] sfnt)
+    {
+        int count = BinaryPrimitives.ReadUInt16BigEndian(sfnt.AsSpan(4));
+        var tables = new Dictionary<string, (uint, byte[])>(StringComparer.Ordinal);
+        for (var i = 0; i < count; i++)
+        {
+            var record = sfnt.AsSpan(12 + i * 16);
+            var offset = (int)BinaryPrimitives.ReadUInt32BigEndian(record[8..]);
+            var length = (int)BinaryPrimitives.ReadUInt32BigEndian(record[12..]);
+            tables[System.Text.Encoding.ASCII.GetString(record[..4])] = (BinaryPrimitives.ReadUInt32BigEndian(record[4..]), sfnt.AsSpan(offset, length).ToArray());
+        }
+        return tables;
+    }
+
+    /// <summary>Every glyph as text (contours, bbox, points with on-curve/overlap flags, instructions, composite records), to compare fonts.</summary>
+    private static List<string> Glyphs(byte[] sfnt)
+    {
+        var tables = SfntTables(sfnt);
+        var longLoca = BinaryPrimitives.ReadInt16BigEndian(tables["head"].Data.AsSpan(50)) == 1;
+        int numGlyphs = BinaryPrimitives.ReadUInt16BigEndian(tables["maxp"].Data.AsSpan(4));
+        var loca = tables["loca"].Data;
+        var glyf = tables["glyf"].Data;
+        int Offset(int g) => longLoca ? (int)BinaryPrimitives.ReadUInt32BigEndian(loca.AsSpan(g * 4)) : BinaryPrimitives.ReadUInt16BigEndian(loca.AsSpan(g * 2)) * 2;
+        var result = new List<string>();
+        for (var g = 0; g < numGlyphs; g++)
+        {
+            var start = Offset(g);
+            if (Offset(g + 1) - start < 10) { result.Add("empty"); continue; }
+            var d = glyf.AsSpan(start, Offset(g + 1) - start).ToArray();
+            var contours = BinaryPrimitives.ReadInt16BigEndian(d);
+            var text = new System.Text.StringBuilder($"{contours} bbox {string.Join(',', Enumerable.Range(1, 4).Select(i => BinaryPrimitives.ReadInt16BigEndian(d.AsSpan(i * 2))))}");
+            var at = 10;
+            if (contours < 0)
+            {
+                var flags = 0x20;
+                var haveInstructions = false;
+                while ((flags & 0x20) != 0)
+                {
+                    flags = BinaryPrimitives.ReadUInt16BigEndian(d.AsSpan(at));
+                    haveInstructions |= (flags & 0x100) != 0;
+                    at += 4 + ((flags & 1) != 0 ? 4 : 2) + ((flags & 8) != 0 ? 2 : (flags & 0x40) != 0 ? 4 : (flags & 0x80) != 0 ? 8 : 0);
+                }
+                text.Append(" records ").Append(Convert.ToHexString(d, 10, at - 10));
+                if (haveInstructions) text.Append(" instr ").Append(Convert.ToHexString(d, at + 2, BinaryPrimitives.ReadUInt16BigEndian(d.AsSpan(at))));
+                result.Add(text.ToString());
+                continue;
+            }
+            var ends = Enumerable.Range(0, contours).Select(i => (int)BinaryPrimitives.ReadUInt16BigEndian(d.AsSpan(at + i * 2))).ToList();
+            at += contours * 2;
+            var total = contours == 0 ? 0 : ends[^1] + 1;
+            int instructions = BinaryPrimitives.ReadUInt16BigEndian(d.AsSpan(at));
+            at += 2;
+            text.Append(" ends ").Append(string.Join(',', ends)).Append(" instr ").Append(Convert.ToHexString(d, at, instructions));
+            at += instructions;
+            var pointFlags = new byte[total];
+            for (var p = 0; p < total;)
+            {
+                var f = d[at++];
+                pointFlags[p++] = f;
+                if ((f & 8) != 0) { int repeat = d[at++]; while (repeat-- > 0) pointFlags[p++] = f; }
+            }
+            var xs = new int[total];
+            var ys = new int[total];
+            var v = 0;
+            for (var p = 0; p < total; p++)
+            {
+                var f = pointFlags[p];
+                if ((f & 2) != 0) { v += (f & 0x10) != 0 ? d[at] : -d[at]; at++; }
+                else if ((f & 0x10) == 0) { v += BinaryPrimitives.ReadInt16BigEndian(d.AsSpan(at)); at += 2; }
+                xs[p] = v;
+            }
+            v = 0;
+            for (var p = 0; p < total; p++)
+            {
+                var f = pointFlags[p];
+                if ((f & 4) != 0) { v += (f & 0x20) != 0 ? d[at] : -d[at]; at++; }
+                else if ((f & 0x20) == 0) { v += BinaryPrimitives.ReadInt16BigEndian(d.AsSpan(at)); at += 2; }
+                ys[p] = v;
+            }
+            text.Append(" points ").Append(string.Join(' ', Enumerable.Range(0, total).Select(p => $"{xs[p]},{ys[p]},{pointFlags[p] & 0x41}")));
+            result.Add(text.ToString());
+        }
+        return result;
+    }
+
+    [Fact]
+    public void Woff2_with_transformed_glyf_decodes_to_a_font_skia_loads()
+    {
+        var ttf = Fonts.FromWoff2(Woff2Fixture("silkscreen-glyf.woff2"));
+        var tables = SfntTables(ttf);
+        Assert.Equal(new[] { "GDEF", "GPOS", "GSUB", "OS/2", "cmap", "cvt ", "fpgm", "gasp", "glyf", "head", "hhea", "hmtx", "loca", "maxp", "name", "post", "prep" },
+            tables.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(228, BinaryPrimitives.ReadUInt16BigEndian(tables["maxp"].Data.AsSpan(4)));
+        uint sum = 0;
+        for (var i = 0; i < ttf.Length; i += 4) sum += BinaryPrimitives.ReadUInt32BigEndian(ttf.AsSpan(i));
+        Assert.Equal(0xB1B0AFBAu, sum);
+        using var typeface = SKTypeface.FromStream(new MemoryStream(ttf));
+        Assert.NotNull(typeface);
+        Assert.Equal("Silkscreen", typeface.FamilyName);
+        Assert.Equal(228, typeface.GlyphCount);
+    }
+
+    [Fact]
+    public void Woff2_without_transforms_keeps_every_table_byte_for_byte()
+    {
+        var original = SfntTables(SilkscreenTtf);
+        var decoded = SfntTables(Fonts.FromWoff2(Woff2Fixture("silkscreen-plain.woff2")));
+        Assert.Equal(original.Keys.Order(StringComparer.Ordinal), decoded.Keys.Order(StringComparer.Ordinal));
+        foreach (var (tag, (checksum, data)) in original)
+        {
+            if (tag == "head")
+            {
+                // The encoder stamps "modified" and sets flags bit 11 (lossless transform); checkSumAdjustment is recomputed.
+                static byte[] Masked(byte[] head)
+                {
+                    var copy = (byte[])head.Clone();
+                    Array.Clear(copy, 8, 4);
+                    copy[16] &= 0xF7;
+                    Array.Clear(copy, 28, 8);
+                    return copy;
+                }
+                Assert.Equal(Masked(data), Masked(decoded[tag].Data));
+                continue;
+            }
+            Assert.Equal(data, decoded[tag].Data);
+            Assert.Equal(checksum, decoded[tag].Checksum);
+        }
+    }
+
+    [Fact]
+    public void Woff2_glyf_and_hmtx_transforms_rebuild_the_original_outlines_and_metrics()
+    {
+        var original = SilkscreenTtf;
+        var glyfVariant = Fonts.FromWoff2(Woff2Fixture("silkscreen-glyf.woff2"));
+        var hmtxVariant = Fonts.FromWoff2(Woff2Fixture("silkscreen-hmtx.woff2"));
+        var expected = Glyphs(original);
+        Assert.Equal(228, expected.Count);
+        Assert.Contains(expected, g => g.StartsWith("-1 ", StringComparison.Ordinal));
+        Assert.Equal(expected, Glyphs(glyfVariant));
+        Assert.Equal(expected, Glyphs(hmtxVariant));
+        Assert.Equal(SfntTables(original)["hmtx"].Data, SfntTables(glyfVariant)["hmtx"].Data);
+        Assert.Equal(SfntTables(original)["hmtx"].Data, SfntTables(hmtxVariant)["hmtx"].Data);
+        using var typeface = SKTypeface.FromStream(new MemoryStream(hmtxVariant));
+        Assert.Equal("Silkscreen", typeface!.FamilyName);
+    }
+
+    [Fact]
+    public async Task Woff2_converts_to_ttf_and_to_woff_through_the_engine()
+    {
+        using var dir = new TempFolder();
+        var woff2 = Path.Combine(dir.Path, "silkscreen.woff2");
+        File.Copy(RepoFile("tests", "Overdesk.Tests", "Fixtures", "silkscreen-glyf.woff2"), woff2);
+        Assert.Equal(new[] { "ttf", "woff" }, Engine.TargetsFor(woff2).Take(2));
+        var ttf = await Engine.ConvertAsync(woff2, "ttf", new ConvertOptions(), null, CancellationToken.None);
+        var woff = await Engine.ConvertAsync(woff2, "woff", new ConvertOptions(), null, CancellationToken.None);
+        Assert.Equal(File.ReadAllBytes(ttf), Fonts.FromWoff(File.ReadAllBytes(woff)));
+        Assert.Equal("ttf", Fonts.WoffFlavor(woff));
+        Assert.Equal(File.ReadAllBytes(ttf), Fonts.FromWoff(File.ReadAllBytes(woff2)));
+    }
+
+    [Fact]
+    public void Unsupported_and_damaged_woff2_files_are_refused_with_a_reason()
+    {
+        var collection = Woff2Fixture("silkscreen-glyf.woff2");
+        BinaryPrimitives.WriteUInt32BigEndian(collection.AsSpan(4), 0x74746366);
+        Assert.Contains("collections", Assert.Throws<InvalidOperationException>(() => Fonts.FromWoff2(collection)).Message);
+        Assert.Contains("Not a WOFF2", Assert.Throws<InvalidOperationException>(() => Fonts.FromWoff2(collection[..20])).Message);
+        var cut = Woff2Fixture("silkscreen-glyf.woff2")[..200];
+        Assert.Contains("damaged", Assert.Throws<InvalidOperationException>(() => Fonts.FromWoff2(cut)).Message);
+        var corrupt = Woff2Fixture("silkscreen-glyf.woff2");
+        for (var i = 400; i < 600; i++) corrupt[i] ^= 0x5A;
+        Assert.Contains("damaged", Assert.Throws<InvalidOperationException>(() => Fonts.FromWoff2(corrupt)).Message);
+    }
+
     // ---------------------------------------------------------------- 3D models
 
     [Fact]
@@ -408,5 +594,35 @@ public class ToolsTests
         Assert.True(blurred[8 * 16 + 8] < 1);
         Assert.True(blurred[8 * 16 + 9] > 0);
         Assert.Equal(input, Maps.Blur(input, 16, 16, 0, wrap: false));
+    }
+
+    [Fact]
+    public void Texture_preview_blur_softens_like_the_full_size_export()
+    {
+        // The same stripes at preview (320 px) and export (1024 px) size with the default "Detail blur": the height map
+        // must lose a similar share of its contrast at both sizes, and the preview must not come out unblurred.
+        static (double Before, double After) Contrast(int size)
+        {
+            var values = new float[size * size];
+            for (var y = 0; y < size; y++)
+                for (var x = 0; x < size; x++) values[y * size + x] = x * 16 / size % 2;
+            var source = new TextureSource { Width = size, Height = size, R = values, G = values, B = values, A = Enumerable.Repeat(1f, values.Length).ToArray() };
+            var blurred = Maps.Generate(source, new MapSettings(), new[] { MapKind.Height })[MapKind.Height];
+            var flat = Maps.Generate(source, new MapSettings { HeightBlur = 0 }, new[] { MapKind.Height })[MapKind.Height];
+            static double Spread(byte[] rgba)
+            {
+                var v = Enumerable.Range(0, rgba.Length / 4).Select(i => (double)rgba[i * 4]).ToList();
+                var m = v.Average();
+                return Math.Sqrt(v.Average(x => (x - m) * (x - m)));
+            }
+            return (Spread(flat), Spread(blurred));
+        }
+        var preview = Contrast(320);
+        var export = Contrast(1024);
+        Assert.True(preview.After < preview.Before, "the preview blur must do something");
+        var previewLoss = 1 - preview.After / preview.Before;
+        var exportLoss = 1 - export.After / export.Before;
+        // A sub-pixel radius cannot be blurred exactly on the pixel grid (measured: 4.6 % against 3.5 %), but it must stay in the same range.
+        Assert.True(Math.Abs(previewLoss - exportLoss) < 0.5 * exportLoss, $"preview loses {previewLoss:P1}, export {exportLoss:P1}");
     }
 }

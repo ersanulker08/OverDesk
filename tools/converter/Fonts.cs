@@ -5,13 +5,13 @@ namespace Overdesk.Tool.Converter;
 
 /// <summary>
 /// Web fonts: TTF / OTF into WOFF (each table zlib-compressed, as the WOFF 1.0 spec says) and WOFF back into the
-/// TTF or OTF it was made from. The font data itself is copied byte for byte.
+/// TTF or OTF it was made from. The font data itself is copied byte for byte. WOFF2 is decoded in Fonts.Woff2.cs.
 /// </summary>
-public static class Fonts
+public static partial class Fonts
 {
     private const uint OtfFlavor = 0x4F54544F; // "OTTO": CFF outlines
 
-    /// <summary>"otf" or "ttf": what a WOFF file unpacks to. A file that is too short or unreadable counts as "ttf".</summary>
+    /// <summary>"otf" or "ttf": what a WOFF or WOFF2 file unpacks to. A file that is too short or unreadable counts as "ttf".</summary>
     public static string WoffFlavor(string path)
     {
         Span<byte> header = stackalloc byte[8];
@@ -71,7 +71,7 @@ public static class Fonts
     public static byte[] FromWoff(byte[] woff)
     {
         var signature = woff.Length >= 4 ? BinaryPrimitives.ReadUInt32BigEndian(woff) : 0;
-        if (signature == 0x774F4632) throw new InvalidOperationException("WOFF2 fonts are not supported yet; only WOFF.");
+        if (signature == 0x774F4632) return FromWoff2(woff);
         if (woff.Length < 44 || signature != 0x774F4646) throw new InvalidOperationException("Not a WOFF font.");
         var flavor = BinaryPrimitives.ReadUInt32BigEndian(woff.AsSpan(4));
         int count = BinaryPrimitives.ReadUInt16BigEndian(woff.AsSpan(12));

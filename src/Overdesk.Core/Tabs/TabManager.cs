@@ -7,7 +7,19 @@ public sealed class TabManager : ObservableObject
 {
     private HostedTab? _active;
 
+    private const int ClosedLimit = 10;
+    private readonly List<ClosedTab> _closed = new();
+
     public ObservableCollection<HostedTab> Tabs { get; } = new();
+
+    /// <summary>The most recently closed program tab (not Overdesk's own pages), removed from the history; null when there is none.</summary>
+    public ClosedTab? PopClosed()
+    {
+        if (_closed.Count == 0) return null;
+        var last = _closed[^1];
+        _closed.RemoveAt(_closed.Count - 1);
+        return last;
+    }
 
     public HostedTab? Active
     {
@@ -56,6 +68,11 @@ public sealed class TabManager : ObservableObject
         var index = Tabs.IndexOf(tab);
         if (index < 0) return;
         Tabs.RemoveAt(index);
+        if (!tab.IsInternal)
+        {
+            _closed.Add(new ClosedTab(tab.ProgramPath, tab.Title, index));
+            if (_closed.Count > ClosedLimit) _closed.RemoveAt(0);
+        }
         if (ReferenceEquals(Active, tab))
             Active = Tabs.Count == 0 ? null : Tabs[Math.Max(index - 1, 0)];
     }
@@ -75,3 +92,6 @@ public sealed class TabManager : ObservableObject
         Activate(Tabs[i]);
     }
 }
+
+/// <summary>A closed program tab: what to reopen and where it sat in the tab row.</summary>
+public sealed record ClosedTab(string ProgramPath, string Title, int Index);

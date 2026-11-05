@@ -138,12 +138,16 @@ public static partial class Markdown
 
     [GeneratedRegex(@"<(script|style)[^>]*>.*?</\1>", RegexOptions.Singleline | RegexOptions.IgnoreCase)] private static partial Regex Scripts();
     [GeneratedRegex(@"<\s*(br|/p|/div|/h\d|/li|/tr)\b[^>]*>", RegexOptions.IgnoreCase)] private static partial Regex Breaks();
+    [GeneratedRegex(@"<\s*/t[dh]\b[^>]*>", RegexOptions.IgnoreCase)] private static partial Regex Cells();
+    [GeneratedRegex(@"<\s*li\b[^>]*>", RegexOptions.IgnoreCase)] private static partial Regex ListItems();
     [GeneratedRegex(@"<[^>]+>")] private static partial Regex Tags();
     [GeneratedRegex(@"\n{3,}")] private static partial Regex BlankLines();
 
     public static string HtmlToText(string html)
     {
         var text = Scripts().Replace(html, "");
+        text = Cells().Replace(text, "\t");
+        text = ListItems().Replace(text, "- ");
         text = Breaks().Replace(text, "\n");
         text = WebUtility.HtmlDecode(Tags().Replace(text, ""));
         return BlankLines().Replace(string.Join("\n", text.Split('\n').Select(l => l.Trim())), "\n\n").Trim() + "\n";

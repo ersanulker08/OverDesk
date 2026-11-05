@@ -29,16 +29,35 @@ public sealed class WorkLibrary
     {
         _works.Clear();
         if (!Directory.Exists(Folder)) return;
+        var found = new Dictionary<string, (Work Work, string File)>();
         foreach (var file in Directory.EnumerateFiles(Folder, "*.json"))
         {
             try
             {
-                if (JsonSerializer.Deserialize<Work>(File.ReadAllText(file)) is { } work && work.Id.Length > 0) _works.Add(work);
+                if (JsonSerializer.Deserialize<Work>(File.ReadAllText(file)) is not { } work || work.Id.Length == 0) continue;
+                if (!found.TryGetValue(work.Id, out var other))
+                {
+                    found[work.Id] = (work, file);
+                    continue;
+                }
+                // Two files claim one Id (a copied file): keep the newest, set the other aside.
+                var own = Path.GetFileName(file) == work.Id + ".json";
+                var keepNew = work.Updated > other.Work.Updated || (work.Updated == other.Work.Updated && own);
+                var loser = keepNew ? other.File : file;
+                try { File.Move(loser, loser + ".duplicate", overwrite: true); } catch (IOException) { }
+                if (keepNew) found[work.Id] = (work, file);
             }
             catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
             {
                 // A damaged file is left alone, never fatal.
             }
+        }
+        foreach (var (work, file) in found.Values)
+        {
+            _works.Add(work);
+            // A file under another name is moved to the Id's own name so edits and deletes hit the same file.
+            if (Path.GetFileName(file) != work.Id + ".json" && Write(work))
+                try { File.Move(file, file + ".duplicate", overwrite: true); } catch (IOException) { }
         }
     }
 

@@ -95,7 +95,7 @@ public static class WorkText
                 Flush();
                 rows.Add(new WorkBlock { Kind = BlockKind.Heading, Text = t[(heading + 1)..].Trim(), Level = Math.Min(heading, 3) });
             }
-            else if (t.StartsWith("- [ ] ", StringComparison.Ordinal) || t.StartsWith("- [x] ", StringComparison.OrdinalIgnoreCase))
+            else if (t.Length > 5 && (t[0] is '-' or '*' or '+') && t[1] == ' ' && t[2] == '[' && t[3] is ' ' or 'x' or 'X' && t[4] == ']' && t[5] == ' ')
             {
                 Flush();
                 rows.Add(new WorkBlock { Kind = BlockKind.Todo, Text = t[6..].Trim(), Checked = t[3] != ' ' });
@@ -104,6 +104,11 @@ public static class WorkText
             {
                 Flush();
                 rows.Add(new WorkBlock { Kind = BlockKind.Bullet, Text = t[2..].Trim() });
+            }
+            else if (IsNumberedItem(t))
+            {
+                Flush();
+                rows.Add(new WorkBlock { Kind = BlockKind.Bullet, Text = t });
             }
             else if (t.StartsWith('>'))
             {
@@ -120,6 +125,12 @@ public static class WorkText
         Flush();
         if (rows.Count == 0) rows.Add(new WorkBlock());
         return rows;
+    }
+
+    private static bool IsNumberedItem(string t)
+    {
+        var digits = t.TakeWhile(char.IsAsciiDigit).Count();
+        return digits is > 0 and < 4 && t.Length > digits + 1 && t[digits] is '.' or ')' && t[digits + 1] == ' ';
     }
 
     /// <summary>Rows from [{kind, text, value, checked, number, level}, ...]; plain strings become text rows.</summary>

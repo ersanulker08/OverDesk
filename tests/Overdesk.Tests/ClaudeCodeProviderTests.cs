@@ -11,7 +11,8 @@ public class ClaudeCodeProviderTests
         File.WriteAllText(path, "#!/bin/bash\n" +
                                 $"printf '%s\\n' \"$@\" > '{dir.Path}/args.txt'\n" +
                                 $"cat > '{dir.Path}/stdin.txt'\n" + body + "\n");
-        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         return path;
     }
 

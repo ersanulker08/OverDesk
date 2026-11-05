@@ -242,7 +242,9 @@ public partial class MainWindow
         => Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" ? uri.GetLeftPart(UriPartial.Authority) : url;
 
     /// <summary>"+" in the strip: known services that are not pinned yet, or any website.</summary>
-    private void ShowAddSiteMenu()
+    private void ShowAddSiteMenu() => ShowAddSiteMenu(AddSiteButton);
+
+    private void ShowAddSiteMenu(Control anchor)
     {
         var panel = new StackPanel { Spacing = 10, Width = 320 };
         panel.Children.Add(new TextBlock { Text = "ADD TO THE WEB STRIP", Classes = { "eyebrow" }, FontSize = 9.5 });
@@ -256,6 +258,7 @@ public partial class MainWindow
                 _settings.WebPins.Add(new WebPin { Service = service.Id });
                 SaveSettings();
                 BuildWebPills();
+                Settings.RefreshWebPins();
                 flyout?.Hide();
             };
             grid.Children.Add(chip);
@@ -272,6 +275,7 @@ public partial class MainWindow
             _settings.WebPins.Add(new WebPin { Url = url, Name = string.IsNullOrWhiteSpace(name.Text) ? new Uri(url).Host : name.Text.Trim() });
             SaveSettings();
             BuildWebPills();
+            Settings.RefreshWebPins();
             flyout?.Hide();
         }
         add.Click += (_, _) => AddCustom();
@@ -281,7 +285,7 @@ public partial class MainWindow
         panel.Children.Add(add);
 
         flyout = new Flyout { Content = panel, Placement = PlacementMode.BottomEdgeAlignedLeft };
-        flyout.ShowAt(AddSiteButton);
+        flyout.ShowAt(anchor);
     }
 
     // ---------------------------------------------------------------- tabs

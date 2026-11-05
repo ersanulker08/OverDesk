@@ -26,7 +26,7 @@ public class DataBackupTests
         Assert.Equal("Cyber", settings.AccentTheme);
         Assert.True(File.Exists(Path.Combine(target.Path, "works", "a.json")));
         Assert.False(File.Exists(Path.Combine(target.Path, "works", "old.json")));
-        Assert.True(File.Exists(Path.Combine(target.Path, ".before-restore", "works", "old.json")));
+        Assert.Single(Directory.GetFiles(target.Path, "old.json", SearchOption.AllDirectories), f => f.Contains(".before-restore-"));
         Assert.False(DataBackup.HasPending(target.Path));
     }
 

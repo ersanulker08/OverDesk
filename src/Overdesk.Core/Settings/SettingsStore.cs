@@ -16,26 +16,48 @@ public sealed class SettingsStore
     public static string DefaultDirectory()
         => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Overdesk");
 
+    /// <summary>Set when settings.json exists but could not be read (locked, not corrupt); saving is skipped so it is not overwritten.</summary>
+    public bool ReadFailed { get; private set; }
+
+    /// <summary>The error from a restore that could not be applied at start, if any.</summary>
+    public string? RestoreError { get; private set; }
+
     public AppSettings Load()
     {
         // A backup restored last time is applied now, before anything reads the data folder.
         try { DataBackup.ApplyPending(Directory); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* keep the current data */ }
-        try
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { RestoreError = ex.Message; }
+        ReadFailed = false;
+        for (var attempt = 1; ; attempt++)
         {
-            if (File.Exists(FilePath))
+            try
+            {
+                if (!File.Exists(FilePath)) return new AppSettings();
                 return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath)) ?? new AppSettings();
+            }
+            catch (FileNotFoundException)
+            {
+                return new AppSettings();
+            }
+            catch (JsonException)
+            {
+                // Keep the unreadable file around for inspection and start fresh.
+                try { File.Move(FilePath, FilePath + ".broken", overwrite: true); } catch (IOException) { }
+                return new AppSettings();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Probably locked for a moment (sync, antivirus): the file is fine, so never rename or overwrite it.
+                if (attempt < 4) { Thread.Sleep(150); continue; }
+                ReadFailed = true;
+                return new AppSettings();
+            }
         }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
-        {
-            // Keep the unreadable file around for inspection and start fresh.
-            try { File.Move(FilePath, FilePath + ".broken", overwrite: true); } catch (IOException) { }
-        }
-        return new AppSettings();
     }
 
     public void Save(AppSettings settings)
     {
+        if (ReadFailed) return;
         try
         {
             System.IO.Directory.CreateDirectory(Directory);

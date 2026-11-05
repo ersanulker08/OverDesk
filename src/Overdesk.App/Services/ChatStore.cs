@@ -64,7 +64,10 @@ internal sealed class ChatStore
                 Folder = thread.Folder, Updated = thread.Updated,
                 Turns = thread.Turns.Where(t => !t.IsStreaming).Select(t => new AiTurn { Role = t.Role, Text = t.Text, Error = t.Error, Actions = t.Actions.ToList() }).ToList(),
             };
-            File.WriteAllText(Path.Combine(_folder, thread.Id + ".json"), JsonSerializer.Serialize(copy, Json));
+            var path = Path.Combine(_folder, thread.Id + ".json");
+            var tmp = path + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(copy, Json));
+            File.Move(tmp, path, overwrite: true);
         }
         catch (Exception) { /* history is a convenience */ }
     }

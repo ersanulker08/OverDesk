@@ -109,7 +109,7 @@ The same command works on macOS and Windows. Each OS builds its own flavor autom
 
 Both are self-contained, so no .NET install is needed to run them.
 Pushing a version tag (`git tag v0.2.0 && git push origin v0.2.0`) builds both (Apple Silicon + Intel, x64 + ARM64)
-in CI and attaches them to a draft GitHub release (the version in the files comes from the tag). Publish the draft by hand after trying the installers.
+in CI and publishes them as a GitHub release (the version in the files comes from the tag).
 
 ### macOS permissions
 

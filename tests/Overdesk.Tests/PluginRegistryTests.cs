@@ -3,7 +3,7 @@ using Overdesk.Core.Plugins;
 
 namespace Overdesk.Tests;
 
-public class PluginRegistryTests
+public class PluginLoadingTests
 {
     private static void Manifest(TempFolder root, string folder, string json) => root.Write($"{folder}/{PluginManifest.FileName}", json);
 

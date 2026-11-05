@@ -150,7 +150,10 @@ public partial class SettingsView : UserControl
     public void Refresh()
     {
         if (!IsVisible) return;
+        Waves.IsAnimated = _settings.AnimatedBackground;
         LoadToggles();
+        BuildThemeCards();
+        BuildStyleCards();
         BuildGaugeChips();
         UpdatePermission();
     }
@@ -352,10 +355,12 @@ public partial class SettingsView : UserControl
         GaugeChips.Children.Clear();
         foreach (var info in SystemStatsService.Catalog.Where(m => !m.WindowsOnly || OperatingSystem.IsWindows()))
         {
-            var available = IsGaugeAvailable?.Invoke(info.Id) ?? true;
+            var selected = _settings.DockMetrics.Contains(info.Id);
+            var measurable = IsGaugeAvailable?.Invoke(info.Id) ?? true;
+            var available = measurable || selected; // a chosen gauge can always be switched off
             var text = new StackPanel { Spacing = 1 };
             text.Children.Add(new TextBlock { Text = info.Label, FontWeight = FontWeight.SemiBold, FontSize = 12.5 });
-            text.Children.Add(new TextBlock { Text = available ? info.Description : "Not available here", Classes = { "faint" }, FontSize = 11 });
+            text.Children.Add(new TextBlock { Text = measurable ? info.Description : "Not available here", Classes = { "faint" }, FontSize = 11 });
             var chip = new ToggleButton
             {
                 Classes = { "gaugechip" }, Content = text, IsEnabled = available,

@@ -108,6 +108,7 @@ public partial class HomeView : UserControl
 
     public void FocusSearch()
     {
+        ShowWorksTab(false);
         SearchBox.Focus();
         SearchBox.SelectAll();
     }

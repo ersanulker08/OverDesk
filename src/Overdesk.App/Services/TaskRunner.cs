@@ -92,6 +92,9 @@ internal sealed class TaskRunner
             task.Append("✗ could not start: " + ex.Message);
         }
         Tasks.Insert(0, task);
+        const int KeepFinished = 40;
+        for (var i = Tasks.Count - 1; i >= 0 && Tasks.Count(t => !t.IsRunning) > KeepFinished; i--)
+            if (!Tasks[i].IsRunning) { Tasks[i].Process?.Dispose(); Tasks.RemoveAt(i); }
         NotifyChanged();
         return task;
     }
@@ -112,6 +115,7 @@ internal sealed class TaskRunner
     {
         Stop(task);
         Tasks.Remove(task);
+        if (!task.IsRunning) task.Process?.Dispose();
         NotifyChanged();
     }
 

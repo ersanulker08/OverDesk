@@ -487,18 +487,25 @@ public partial class SideDock
             var button = new Button { Classes = { "dockrow" }, Content = row };
             ToolTip.SetTip(button, c["Ports"]?.ToString() is { Length: > 0 } ports ? ports : name);
             var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            button.Click += (_, _) => _actions?.RunCommand($"docker logs --tail 200 -f {name}", home);
+            button.Click += (_, _) => ShowLogs(name, home);
             button.ContextMenu = new ContextMenu
             {
                 ItemsSource = new Control[]
                 {
-                    MenuItem("Logs", "IconTerminal", () => _actions?.RunCommand($"docker logs --tail 200 -f {name}", home)),
+                    MenuItem("Logs", "IconTerminal", () => ShowLogs(name, home)),
                     MenuItem(up ? "Stop" : "Start", up ? "IconStop" : "IconPlay", () => _actions?.RunCommand($"docker {(up ? "stop" : "start")} {name}", home)),
                     MenuItem("Restart", "IconRefresh", () => _actions?.RunCommand($"docker restart {name}", home)),
                 },
             };
             DockerBody.Children.Add(button);
         }
+    }
+
+    private void ShowLogs(string container, string home)
+    {
+        var command = $"docker logs --tail 200 -f {container}";
+        if (_runner?.Tasks.FirstOrDefault(t => t.IsRunning && t.Command == command) is { } follower) _actions?.ShowTask(follower);
+        else _actions?.RunCommand(command, home);
     }
 
     // ---------------------------------------------------------------- snippets
@@ -540,6 +547,7 @@ public partial class SideDock
     private void PinSnippet(string text)
     {
         var name = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        _settings.Snippets.RemoveAll(sn => sn.Text == text);
         _settings.Snippets.Insert(0, new Snippet { Name = name.Length > 48 ? name[..47] + "…" : name, Text = text });
         SettingsChanged?.Invoke();
         RenderSnippets();

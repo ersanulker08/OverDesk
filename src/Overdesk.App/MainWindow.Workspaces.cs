@@ -17,7 +17,7 @@ namespace Overdesk.App;
 /// </summary>
 public partial class MainWindow
 {
-    private readonly Dictionary<string, (List<HostedTab> Tabs, HostedTab? Active)> _workspaceTabs = new();
+    private readonly Dictionary<string, (List<HostedTab> Tabs, HostedTab? Active, WebTab? Web)> _workspaceTabs = new();
     private bool _switchingWorkspace;
 
     private Workspace CurrentWorkspace
@@ -42,13 +42,27 @@ public partial class MainWindow
     /// <summary>Restore the active workspace's tabs at startup.</summary>
     private void RestoreWorkspaceTabs()
     {
+        if (!_settings.RestoreTabs)
+            foreach (var w in _settings.Workspaces)
+            {
+                w.Tabs.Clear();
+                w.ActiveTab = -1;
+            }
         var ws = CurrentWorkspace;
-        if (!_settings.RestoreTabs) ws.Tabs.Clear();
         var tabs = BuildTabs(ws);
         _switchingWorkspace = true; // do not save the half-filled row while it loads
-        try { _tabs.Load(tabs, ws.ActiveTab >= 0 && ws.ActiveTab < tabs.Count ? tabs[ws.ActiveTab] : null); }
+        try { _tabs.Load(tabs, SavedActiveTab(ws, tabs)); }
         finally { _switchingWorkspace = false; }
     }
+
+    /// <summary>The saved index counts programs BuildTabs may have dropped, so look the tab up by its path.</summary>
+    private static HostedTab? SavedActiveTab(Workspace ws, List<HostedTab> tabs)
+        => ws.ActiveTab >= 0 && ws.ActiveTab < ws.Tabs.Count ? tabs.FirstOrDefault(t => t.ProgramPath == ws.Tabs[ws.ActiveTab]) : null;
+
+    /// <summary>A tab by its embedding key, wherever it is: the current row or a parked workspace.</summary>
+    private HostedTab? TabByKey(string key)
+        => _tabs.Tabs.Concat(_workspaceTabs.Where(w => w.Key != _settings.ActiveWorkspace).SelectMany(w => w.Value.Tabs))
+            .FirstOrDefault(t => TabKey(t) == key);
 
     private static List<HostedTab> BuildTabs(Workspace ws)
         => ws.Tabs.Where(p => File.Exists(p) || Directory.Exists(p)).Select(p => new HostedTab(p)).ToList();
@@ -71,18 +85,23 @@ public partial class MainWindow
 
         // Park the current row: its programs stay running but out of sight.
         foreach (var t in _tabs.Tabs) _embedding.SetVisible(TabKey(t), false);
-        _workspaceTabs[from.Id] = (_tabs.Tabs.ToList(), _tabs.Active);
+        _workspaceTabs[from.Id] = (_tabs.Tabs.ToList(), _tabs.Active, _activeWeb);
 
+        WebTab? web = null;
         _switchingWorkspace = true;
         try
         {
             _settings.ActiveWorkspace = target.Id;
             _activeWeb = null;
-            if (_workspaceTabs.TryGetValue(target.Id, out var parked)) _tabs.Load(parked.Tabs, parked.Active);
+            if (_workspaceTabs.TryGetValue(target.Id, out var parked))
+            {
+                _tabs.Load(parked.Tabs, parked.Active);
+                web = parked.Web;
+            }
             else
             {
                 var tabs = BuildTabs(target);
-                _tabs.Load(tabs, target.ActiveTab >= 0 && target.ActiveTab < tabs.Count ? tabs[target.ActiveTab] : null);
+                _tabs.Load(tabs, SavedActiveTab(target, tabs));
             }
         }
         finally
@@ -93,6 +112,7 @@ public partial class MainWindow
         OnActiveTabChanged();
         UpdateTabContent();
         BuildWebPills();
+        if (web is not null && _webTabs.Contains(web)) ShowWeb(web); // the site this workspace had on stage
         UpdateWorkspaceButton();
         SaveSettings();
         ShowToast($"Workspace: {target.Name}", "IconTabs");
@@ -247,7 +267,7 @@ public partial class MainWindow
         if (_settings.Workspaces.Count <= 1) return;
         if (ws.Id == CurrentWorkspace.Id) SwitchWorkspace(_settings.Workspaces.First(w => w.Id != ws.Id));
         if (_workspaceTabs.Remove(ws.Id, out var parked))
-            foreach (var t in parked.Tabs) _embedding.Stop(TabKey(t));
+            foreach (var t in parked.Tabs) ReleaseTab(t);
         _settings.Workspaces.Remove(ws);
         SaveSettings();
         ShowToast($"Deleted {ws.Name}", "IconClose");

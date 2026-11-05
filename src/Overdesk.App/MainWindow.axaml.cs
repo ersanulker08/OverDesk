@@ -20,6 +20,10 @@ namespace Overdesk.App;
 public partial class MainWindow : Window
 {
     private const double MinToolPanelWidth = 240;
+    private const double MinTabWidth = 72;
+    private const double NormalTabMinWidth = 128;
+    private const double MaxTabWidth = 230;
+    private const double TabGap = 4;
     private const double MacTrafficLightsWidth = 78;
     private const double WindowsCaptionWidth = 140;
 
@@ -32,6 +36,11 @@ public partial class MainWindow : Window
     private readonly Overdesk.Core.Platform.ISecretStore _secrets = PlatformFactory.CreateSecrets();
     private readonly Overdesk.Core.Platform.IDesktopServices _desktop = PlatformFactory.CreateDesktop();
     private CancellationTokenSource? _toastHide;
+    private int _toastFades;
+    private bool _dropShown;
+    private int _dropFades;
+    // Keeps bursts (tab clicks, drag steps, workspace loads) from rewriting settings.json on the UI thread each time.
+    private readonly DispatcherTimer _saveSoon = new() { Interval = TimeSpan.FromMilliseconds(300) };
     private readonly TabManager _tabs = new();
     private readonly PluginRegistry _plugins = new();
     private readonly EmbeddingService _embedding = new(PlatformFactory.CreateEmbedder());
@@ -47,6 +56,8 @@ public partial class MainWindow : Window
     private bool _opened;
     private bool _browsing;
     private bool _keepOverdeskFocused;
+    private bool _resumeTyping;
+    private bool _handingToProgram;
     private bool _focusMode;
     private int _badgeTicks;
     private bool _dockBeforeFocus = true;
@@ -174,7 +185,14 @@ public partial class MainWindow : Window
         {
             if (e.PropertyName == nameof(TabManager.Active)) OnActiveTabChanged();
         };
-        _tabs.Tabs.CollectionChanged += (_, _) => SaveSettings();
+        _tabs.Tabs.CollectionChanged += (_, _) =>
+        {
+            FitTabs();
+            SaveSettingsSoon();
+        };
+        TabRow.SizeChanged += (_, _) => FitTabs();
+        ScrollSidewaysWithWheel(TabScroller);
+        _saveSoon.Tick += (_, _) => SaveSettings();
         InitializeWorks();
         _plugins.Tools.CollectionChanged += (_, _) => RebuildToolStrip();
 
@@ -187,7 +205,12 @@ public partial class MainWindow : Window
         Opened += OnOpened;
         Closing += OnClosing;
         Activated += (_, _) => RaiseHostedWindow();
-        Deactivated += (_, _) => _keepOverdeskFocused = false;
+        Deactivated += (_, _) =>
+        {
+            _keepOverdeskFocused = false;
+            _resumeTyping = !_handingToProgram && FocusManager?.GetFocusedElement() is TextBox;
+            _handingToProgram = false;
+        };
         AddHandler(PointerPressedEvent, OnAnyPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
         // Follow Overdesk immediately when it moves or the content area changes size, not only on the timer.
         PositionChanged += (_, _) => SyncLayout();
@@ -223,6 +246,25 @@ public partial class MainWindow : Window
     internal string DevActiveStatus() => _tabs.Active is { } t ? $"{t.Status}{(t.Message is { } m ? " (" + m + ")" : "")}" : "none";
     internal void DevOpenPicker() => _ = AddProgramsAsync();
     internal void DevOpenPalette() => ShowPalette();
+    internal void DevRunPaletteItem(string title) => Palette.DevRun(title);
+    internal bool DevPickerOpen => Picker.IsVisible;
+    internal bool DevSettingsOpen => Settings.IsVisible;
+    internal void DevKey(Key key, KeyModifiers modifiers = KeyModifiers.Meta)
+        => OnKeyDown(new KeyEventArgs { RoutedEvent = KeyDownEvent, Key = key, KeyModifiers = modifiers });
+    internal string DevWebState() => $"open={_webTabs.Count} active={_activeWeb?.Title ?? "none"} addressFocused={WebAddress.IsFocused}";
+
+    /// <summary>Fill the row with tabs that start nothing, to preview a crowded top bar.</summary>
+    internal void DevCrowdTabs(int count)
+    {
+        for (var i = 1; i <= count; i++) _tabs.Add(HostedTab.WorkPath("snapshot-" + i), activate: i == count, title: "Crowded tab " + i);
+    }
+    internal void DevClearTabs()
+    {
+        foreach (var t in _tabs.Tabs.ToList()) CloseTab(t);
+    }
+    internal string DevTabRow() =>
+        $"tabs={_tabs.Tabs.Count} active={_tabs.Active?.Title ?? "none"} tool={(_toolPanelOpen ? _activeTool?.Id : "closed")} row={TabRow.Bounds.Width:F0} add={AddTabButton.Bounds.Right:F0} tabWidth={TabStrip.Resources["TabMaxWidth"]} " +
+        $"offset={TabScroller.Offset.X:F0} extent={TabScroller.Extent.Width:F0} viewport={TabScroller.Viewport.Width:F0}";
     internal void DevAskAi(string question) => OpenAi(question: question);
     internal string? DevOpenTool(string id)
     {
@@ -337,12 +379,17 @@ public partial class MainWindow : Window
         _plugins.Discover(PluginRoots());
         _plugins.AddUserTools(_settings.UserTools);
         RebuildToolStrip();
+        if (_settings.ToolsPanelOpen && _plugins.Tools.FirstOrDefault(t => t.Id == _settings.ActiveTool) is { } tool) OpenTool(tool);
+        Settings.PluginProblems = _plugins.Problems;
 
         RestoreWorkspaceTabs();
+        RestoreWebTabs();
 
         OnActiveTabChanged();
         UpdatePermissionBanner();
         _layoutTimer.Start();
+        if (_plugins.Problems.Count is > 0 and var problems)
+            ShowToast(problems == 1 ? "1 plugin problem, see Settings → Data" : $"{problems} plugin problems, see Settings → Data", "IconAlert");
     }
 
     private void OnClosing(object? sender, WindowClosingEventArgs e)
@@ -353,6 +400,7 @@ public partial class MainWindow : Window
         foreach (var cts in _tabStarts.Values.Concat(_toolStarts.Values)) cts.Cancel();
         _embedding.Dispose();
         _nowPlaying.Dispose();
+        _ai.Stop(); // an answer still running would keep its CLI process editing files with no window to show it
         _runner.StopAll();
         _stats.Dispose();
     }
@@ -372,11 +420,21 @@ public partial class MainWindow : Window
         yield return Path.Combine(_store.Directory, "plugins");
     }
 
+    private void SaveSettingsSoon()
+    {
+        _saveSoon.Stop();
+        _saveSoon.Start();
+    }
+
     private void SaveSettings()
     {
+        _saveSoon.Stop();
         if (!_opened) return;
         // Overdesk's own tab (settings) is not a program and is not restored.
         SaveWorkspaceTabs();
+        SaveWebTabs();
+        _settings.ToolsPanelOpen = _toolPanelOpen;
+        _settings.ActiveTool = _activeTool?.Id;
         _settings.UserTools = _plugins.Tools.Where(t => t.IsUserAdded)
             .Select(t => new UserTool { Name = t.Name, Path = t.Entry! }).ToList();
         if (_toolPanelOpen && ToolPanel.Bounds.Width >= MinToolPanelWidth)
@@ -435,7 +493,9 @@ public partial class MainWindow : Window
         var cts = _toastHide = new CancellationTokenSource();
         ToastText.Text = text;
         ToastIcon.Data = Res.Icon(iconKey);
-        if (!ToastHost.IsVisible)
+        var fade = ++_toastFades; // a fade-out still running must not swallow this toast
+        if (ToastHost.IsVisible) ToastHost.Opacity = 1;
+        else
         {
             ToastHost.IsVisible = true;
             Animator.Run(ToastHost, 0.22, t =>
@@ -447,14 +507,17 @@ public partial class MainWindow : Window
         }
         try { await Task.Delay(1800, cts.Token); }
         catch (TaskCanceledException) { return; }
-        Animator.Run(ToastHost, 0.2, t => ToastHost.Opacity = 1 - t, () =>
+        Animator.Run(ToastHost, 0.2, t =>
         {
-            if (!cts.IsCancellationRequested) ToastHost.IsVisible = false;
+            if (fade == _toastFades) ToastHost.Opacity = 1 - t;
+        }, () =>
+        {
+            if (fade == _toastFades) ToastHost.IsVisible = false;
         });
     }
 
     /// <summary>True while an in-window dialog covers the content; hosted windows are hidden meanwhile.</summary>
-    private bool OverlayOpen => Picker.IsVisible || Palette.IsVisible || TaskLog.IsVisible;
+    private bool OverlayOpen => Picker.IsVisible || (Palette.IsVisible && !Palette.IsClosing) || TaskLog.IsVisible;
 
     private Task AddProgramsAsync()
     {
@@ -511,7 +574,7 @@ public partial class MainWindow : Window
         _tabs.ShowHome();
         UpdateTabContent();
         BuildWebPills();
-        SaveSettings();
+        SaveSettingsSoon();
     }
 
     private void TogglePin(string path)
@@ -527,10 +590,16 @@ public partial class MainWindow : Window
         Home.RebuildTiles();
     }
 
-    private void CloseTab(HostedTab tab)
+    /// <summary>Stop what runs behind a tab, including a program that is still starting.</summary>
+    private void ReleaseTab(HostedTab tab)
     {
         if (_tabStarts.Remove(tab.Id, out var cts)) cts.Cancel();
         _embedding.Stop(TabKey(tab));
+    }
+
+    private void CloseTab(HostedTab tab)
+    {
+        ReleaseTab(tab);
         _tabs.Close(tab);
         UpdateTabContent();
         SaveSettings();
@@ -600,7 +669,9 @@ public partial class MainWindow : Window
             BuildWebPills();
         }
         UpdateTabContent();
-        SaveSettings();
+        SaveSettingsSoon();
+        if (_tabs.Active is { } shown)
+            Dispatcher.UIThread.Post(() => TabStrip.ContainerFromItem(shown)?.BringIntoView(), DispatcherPriority.Background);
         if (_tabs.Active is { Status: TabStatus.Running, IsInternal: false }) PulseStage();
         if (_tabs.Active is { Status: TabStatus.Starting } tab && !_tabStarts.ContainsKey(tab.Id))
             _ = StartTabAsync(tab);
@@ -633,6 +704,8 @@ public partial class MainWindow : Window
             var owner = this.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
             await _embedding.StartAsync(TabKey(tab), tab.ProgramPath, owner, cts.Token);
             tab.Status = TabStatus.Running;
+            // Its workspace was parked while it started: the window waits out of sight like the rest of that row.
+            if (!_tabs.Tabs.Contains(tab)) _embedding.SetVisible(TabKey(tab), false);
         }
         catch (OperationCanceledException)
         {
@@ -668,8 +741,7 @@ public partial class MainWindow : Window
 
     private void RestartTab(HostedTab tab)
     {
-        if (_tabStarts.Remove(tab.Id, out var cts)) cts.Cancel();
-        _embedding.Stop(TabKey(tab));
+        ReleaseTab(tab);
         tab.Status = TabStatus.Starting;
         tab.Message = null;
         if (ReferenceEquals(_tabs.Active, tab)) _ = StartTabAsync(tab);
@@ -682,8 +754,7 @@ public partial class MainWindow : Window
 
         if (key.StartsWith("tab:", StringComparison.Ordinal))
         {
-            var tab = _tabs.Tabs.FirstOrDefault(t => TabKey(t) == key);
-            if (tab is null) return;
+            if (TabByKey(key) is not { } tab) return;
             _embedding.Stop(key);
             tab.Status = TabStatus.Exited;
             tab.Message = $"{tab.Title} was closed.";
@@ -779,6 +850,33 @@ public partial class MainWindow : Window
                 };
             });
         }
+    }
+
+    /// <summary>
+    /// Tabs narrow to share the row; past MinTabWidth the row scrolls. The "+" sits right after it and never moves out of reach.
+    /// </summary>
+    private void FitTabs()
+    {
+        var room = TabRow.Bounds.Width - AddTabButton.Width;
+        if (room <= 0) return;
+        TabScroller.MaxWidth = room;
+        var share = _tabs.Tabs.Count == 0 ? MaxTabWidth : Math.Floor(room / _tabs.Tabs.Count) - TabGap;
+        var width = Math.Clamp(share, MinTabWidth, MaxTabWidth);
+        TabStrip.Resources["TabMaxWidth"] = width;
+        TabStrip.Resources["TabMinWidth"] = Math.Min(width, NormalTabMinWidth);
+        TabStrip.Classes.Set("crowded", width < NormalTabMinWidth);
+    }
+
+    /// <summary>A mouse has no sideways wheel: on these rows the normal wheel scrolls left and right.</summary>
+    private static void ScrollSidewaysWithWheel(ScrollViewer row)
+    {
+        const double wheelStep = 48;
+        row.AddHandler(PointerWheelChangedEvent, (_, e) =>
+        {
+            var x = Math.Clamp(row.Offset.X - (e.Delta.Y + e.Delta.X) * wheelStep, 0, Math.Max(0, row.Extent.Width - row.Viewport.Width));
+            row.Offset = row.Offset.WithX(x);
+            e.Handled = true;
+        }, RoutingStrategies.Tunnel);
     }
 
     // Tab strip pointer handling: click to activate, drag to reorder, middle-click or x to close, right-click menu.
@@ -912,7 +1010,7 @@ public partial class MainWindow : Window
 
     private void ShowPalette()
     {
-        if (OverlayOpen) return;
+        if (OverlayOpen || Palette.IsVisible) return;
         Palette.Dynamic = TypedPaletteItems;
         Palette.Show(BuildPaletteItems());
         HideAllEmbedded();
@@ -953,6 +1051,7 @@ public partial class MainWindow : Window
             {
                 _settings.AnimatedBackground = !_settings.AnimatedBackground;
                 OnSettingsChanged();
+                Settings.Refresh();
             }, "IconSparkle"));
         items.Add(new PaletteItem("Clear recent programs", "Action", () =>
         {
@@ -986,6 +1085,7 @@ public partial class MainWindow : Window
                 _settings.AccentTheme = theme.Name;
                 AccentThemes.Apply(theme.Name);
                 SaveSettings();
+                Settings.Refresh();
                 ShowToast($"{theme.Name} theme", "IconSparkle");
             }, "IconSparkle", Detail: theme == AccentThemes.Current ? "Current theme" : null));
         }
@@ -1127,22 +1227,40 @@ public partial class MainWindow : Window
 
     private void ShowDropOverlay(bool show)
     {
-        if (DropOverlay.IsVisible == show) return;
+        if (_dropShown == show) return;
+        _dropShown = show;
+        var fade = ++_dropFades; // leave and enter can follow each other faster than the fade
         DropOverlay.IsVisible = true;
         Animator.Run(DropOverlay, 0.18, t =>
         {
+            if (fade != _dropFades) return;
             DropOverlay.Opacity = show ? t : 1 - t;
             var s = show ? 0.98 + 0.02 * Ease.OutCubic(t) : 1;
             DropFrame.RenderTransform = new ScaleTransform(s, s);
-        }, () => DropOverlay.IsVisible = show);
+        }, () =>
+        {
+            if (fade == _dropFades) DropOverlay.IsVisible = show;
+        });
     }
 
     private void OnDropProgram(object? sender, DragEventArgs e)
     {
         ShowDropOverlay(false);
         if (PanelDropTarget(e) is { } target) target.FilesDropped(DroppedPaths(e).ToList());
-        else foreach (var path in DroppedPaths(e)) OpenProgram(path);
+        else
+            foreach (var path in DroppedPaths(e))
+            {
+                if (IsProgram(path)) OpenProgram(path);
+                else ShowToast($"{Path.GetFileName(path.TrimEnd('/', '\\'))} is not a program", "IconInfo");
+            }
         e.Handled = true;
+    }
+
+    private bool IsProgram(string path)
+    {
+        path = path.TrimEnd('/', '\\');
+        return _embedding.Embedder.ProgramPatterns.Any(p => p == "*" || path.EndsWith(p.TrimStart('*'), StringComparison.OrdinalIgnoreCase))
+               || (!OperatingSystem.IsWindows() && File.Exists(path) && File.GetUnixFileMode(path).HasFlag(UnixFileMode.UserExecute));
     }
 
     private void OnDropTool(object? sender, DragEventArgs e)
@@ -1193,6 +1311,11 @@ public partial class MainWindow : Window
         }
         var command = e.KeyModifiers.HasFlag(KeyModifiers.Meta) || e.KeyModifiers.HasFlag(KeyModifiers.Control);
         if (!command) return;
+        if (OnWebShortcut(e.Key))
+        {
+            e.Handled = true;
+            return;
+        }
 
         switch (e.Key)
         {
@@ -1228,12 +1351,8 @@ public partial class MainWindow : Window
                 CloseTab(active);
                 e.Handled = true;
                 break;
-            case Key.Tab when _tabs.Active is null:
-                if (_tabs.Tabs.Count > 0) _tabs.Activate(_tabs.Tabs[e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? ^1 : 0]);
-                e.Handled = true;
-                break;
             case Key.Tab:
-                _tabs.ActivateNext(e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? -1 : 1);
+                CycleStage(e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? -1 : 1);
                 e.Handled = true;
                 break;
             case >= Key.D1 and <= Key.D9 when e.KeyModifiers.HasFlag(KeyModifiers.Alt):
@@ -1241,11 +1360,27 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
             case >= Key.D1 and <= Key.D9:
-                var index = e.Key - Key.D1;
-                if (index < _tabs.Tabs.Count) _tabs.Activate(_tabs.Tabs[index]);
+                ShowStageItem(e.Key - Key.D1);
                 e.Handled = true;
                 break;
         }
+    }
+
+    /// <summary>What can go on stage counts along both rows: the program tabs, then the open websites.</summary>
+    private void ShowStageItem(int index)
+    {
+        var programs = _tabs.Tabs.Count;
+        if (index < programs) _tabs.Activate(_tabs.Tabs[index]);
+        else if (index - programs < _webTabs.Count) ShowWeb(_webTabs[index - programs]);
+    }
+
+    private void CycleStage(int step)
+    {
+        var total = _tabs.Tabs.Count + _webTabs.Count;
+        if (total == 0) return;
+        var current = _activeWeb is { } web ? _tabs.Tabs.Count + _webTabs.IndexOf(web)
+            : _tabs.Active is { } tab ? _tabs.Tabs.IndexOf(tab) : -1;
+        ShowStageItem(TabManager.Cycle(current, step, total));
     }
 
     // ---------------------------------------------------------------- tools
@@ -1538,7 +1673,7 @@ public partial class MainWindow : Window
     {
         foreach (var key in _embedding.FindLostWindows())
         {
-            if (_tabs.Tabs.FirstOrDefault(t => TabKey(t) == key) is not { } tab) continue;
+            if (TabByKey(key) is not { } tab) continue;
             _embedding.Stop(key);
             tab.Status = TabStatus.Exited;
             tab.Message = $"{tab.Title}'s window was closed.";
@@ -1585,26 +1720,29 @@ public partial class MainWindow : Window
     /// <summary>
     /// On macOS the hosted window is a separate app window, so it drops behind Overdesk whenever Overdesk is
     /// activated (clicking its tab, the empty top bar, Cmd+Tab). Hand the front back to the program right away,
-    /// unless the click was meant for Overdesk itself (logo menu, +, settings, tools...), which must keep focus.
+    /// unless the click was meant for Overdesk itself (logo menu, +, settings, tools...), which must keep focus,
+    /// or the user left in the middle of typing in Overdesk (AI chat, a work) and is coming back to that.
     /// </summary>
     private async void RaiseHostedWindow()
     {
         // Let the click that activated us arrive first so we know what it was aimed at.
         await Task.Delay(60);
-        if (_keepOverdeskFocused) return;
+        if (_keepOverdeskFocused || _resumeTyping) return;
         FocusHostedWindow();
     }
 
     private void FocusHostedWindow()
     {
         if (!_opened || WindowState == WindowState.Minimized || OverlayOpen) return;
-        if (_tabs.Active is { Status: TabStatus.Running } tab)
-            _embedding.Focus(TabKey(tab));
+        if (_tabs.Active is not { Status: TabStatus.Running } tab) return;
+        _handingToProgram = true;
+        _embedding.Focus(TabKey(tab));
     }
 
     /// <summary>Remember whether the latest click targets Overdesk's own controls (true) or the program's tab/area (false).</summary>
     private void OnAnyPointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        _resumeTyping = false;
         var onTab = TabFromSource(e.Source) is not null;
         var onButton = e.Source is Visual v && v.FindAncestorOfType<Button>(includeSelf: true) is not null;
         _keepOverdeskFocused = (onButton && !onTab) || !TopBar.IsPointerOver || OverlayOpen

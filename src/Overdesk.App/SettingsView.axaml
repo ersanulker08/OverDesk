@@ -354,6 +354,15 @@
                                 </StackPanel>
                             </Grid>
                         </Border>
+                        <Border x:Name="PluginProblemsCard" Classes="pagecard" IsVisible="False">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Border Classes="pageicon"><Path Classes="icon" Data="{StaticResource IconAlert}" Stroke="{StaticResource WarningBrush}"/></Border>
+                                <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center" Spacing="4">
+                                    <TextBlock Text="Plugin problems" FontWeight="SemiBold"/>
+                                    <StackPanel x:Name="PluginProblemList" Spacing="4"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
                     </StackPanel>
 
                     <!-- About -->

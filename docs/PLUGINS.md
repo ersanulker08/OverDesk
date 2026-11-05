@@ -8,7 +8,8 @@ Tools live in the panel on the right. A tool is a **folder** that contains an `o
   `~/Library/Application Support/Overdesk` on macOS, `%APPDATA%\Overdesk` on Windows.
 - `tools/<your-tool>/` next to the app, for tools that ship with OverDesk.
 
-Restart OverDesk after adding a folder. Manifests with problems are skipped; they never stop the app.
+Restart OverDesk after adding a folder. Manifests with problems are skipped; they never stop the app. OverDesk says so in a toast
+at startup and lists each problem with its manifest path under **Settings → Data**.
 
 ## The manifest
 

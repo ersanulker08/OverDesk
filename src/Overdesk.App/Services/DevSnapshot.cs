@@ -32,6 +32,7 @@ internal static class DevSnapshot
     {
         Directory.CreateDirectory(dir);
         App.RenderLogo(512).Save(Path.Combine(dir, "logo.png"), new PngBitmapEncoderOptions());
+        Console.WriteLine($"START {main.DevTabRow()} {main.DevWebState()}");
 
         // OVERDESK_SNAPSHOT_AI_PROMPT="..." sends one real message with the current provider (OVERDESK_SNAPSHOT_AI_MODEL picks
         // the model), waits for the answer, prints what the AI did and saves ai-live.png. Spends real tokens.
@@ -137,6 +138,33 @@ internal static class DevSnapshot
         main.DevClosePicker();
         await Task.Delay(400);
 
+        // Palette actions run while it closes: one that opens a dialog or a tab must still get through.
+        main.DevOpenPalette();
+        await Task.Delay(400);
+        main.DevRunPaletteItem("Add a program…");
+        await Task.Delay(500);
+        Console.WriteLine($"PALETTE add a program: picker open = {main.DevPickerOpen}");
+        main.DevClosePicker();
+        await Task.Delay(400);
+        main.DevOpenPalette();
+        await Task.Delay(400);
+        main.DevRunPaletteItem("Open settings");
+        await Task.Delay(500);
+        Console.WriteLine($"PALETTE open settings: settings open = {main.DevSettingsOpen}");
+        main.DevCloseSettings();
+        await Task.Delay(400);
+
+        main.DevCrowdTabs(5);
+        await Task.Delay(500);
+        Console.WriteLine("TAB ROW " + main.DevTabRow());
+        Save(main, Path.Combine(dir, "tabs-some.png"));
+        main.DevCrowdTabs(19);
+        await Task.Delay(700);
+        Console.WriteLine("TAB ROW " + main.DevTabRow());
+        Save(main, Path.Combine(dir, "tabs-crowded.png"));
+        main.DevClearTabs();
+        await Task.Delay(400);
+
         var open = Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT_OPEN");
         if (open is { Length: > 0 })
         {
@@ -212,6 +240,18 @@ internal static class DevSnapshot
         main.DevOpenWeb("github");
         await Task.Delay(5000);
         Save(main, Path.Combine(dir, "web.png"));
+        main.DevOpenWeb("claude");
+        await Task.Delay(300);
+        Console.WriteLine("WEB open two: " + main.DevWebState());
+        main.DevKey(Avalonia.Input.Key.Tab, Avalonia.Input.KeyModifiers.Control);
+        Console.WriteLine("WEB ctrl+tab: " + main.DevWebState());
+        main.DevKey(Avalonia.Input.Key.D2);
+        Console.WriteLine("WEB cmd+2: " + main.DevWebState());
+        main.DevKey(Avalonia.Input.Key.L);
+        await Task.Delay(100);
+        Console.WriteLine("WEB cmd+l: " + main.DevWebState());
+        main.DevKey(Avalonia.Input.Key.W);
+        Console.WriteLine("WEB cmd+w: " + main.DevWebState());
         main.DevShowHome();
         await Task.Delay(500);
 

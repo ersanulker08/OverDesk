@@ -68,10 +68,7 @@ public sealed class TabManager : ObservableObject
         if (old != newIndex) Tabs.Move(old, newIndex);
     }
 
-    public void ActivateNext(int step)
-    {
-        if (Tabs.Count == 0 || Active is null) return;
-        var i = (Tabs.IndexOf(Active) + step + Tabs.Count) % Tabs.Count;
-        Activate(Tabs[i]);
-    }
+    /// <summary>The next index going round a row of items; from nothing selected (-1), the first or the last one.</summary>
+    public static int Cycle(int current, int step, int count)
+        => current < 0 ? (step > 0 ? 0 : count - 1) : (current + step + count) % count;
 }

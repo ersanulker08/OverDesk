@@ -33,6 +33,8 @@ public partial class MainWindow
     private void InitializeWeb()
     {
         WebBar.IsVisible = _settings.ShowWebStrip;
+        ScrollSidewaysWithWheel(WebScroller);
+        WebRow.SizeChanged += (_, e) => WebScroller.MaxWidth = Math.Max(0, e.NewSize.Width - AddSiteButton.Width - AddSiteButton.Margin.Left);
         AddSiteButton.Click += (_, _) => ShowAddSiteMenu();
         WebBack.Click += (_, _) => ActiveWebView()?.GoBack();
         WebForward.Click += (_, _) => ActiveWebView()?.GoForward();
@@ -47,7 +49,8 @@ public partial class MainWindow
         {
             if (e.Key != Key.Enter || _activeWeb is null) return;
             var text = WebAddress.Text?.Trim() ?? "";
-            var url = text.Contains(' ') || !text.Contains('.') ? null : WebServices.NormalizeUrl(text);
+            if (text.Length == 0) return;
+            var url = WebUrl.IsAddress(text) ? WebUrl.Normalize(text) : null;
             ActiveWebView()?.Navigate(url ?? "https://www.google.com/search?q=" + Uri.EscapeDataString(text));
             Focus(); // leave the address box so it shows the page again
             e.Handled = true;
@@ -59,6 +62,50 @@ public partial class MainWindow
     }
 
     private IWebView? ActiveWebView() => _activeWeb is { } w && _webHosts.TryGetValue(w.Id, out var host) ? host.View : null;
+
+    private bool IsPinned(WebTab tab) => _settings.WebPins.Any(p => (p.Service ?? p.Url) == tab.ServiceId);
+
+    /// <summary>Called by SaveSettings. Queries are left out: settings.json is plain text and they can hold sign-in tokens.</summary>
+    private void SaveWebTabs()
+    {
+        static string NoQuery(string url) => Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.GetLeftPart(UriPartial.Path) : url;
+        _settings.OpenWebTabs = _webTabs.Select(t => new OpenWebTab
+        {
+            Url = NoQuery(t.Url), Title = t.Title, Key = IsPinned(t) ? t.ServiceId! : NoQuery(t.ServiceId!),
+        }).ToList();
+        _settings.ActiveWebTab = _activeWeb is { } web ? _webTabs.IndexOf(web) : -1;
+    }
+
+    /// <summary>Bring back last session's web tabs. Their pages load when they are first shown.</summary>
+    private void RestoreWebTabs()
+    {
+        if (!_settings.RestoreTabs || !_webFactory.IsSupported) return;
+        var active = _settings.ActiveWebTab;
+        _webTabs.AddRange(_settings.OpenWebTabs.Select(t => new WebTab(t.Url, t.Title, t.Key)));
+        BuildWebPills();
+        if (active >= 0 && active < _webTabs.Count) ShowWeb(_webTabs[active]);
+    }
+
+    /// <summary>Browser keys while a site is on stage: close (its popup first), reload, go to the address bar.</summary>
+    private bool OnWebShortcut(Key key)
+    {
+        if (_activeWeb is not { } web || OverlayOpen) return false;
+        switch (key)
+        {
+            case Key.W:
+                if (CurrentPopup(web) is not null) ClosePopup(web, null);
+                else CloseWeb(web);
+                return true;
+            case Key.R:
+                ActiveWebView()?.Reload();
+                return true;
+            case Key.L:
+                WebAddress.Focus();
+                WebAddress.SelectAll();
+                return true;
+        }
+        return false;
+    }
 
     // ---------------------------------------------------------------- pills
 
@@ -77,7 +124,7 @@ public partial class MainWindow
             WebPills.Children.Add(Pill(pin, name, url, service?.Brand ?? AccentThemes.Current.Primary, app, tab));
         }
         // Sites opened without a pin (a localhost port, a link from the palette...) show up at the end.
-        foreach (var tab in _webTabs.Where(t => !_settings.WebPins.Any(p => (p.Service ?? p.Url) == t.ServiceId)))
+        foreach (var tab in _webTabs.Where(t => !IsPinned(t)))
             WebPills.Children.Add(Pill(null, tab.Title, tab.Url, AccentThemes.Current.Primary, null, tab));
     }
 
@@ -177,13 +224,22 @@ public partial class MainWindow
         {
             items.Add(MenuEntry("Pin to the strip", "IconPin", () =>
             {
-                _settings.WebPins.Add(new WebPin { Name = tab.Title, Url = tab.Url });
+                if (WebServices.Find(tab.ServiceId) is { } known) _settings.WebPins.Add(new WebPin { Service = known.Id });
+                else
+                {
+                    // The pin opens the site, not the page it happens to show; the tab pairs up with the new pill.
+                    tab.ServiceId = Uri.TryCreate(tab.ServiceId, UriKind.Absolute, out _) ? tab.ServiceId : SiteOf(tab.Url);
+                    _settings.WebPins.Add(new WebPin { Name = Shorten(tab.Title), Url = tab.ServiceId });
+                }
                 SaveSettings();
                 BuildWebPills();
             }));
         }
         return new ContextMenu { ItemsSource = items };
     }
+
+    private static string SiteOf(string url)
+        => Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" ? uri.GetLeftPart(UriPartial.Authority) : url;
 
     /// <summary>"+" in the strip: known services that are not pinned yet, or any website.</summary>
     private void ShowAddSiteMenu()
@@ -212,7 +268,7 @@ public partial class MainWindow
         var add = new Button { Classes = { "accent" }, Content = "Add website", HorizontalAlignment = HorizontalAlignment.Right };
         void AddCustom()
         {
-            if (WebServices.NormalizeUrl(address.Text) is not { } url) return;
+            if (WebUrl.Normalize(address.Text) is not { } url) return;
             _settings.WebPins.Add(new WebPin { Url = url, Name = string.IsNullOrWhiteSpace(name.Text) ? new Uri(url).Host : name.Text.Trim() });
             SaveSettings();
             BuildWebPills();
@@ -244,23 +300,28 @@ public partial class MainWindow
         {
             tab = new WebTab(url, title, key);
             _webTabs.Add(tab);
-            var host = new WebViewHost(_webFactory, url) { IsVisible = false };
-            var owner = tab;
-            host.PopupRequested += popup => ShowPopup(owner, popup);
-            _webHosts[tab.Id] = host;
-            WebHosts.Children.Add(host);
         }
         ShowWeb(tab);
     }
 
+    private void EnsureWebHost(WebTab tab)
+    {
+        if (_webHosts.ContainsKey(tab.Id)) return;
+        var host = new WebViewHost(_webFactory, tab.Url) { IsVisible = false };
+        host.PopupRequested += popup => ShowPopup(tab, popup);
+        _webHosts[tab.Id] = host;
+        WebHosts.Children.Add(host);
+    }
+
     private void ShowWeb(WebTab tab)
     {
+        EnsureWebHost(tab);
         _activeWeb = tab;
         foreach (var t in _webTabs) t.IsActive = t == tab;
         if (_tabs.Active is not null) _tabs.ShowHome(); // the program strip shows nothing selected
         UpdateTabContent();
         BuildWebPills();
-        SaveSettings();
+        SaveSettingsSoon();
     }
 
     private void ShowPopup(WebTab tab, Overdesk.Core.Platform.IWebView popup)
@@ -307,7 +368,10 @@ public partial class MainWindow
             UpdateTabContent();
         }
         BuildWebPills();
+        SaveSettingsSoon();
     }
+
+    private WebViewHost? CurrentPopup(WebTab tab) => _popups.TryGetValue(tab.Id, out var list) && list.Count > 0 ? list[^1] : null;
 
     /// <summary>Called from UpdateTabContent: show the active website, or hide the web area.</summary>
     private void UpdateWebContent()
@@ -318,18 +382,23 @@ public partial class MainWindow
         // Native views draw above everything in the window: keep them out of the way of in-window dialogs.
         WebHosts.IsVisible = !OverlayOpen;
         // The newest popup of the shown site covers the page until it closes.
-        var popup = web is not null && _popups.TryGetValue(web.Id, out var list) && list.Count > 0 ? list[^1] : null;
+        var popup = web is null ? null : CurrentPopup(web);
         foreach (var (id, host) in _webHosts) host.IsVisible = web is not null && id == web.Id && popup is null;
         foreach (var p in _popups.Values.SelectMany(l => l)) p.IsVisible = p == popup;
         PopupBanner.IsVisible = popup is not null;
-        if (popup?.View?.Url is { } popupUrl && Uri.TryCreate(popupUrl, UriKind.Absolute, out var u)) PopupTitle.Text = u.Host;
-        else if (popup is not null) PopupTitle.Text = "Sign-in window";
+        // These act on the page under the popup, not on the popup.
+        WebBack.IsEnabled = WebForward.IsEnabled = WebReload.IsEnabled = WebAddress.IsEnabled = popup is null;
         if (web is not null) PollActiveWeb();
     }
+
+    /// <summary>A popup has no address yet when it opens, and the host is what makes a sign-in window trustworthy.</summary>
+    private void UpdatePopupTitle(WebViewHost popup)
+        => PopupTitle.Text = Uri.TryCreate(popup.View?.Url, UriKind.Absolute, out var url) ? url.Host : "Sign-in window";
 
     private void PollActiveWeb()
     {
         if (_activeWeb is not { } tab || ActiveWebView() is not { } view) return;
+        if (CurrentPopup(tab) is { } popup) UpdatePopupTitle(popup);
         var url = view.Url;
         if (url is { Length: > 0 })
         {
@@ -340,7 +409,7 @@ public partial class MainWindow
         if (view.Title is { Length: > 0 } title && title != tab.Title)
         {
             tab.Title = title;
-            if (!_settings.WebPins.Any(p => (p.Service ?? p.Url) == tab.ServiceId)) BuildWebPills();
+            if (!IsPinned(tab)) BuildWebPills();
         }
         var loading = view.IsLoading;
         var progress = loading ? Math.Max(view.Progress, 0.08) : 0;

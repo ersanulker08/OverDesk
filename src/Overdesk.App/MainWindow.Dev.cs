@@ -17,7 +17,9 @@ internal interface IDockActions
     void ShowTask(RunningTask task);
     void OpenWeb(string url, string title, string? key = null);
     void OpenAi(string? prompt = null, string? question = null);
-    void RunCommand(string command, string folder);
+    /// <summary>Start a shell task; with <paramref name="showLog"/> off only a failure is reported (as a toast).</summary>
+    void RunCommand(string command, string folder, bool showLog = true);
+    void RevealFolder(string folder);
     void Toast(string text, string icon);
     string? CurrentProjectFolder();
 }
@@ -41,12 +43,26 @@ public partial class MainWindow : IDockActions
     public string? CurrentProjectFolder()
         => _settings.Projects.FirstOrDefault(p => p.Id == _settings.ActiveProject)?.Folder ?? _settings.Projects.FirstOrDefault()?.Folder;
 
-    public void RunCommand(string command, string folder)
+    public void RunCommand(string command, string folder, bool showLog = true)
     {
         folder = string.IsNullOrEmpty(folder) ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) : folder;
         var task = _runner.Start(command.Length > 40 ? command[..39] + "…" : command, command, folder);
-        ShowTask(task);
+        if (showLog)
+        {
+            ShowTask(task);
+            return;
+        }
+        void Watch()
+        {
+            if (task.IsRunning) return;
+            _runner.Changed -= Watch;
+            if (task.ExitCode != 0) ShowToast($"{task.Name} failed (code {task.ExitCode}), see its output in the dock", "IconAlert");
+        }
+        _runner.Changed += Watch;
+        Watch();
     }
+
+    public void RevealFolder(string folder) => _ = Launcher.LaunchDirectoryInfoAsync(new DirectoryInfo(folder));
 
     internal void ShowTask(RunningTask task)
     {
@@ -76,15 +92,61 @@ public partial class MainWindow : IDockActions
         }
 
         // 2. The start commands, each as a task with its own log.
-        foreach (var command in project.Commands.Where(c => !string.IsNullOrWhiteSpace(c)))
-            _runner.Start($"{project.Name}: {command}", command, project.Folder, project.Id);
+        var tasks = project.Commands.Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(command => _runner.Start($"{project.Name}: {command}", command, project.Folder, project.Id)).ToList();
 
-        // 3. The app itself, once the dev server has had a moment to come up.
-        if (project.Url is { Length: > 0 } url)
-            DispatcherTimer.RunOnce(() => OpenWeb(url, project.Name, "project:" + project.Id), TimeSpan.FromSeconds(project.Commands.Count > 0 ? 4 : 0.1));
+        // 3. The app itself, once its address answers.
+        if (project.Url is { Length: > 0 } url) _ = OpenProjectWhenReadyAsync(project, url, tasks);
 
         SaveSettings();
         ShowToast($"Launching {project.Name}", "IconRocket");
+    }
+
+    /// <summary>
+    /// A local address is opened as soon as its port accepts connections (polled twice a second for up to 90 s, given up
+    /// when every start command has exited); any other address waits the old fixed 4 s.
+    /// </summary>
+    private async Task OpenProjectWhenReadyAsync(DevProject project, string url, IReadOnlyList<RunningTask> tasks)
+    {
+        var key = "project:" + project.Id;
+        if (tasks.Count == 0 || !Uri.TryCreate(url, UriKind.Absolute, out var uri) || !uri.IsLoopback)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(tasks.Count > 0 ? 4 : 0.1));
+            OpenWeb(url, project.Name, key);
+            return;
+        }
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(90);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await IsListeningAsync(uri.Host, uri.Port))
+            {
+                OpenWeb(url, project.Name, key);
+                return;
+            }
+            if (tasks.All(t => !t.IsRunning))
+            {
+                ShowToast($"{project.Name} stopped before {uri.Authority} answered", "IconAlert");
+                return;
+            }
+            await Task.Delay(500);
+        }
+        ShowToast($"{uri.Authority} is still not answering, opening it anyway", "IconGlobe");
+        OpenWeb(url, project.Name, key);
+    }
+
+    private static async Task<bool> IsListeningAsync(string host, int port)
+    {
+        using var client = new System.Net.Sockets.TcpClient();
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(400));
+        try
+        {
+            await client.ConnectAsync(host, port, cts.Token);
+            return true;
+        }
+        catch (Exception ex) when (ex is System.Net.Sockets.SocketException or OperationCanceledException)
+        {
+            return false;
+        }
     }
 
     public void StopProject(DevProject project)
@@ -125,7 +187,7 @@ public partial class MainWindow : IDockActions
                     : text.Contains("astro") ? "http://localhost:4321" : text.Contains("ng ") ? "http://localhost:4200" : null;
             }
             else if (Directory.EnumerateFiles(folder, "*.sln*").Any() || Directory.EnumerateFiles(folder, "*.csproj").Any())
-                project.Commands.Add("dotnet run");
+                project.Commands.Add(RunnableDotnetProject(folder) is { } csproj ? $"dotnet run --project {csproj}" : "dotnet run");
             else if (File.Exists(Path.Combine(folder, "Cargo.toml"))) project.Commands.Add("cargo run");
             else if (File.Exists(Path.Combine(folder, "go.mod"))) project.Commands.Add("go run .");
             else if (File.Exists(Path.Combine(folder, "manage.py"))) { project.Commands.Add("python manage.py runserver"); project.Url = "http://localhost:8000"; }
@@ -133,6 +195,25 @@ public partial class MainWindow : IDockActions
         }
         catch (Exception) { /* unreadable folder: keep the bare project */ }
         return project;
+    }
+
+    /// <summary>
+    /// `dotnet run` needs exactly one project in the folder; a solution gets the first project that builds an executable
+    /// (relative path, so the command reads well), or null when the folder holds a single project anyway.
+    /// </summary>
+    private static string? RunnableDotnetProject(string folder)
+    {
+        var projects = Directory.EnumerateFiles(folder, "*.csproj", SearchOption.AllDirectories)
+            .Where(p => !p.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") && !p.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+            .OrderBy(p => p.Length).ToList();
+        if (projects.Count <= 1 && projects.All(p => Path.GetDirectoryName(p) == folder)) return null;
+        var runnable = projects.FirstOrDefault(p =>
+        {
+            var text = File.ReadAllText(p);
+            return text.Contains("<OutputType>Exe", StringComparison.OrdinalIgnoreCase) || text.Contains("<OutputType>WinExe", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("Microsoft.NET.Sdk.Web", StringComparison.OrdinalIgnoreCase);
+        }) ?? projects.FirstOrDefault();
+        return runnable is null ? null : Path.GetRelativePath(folder, runnable).Replace('\\', '/');
     }
 
     private string? FindEditor()

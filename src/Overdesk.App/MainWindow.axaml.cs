@@ -114,6 +114,13 @@ public partial class MainWindow : Window
         Home.AskAiRequested += question => OpenAi(question: question);
         Home.AddProgramRequested += () => _ = AddProgramsAsync();
         Home.PinToggled += TogglePin;
+        Home.PinsReordered += order =>
+        {
+            _settings.PinnedPrograms.Clear();
+            _settings.PinnedPrograms.AddRange(order);
+            SaveSettings();
+            Home.RebuildTiles();
+        };
         Home.RecentRemoved += path =>
         {
             _settings.RecentPrograms.RemoveAll(p => ProgramHistory.SamePath(p, path));
@@ -157,6 +164,8 @@ public partial class MainWindow : Window
             Dispatcher.UIThread.Post(Settings.Refresh); // gauge chips stay disabled when the page opened before the first sample
         }
         Settings.Changed += OnSettingsChanged;
+        Settings.AddWebPinRequested += ShowAddSiteMenu;
+        Settings.RelaunchRequested += Relaunch;
         SettingsButton.Click += (_, _) => OpenSettings();
         HomeButton.Click += (_, _) => ShowHome();
         // The logo opens OverDesk's own tab; right-click it for the quick menu.
@@ -401,6 +410,18 @@ public partial class MainWindow : Window
             ShowToast(problems == 1 ? "1 plugin problem, see Settings → Data" : $"{problems} plugin problems, see Settings → Data", "IconAlert");
         if (_works.Library.LoadErrors.Count is > 0 and var unreadable)
             ShowToast(unreadable == 1 ? "1 work file could not be read, see Works" : $"{unreadable} work files could not be read, see Works", "IconAlert");
+    }
+
+    /// <summary>Quit (saving everything on the way out) and start this same executable again, e.g. to apply a staged restore.</summary>
+    private void Relaunch()
+    {
+        var exe = Environment.ProcessPath;
+        Close();
+        if (exe is null) return;
+        var info = new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = Environment.CurrentDirectory };
+        foreach (var arg in Environment.GetCommandLineArgs().Skip(1)) info.ArgumentList.Add(arg);
+        try { System.Diagnostics.Process.Start(info); }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException) { }
     }
 
     private void OnClosing(object? sender, WindowClosingEventArgs e)
@@ -1099,13 +1120,13 @@ public partial class MainWindow : Window
             "Action", () =>
             {
                 _settings.AnimatedBackground = !_settings.AnimatedBackground;
-                OnSettingsChanged();
+                OnSettingsChanged(SettingsChange.Animation);
                 Settings.Refresh();
             }, "IconSparkle"));
         items.Add(new PaletteItem("Clear recent programs", "Action", () =>
         {
             _settings.RecentPrograms.Clear();
-            OnSettingsChanged();
+            OnSettingsChanged(SettingsChange.HomeTiles);
             ShowToast("Recent programs cleared", "IconCheck");
         }, "IconClose"));
 
@@ -1234,20 +1255,29 @@ public partial class MainWindow : Window
         if (_tabs.Tabs.FirstOrDefault(t => t.IsSettings) is { } tab) CloseTab(tab);
     }
 
-    private void OnSettingsChanged()
+    /// <summary>Settings page edits: only what the change touches is rebuilt, so a focus-minute click leaves the dock charts alone.</summary>
+    private void OnSettingsChanged(SettingsChange change)
     {
-        WebBar.IsVisible = _settings.ShowWebStrip;
-        BuildWebPills();
-        Dock.RefreshDev();
-        UpdateMirror();
-        Dock.SetExpanded(_settings.SidebarExpanded, animate: true);
-        Dock.BuildMetricRows();
-        Home.SetAnimated(_settings.AnimatedBackground);
-        OverlayWaves.IsAnimated = _settings.AnimatedBackground;
-        StageWaves.IsAnimated = _settings.AnimatedBackground;
-        Dock.SetAnimated(_settings.AnimatedBackground);
-        Home.RebuildTiles();
-        _works.NotifyDefaultsChanged();
+        if (change.HasFlag(SettingsChange.WebStrip))
+        {
+            WebBar.IsVisible = _settings.ShowWebStrip;
+            BuildWebPills();
+        }
+        if (change.HasFlag(SettingsChange.Projects)) Dock.RefreshProjects();
+        if (change.HasFlag(SettingsChange.Focus)) Dock.RefreshFocus();
+        if (change.HasFlag(SettingsChange.DockCards)) Dock.ApplyCardVisibility();
+        if (change.HasFlag(SettingsChange.Mirror)) UpdateMirror();
+        if (change.HasFlag(SettingsChange.DockVisible)) Dock.SetExpanded(_settings.SidebarExpanded, animate: true);
+        if (change.HasFlag(SettingsChange.DockGauges)) Dock.BuildMetricRows();
+        if (change.HasFlag(SettingsChange.Animation))
+        {
+            Home.SetAnimated(_settings.AnimatedBackground);
+            OverlayWaves.IsAnimated = _settings.AnimatedBackground;
+            StageWaves.IsAnimated = _settings.AnimatedBackground;
+            Dock.SetAnimated(_settings.AnimatedBackground);
+        }
+        if (change.HasFlag(SettingsChange.HomeTiles)) Home.RebuildTiles();
+        if (change.HasFlag(SettingsChange.Works)) _works.NotifyDefaultsChanged();
         SaveSettings();
     }
 

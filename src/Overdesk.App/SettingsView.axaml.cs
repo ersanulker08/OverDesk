@@ -14,6 +14,23 @@ using Overdesk.Core.Settings;
 
 namespace Overdesk.App;
 
+/// <summary>What a settings change touches, so the host rebuilds only that (it always saves).</summary>
+[Flags]
+public enum SettingsChange
+{
+    None = 0,
+    WebStrip = 1,
+    DockCards = 2,
+    DockGauges = 4,
+    DockVisible = 8,
+    Projects = 16,
+    Focus = 32,
+    Mirror = 64,
+    Animation = 128,
+    HomeTiles = 256,
+    Works = 512,
+}
+
 /// <summary>
 /// OverDesk's own tab: a full settings page with a section navigation on the left. Changes apply immediately;
 /// the host saves them on <see cref="Changed"/>.
@@ -37,18 +54,20 @@ public partial class SettingsView : UserControl
         {
             _settings.RecentPrograms.Clear();
             ClearRecentButton.IsEnabled = false;
-            Changed?.Invoke();
+            Changed?.Invoke(SettingsChange.HomeTiles);
         };
 
         AnimatedToggle.IsCheckedChanged += (_, _) =>
         {
-            Update(s => s.AnimatedBackground = AnimatedToggle.IsChecked == true);
+            Update(s => s.AnimatedBackground = AnimatedToggle.IsChecked == true, SettingsChange.Animation);
             Waves.IsAnimated = AnimatedToggle.IsChecked == true;
         };
         SplashToggle.IsCheckedChanged += (_, _) => Update(s => s.ShowSplash = SplashToggle.IsChecked == true);
         RestoreToggle.IsCheckedChanged += (_, _) => Update(s => s.RestoreTabs = RestoreToggle.IsChecked == true);
-        DockToggle.IsCheckedChanged += (_, _) => Update(s => s.SidebarExpanded = DockToggle.IsChecked == true);
-        MirrorToggle.IsCheckedChanged += (_, _) => Update(s => s.MirrorPrograms = MirrorToggle.IsChecked == true);
+        DockToggle.IsCheckedChanged += (_, _) => Update(s => s.SidebarExpanded = DockToggle.IsChecked == true, SettingsChange.DockVisible);
+        MirrorToggle.IsCheckedChanged += (_, _) => Update(s => s.MirrorPrograms = MirrorToggle.IsChecked == true, SettingsChange.Mirror);
+        AddWebPinButton.Click += (_, _) => AddWebPinRequested?.Invoke(AddWebPinButton);
+        RelaunchButton.Click += (_, _) => RelaunchRequested?.Invoke();
 
         var version = typeof(SettingsView).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
         var os = OperatingSystem.IsMacOS() ? "macOS" : OperatingSystem.IsWindows() ? "Windows" : "Linux";
@@ -62,7 +81,13 @@ public partial class SettingsView : UserControl
     }
 
     public event Action? CloseRequested;
-    public event Action? Changed;
+    public event Action<SettingsChange>? Changed;
+
+    /// <summary>"Add a site…" under the pinned sites; the host shows its add-site flyout at the given button.</summary>
+    public event Action<Control>? AddWebPinRequested;
+
+    /// <summary>A restore is staged: the host saves, quits and starts OverDesk again.</summary>
+    public event Action? RelaunchRequested;
 
     /// <summary>Shown under "Data" so people can find their settings.</summary>
     public string SettingsFilePath { set => DataPath.Text = value; }
@@ -117,7 +142,8 @@ public partial class SettingsView : UserControl
         try
         {
             var count = await Task.Run(() => DataBackup.Stage(path, DataFolder));
-            BackupStatus.Text = $"Ready: {count} files. Quit and reopen OverDesk to finish restoring (your current data is kept in .before-restore).";
+            BackupStatus.Text = $"Ready: {count} files. Relaunch OverDesk to finish restoring (your current data is kept in .before-restore).";
+            RelaunchButton.IsVisible = true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
@@ -157,6 +183,12 @@ public partial class SettingsView : UserControl
     }
 
     public void Hide() => IsVisible = false;
+
+    /// <summary>The strip's + added a pin while the page is open.</summary>
+    public void RefreshWebPins()
+    {
+        if (IsVisible) BuildWebPins();
+    }
 
     /// <summary>The settings may have been changed elsewhere (dock gear, Cmd+B): refresh what is shown.</summary>
     public void Refresh()
@@ -206,11 +238,11 @@ public partial class SettingsView : UserControl
         MirrorToggle.IsVisible = mirror == true;
     }
 
-    private void Update(Action<AppSettings> change)
+    private void Update(Action<AppSettings> change, SettingsChange scope = SettingsChange.None)
     {
         if (_loading) return;
         change(_settings);
-        Changed?.Invoke();
+        Changed?.Invoke(scope);
     }
 
     // ---------------------------------------------------------------- navigation
@@ -334,7 +366,7 @@ public partial class SettingsView : UserControl
                 _settings.AccentTheme = theme.Name;
                 AccentThemes.Apply(theme.Name);
                 BuildThemeCards();
-                Changed?.Invoke();
+                Changed?.Invoke(SettingsChange.None);
             };
             ThemeCards.Children.Add(card);
         }
@@ -354,7 +386,7 @@ public partial class SettingsView : UserControl
                 _settings.ArtStyle = style.ToString();
                 ArtStyles.Apply(_settings.ArtStyle);
                 BuildStyleCards();
-                Changed?.Invoke();
+                Changed?.Invoke(SettingsChange.None);
             };
             StyleCards.Children.Add(chip);
         }
@@ -382,7 +414,7 @@ public partial class SettingsView : UserControl
             {
                 _settings.DockMetrics.Remove(info.Id);
                 if (chip.IsChecked == true) _settings.DockMetrics.Add(info.Id);
-                Changed?.Invoke();
+                Changed?.Invoke(SettingsChange.DockGauges);
             };
             GaugeChips.Children.Add(chip);
         }

@@ -33,12 +33,18 @@ public partial class App : Application
             var catalog = PlatformFactory.CreateCatalog();
             IconCache.Catalog = catalog;
             var icon = CreateAppIcon();
-            using (var png = new MemoryStream())
-            {
-                RenderLogo(512).Save(png, new PngBitmapEncoderOptions());
-                PlatformFactory.CreateDesktop().SetAppIcon(png.ToArray());
-            }
+            var desktopServices = PlatformFactory.CreateDesktop();
+            SetDockIcon(desktopServices);
 
+            // "Everything follows the accent, live" includes the Dock/taskbar icon; one render per change, a beat after the last.
+            var recolor = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+            recolor.Tick += (_, _) =>
+            {
+                recolor.Stop();
+                if (desktop.MainWindow is MainWindow window) window.Icon = CreateAppIcon();
+                SetDockIcon(desktopServices);
+            };
+            AccentThemes.Changed += () => { recolor.Stop(); recolor.Start(); };
             desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
             var snapshotDir = Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT");
 
@@ -76,6 +82,13 @@ public partial class App : Application
 
     /// <summary>The window/dock icon is the logo itself, rendered on a dark rounded tile.</summary>
     private static WindowIcon CreateAppIcon() => new(RenderLogo(256));
+
+    private static void SetDockIcon(Overdesk.Core.Platform.IDesktopServices desktop)
+    {
+        using var png = new MemoryStream();
+        RenderLogo(512).Save(png, new PngBitmapEncoderOptions());
+        desktop.SetAppIcon(png.ToArray());
+    }
 
     internal static Bitmap RenderLogo(int pixels)
     {

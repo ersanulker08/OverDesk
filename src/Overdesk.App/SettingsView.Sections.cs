@@ -38,7 +38,7 @@ public partial class SettingsView
 
     private void InitializeSections()
     {
-        WebToggle.IsCheckedChanged += (_, _) => Update(s => s.ShowWebStrip = WebToggle.IsChecked == true);
+        WebToggle.IsCheckedChanged += (_, _) => Update(s => s.ShowWebStrip = WebToggle.IsChecked == true, SettingsChange.WebStrip);
         CommitOnEdit(OllamaUrl, () => Update(s => s.OllamaUrl = OllamaUrl.Text?.Trim() is { Length: > 0 } u ? u : s.OllamaUrl));
         CommitOnEdit(LmStudioUrl, () => Update(s => s.LmStudioUrl = LmStudioUrl.Text?.Trim() is { Length: > 0 } u ? u : s.LmStudioUrl));
         CommitOnEdit(SystemPrompt, () => Update(s => s.AiSystemPrompt = SystemPrompt.Text ?? ""));
@@ -55,15 +55,16 @@ public partial class SettingsView
         {
             _settings.Prompts.Add(new SavedPrompt { Name = "New prompt", Text = "{{clipboard}}" });
             BuildPrompts();
-            Changed?.Invoke();
+            Changed?.Invoke(SettingsChange.None);
         };
         AddProjectButton.Click += async (_, _) =>
         {
             if (AddProject is not null) await AddProject();
             BuildProjects();
         };
-        FocusMinutes.ValueChanged += (_, _) => Update(s => s.FocusMinutes = (int)(FocusMinutes.Value ?? 25));
-        BreakMinutes.ValueChanged += (_, _) => Update(s => s.BreakMinutes = (int)(BreakMinutes.Value ?? 5));
+        FocusMinutes.ValueChanged += (_, _) => Update(s => s.FocusMinutes = (int)(FocusMinutes.Value ?? 25), SettingsChange.Focus);
+        BreakMinutes.ValueChanged += (_, _) => Update(s => s.BreakMinutes = (int)(BreakMinutes.Value ?? 5), SettingsChange.Focus);
+        BuildWorkFonts();
     }
 
     private void LoadSections()
@@ -112,7 +113,7 @@ public partial class SettingsView
             {
                 _settings.AiDisabledTools.Remove(name);
                 if (chip.IsChecked != true) _settings.AiDisabledTools.Add(name);
-                Changed?.Invoke();
+                Changed?.Invoke(SettingsChange.None);
             };
             AbilityChips.Children.Add(chip);
         }
@@ -123,13 +124,24 @@ public partial class SettingsView
     private IEnumerable<string> MemoryFolders()
         => _settings.AiRecentFolders.Concat(_settings.Projects.Select(p => p.Folder)).Distinct(StringComparer.OrdinalIgnoreCase);
 
-    private void BuildMemory()
+    private int _memoryLoad;
+
+    /// <summary>The note files are read off the UI thread; a newer load wins over an older one still in flight.</summary>
+    private async void BuildMemory()
     {
-        MemoryRows.Children.Clear();
         if (Ai is null) return;
-        var groups = new List<(string Title, string? Folder, IReadOnlyList<Overdesk.AI.MemoryNote> Notes)> { ("About you", null, Ai.Memory.Notes(null)) };
-        foreach (var folder in MemoryFolders())
-            if (Ai.Memory.Notes(folder) is { Count: > 0 } notes) groups.Add(($"Project {Path.GetFileName(folder.TrimEnd('/', '\\'))}", folder, notes));
+        var memory = Ai.Memory;
+        var folders = MemoryFolders().ToList();
+        var load = ++_memoryLoad;
+        var groups = await Task.Run(() =>
+        {
+            var list = new List<(string Title, string? Folder, IReadOnlyList<Overdesk.AI.MemoryNote> Notes)> { ("About you", null, memory.Notes(null)) };
+            foreach (var folder in folders)
+                if (memory.Notes(folder) is { Count: > 0 } notes) list.Add(($"Project {Path.GetFileName(folder.TrimEnd('/', '\\'))}", folder, notes));
+            return list;
+        });
+        if (load != _memoryLoad) return;
+        MemoryRows.Children.Clear();
         if (groups.All(g => g.Notes.Count == 0))
         {
             MemoryRows.Children.Add(new TextBlock { Text = "Nothing yet.", Classes = { "faint" }, FontSize = 12 });
@@ -161,26 +173,37 @@ public partial class SettingsView
 
     // ---------------------------------------------------------------- web strip
 
+    private readonly FontPickerButton _workTitleFont = new();
+    private readonly FontPickerButton _workBodyFont = new();
+    private readonly NumericUpDown _workFontSize = new() { Minimum = 11, Maximum = 32, Increment = 1, Width = 130, FormatString = "0 'px'", HorizontalAlignment = HorizontalAlignment.Left };
+
     private void BuildWorks()
     {
-        WorkFontControls.Children.Clear();
+        _loading = true;
+        _workTitleFont.Selected = _settings.WorkTitleFont;
+        _workBodyFont.Selected = _settings.WorkBodyFont;
+        _workFontSize.Value = (decimal)_settings.WorkFontSize;
+        _loading = false;
+    }
+
+    /// <summary>The font controls and the 41-font gallery are built once; Show only sets their values.</summary>
+    private void BuildWorkFonts()
+    {
+        var title = _workTitleFont;
+        var body = _workBodyFont;
         WorkFontControls.Children.Add(new TextBlock { Text = "Title font", FontWeight = FontWeight.SemiBold });
-        var title = new FontPickerButton { Selected = _settings.WorkTitleFont };
-        title.Chosen += name => Update(s => s.WorkTitleFont = name ?? s.WorkTitleFont);
+        title.Chosen += name => Update(s => s.WorkTitleFont = name ?? s.WorkTitleFont, SettingsChange.Works);
         WorkFontControls.Children.Add(title);
         WorkFontControls.Children.Add(new TextBlock { Text = "Writing font", FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 6, 0, 0) });
-        var body = new FontPickerButton { Selected = _settings.WorkBodyFont };
-        body.Chosen += name => Update(s => s.WorkBodyFont = name ?? s.WorkBodyFont);
+        body.Chosen += name => Update(s => s.WorkBodyFont = name ?? s.WorkBodyFont, SettingsChange.Works);
         WorkFontControls.Children.Add(body);
-        var size = new NumericUpDown { Minimum = 11, Maximum = 32, Increment = 1, Width = 130, Value = (decimal)_settings.WorkFontSize, FormatString = "0 'px'", HorizontalAlignment = HorizontalAlignment.Left };
-        size.ValueChanged += (_, e) =>
+        _workFontSize.ValueChanged += (_, e) =>
         {
-            if (!_loading) Update(s => s.WorkFontSize = (double)(e.NewValue ?? 15));
+            if (!_loading) Update(s => s.WorkFontSize = (double)(e.NewValue ?? 15), SettingsChange.Works);
         };
         WorkFontControls.Children.Add(new TextBlock { Text = "Text size", FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 6, 0, 0) });
-        WorkFontControls.Children.Add(size);
+        WorkFontControls.Children.Add(_workFontSize);
 
-        WorkFontGallery.Children.Clear();
         foreach (var category in WorkFonts.Categories)
         {
             WorkFontGallery.Children.Add(new TextBlock { Text = category.ToUpperInvariant(), Classes = { "eyebrow" }, FontSize = 9.5, Margin = new Thickness(2, 12, 0, 4) });
@@ -206,13 +229,13 @@ public partial class SettingsView
         var asBody = new Button { Content = "Use as writing font", Classes = { "ghost" }, HorizontalAlignment = HorizontalAlignment.Stretch };
         asTitle.Click += (_, _) =>
         {
-            Update(s => s.WorkTitleFont = font.Name);
+            Update(s => s.WorkTitleFont = font.Name, SettingsChange.Works);
             title.Selected = font.Name;
             flyout?.Hide();
         };
         asBody.Click += (_, _) =>
         {
-            Update(s => s.WorkBodyFont = font.Name);
+            Update(s => s.WorkBodyFont = font.Name, SettingsChange.Works);
             body.Selected = font.Name;
             flyout?.Hide();
         };
@@ -239,7 +262,7 @@ public partial class SettingsView
             {
                 _settings.WebPins.RemoveAt(index);
                 BuildWebPins();
-                Changed?.Invoke();
+                Changed?.Invoke(SettingsChange.WebStrip);
             }, true));
             WebPinRows.Children.Add(new Border { Classes = { "dockrowstatic" }, Padding = new Thickness(12, 8), Child = row });
         }
@@ -250,7 +273,7 @@ public partial class SettingsView
             _settings.WebPins.RemoveAt(index);
             _settings.WebPins.Insert(index + delta, pin);
             BuildWebPins();
-            Changed?.Invoke();
+            Changed?.Invoke(SettingsChange.WebStrip);
         }
     }
 
@@ -336,8 +359,8 @@ public partial class SettingsView
         {
             var name = new TextBox { Text = prompt.Name, FontWeight = FontWeight.SemiBold, Width = 200, VerticalAlignment = VerticalAlignment.Top };
             var text = new TextBox { Text = prompt.Text, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 56, Margin = new Thickness(8, 0) };
-            CommitOnEdit(name, () => { prompt.Name = name.Text ?? ""; Changed?.Invoke(); });
-            CommitOnEdit(text, () => { prompt.Text = text.Text ?? ""; Changed?.Invoke(); });
+            CommitOnEdit(name, () => { prompt.Name = name.Text ?? ""; Changed?.Invoke(SettingsChange.None); });
+            CommitOnEdit(text, () => { prompt.Text = text.Text ?? ""; Changed?.Invoke(SettingsChange.None); });
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
             row.Children.Add(name);
             Grid.SetColumn(text, 1);
@@ -346,7 +369,7 @@ public partial class SettingsView
             {
                 _settings.Prompts.Remove(prompt);
                 BuildPrompts();
-                Changed?.Invoke();
+                Changed?.Invoke(SettingsChange.None);
             }, true));
             PromptRows.Children.Add(row);
         }
@@ -374,12 +397,12 @@ public partial class SettingsView
             }
 
             var name = new TextBox { Text = project.Name };
-            CommitOnEdit(name, () => { project.Name = name.Text?.Trim() ?? project.Name; Changed?.Invoke(); });
+            CommitOnEdit(name, () => { project.Name = name.Text?.Trim() ?? project.Name; Changed?.Invoke(SettingsChange.Projects); });
             Row(0, "Name", name);
 
             var folderRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
             var folder = new TextBox { Text = project.Folder, Classes = { "mono" } };
-            CommitOnEdit(folder, () => { project.Folder = folder.Text?.Trim() ?? project.Folder; Changed?.Invoke(); });
+            CommitOnEdit(folder, () => { project.Folder = folder.Text?.Trim() ?? project.Folder; Changed?.Invoke(SettingsChange.Projects); });
             folderRow.Children.Add(folder);
             var browse = new Button { Classes = { "ghost" }, Content = "Browse…", Margin = new Thickness(8, 0, 0, 0) };
             browse.Click += async (_, _) =>
@@ -389,7 +412,7 @@ public partial class SettingsView
                 if (picked.FirstOrDefault()?.TryGetLocalPath() is { } path)
                 {
                     folder.Text = project.Folder = path;
-                    Changed?.Invoke();
+                    Changed?.Invoke(SettingsChange.Projects);
                 }
             };
             Grid.SetColumn(browse, 1);
@@ -400,7 +423,7 @@ public partial class SettingsView
             CommitOnEdit(commands, () =>
             {
                 project.Commands = (commands.Text ?? "").Split('\n').Select(c => c.Trim()).Where(c => c.Length > 0).ToList();
-                Changed?.Invoke();
+                Changed?.Invoke(SettingsChange.Projects);
             });
             Row(2, "Start with", commands);
 
@@ -410,20 +433,20 @@ public partial class SettingsView
                 var normalized = Overdesk.Core.Tabs.WebUrl.Normalize(url.Text);
                 if (normalized is null && !string.IsNullOrWhiteSpace(url.Text)) url.Text = project.Url; // invalid: show what is really kept
                 else project.Url = normalized;
-                Changed?.Invoke();
+                Changed?.Invoke(SettingsChange.None);
             };
             Row(3, "Open", url);
 
             var bottom = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
             var editor = new CheckBox { Content = "Open the folder in my code editor", IsChecked = project.OpenEditor };
-            editor.IsCheckedChanged += (_, _) => { project.OpenEditor = editor.IsChecked == true; Changed?.Invoke(); };
+            editor.IsCheckedChanged += (_, _) => { project.OpenEditor = editor.IsChecked == true; Changed?.Invoke(SettingsChange.None); };
             bottom.Children.Add(editor);
             var delete = new Button { Classes = { "ghost" }, Content = "Remove project" };
             delete.Click += (_, _) =>
             {
                 _settings.Projects.Remove(project);
                 BuildProjects();
-                Changed?.Invoke();
+                Changed?.Invoke(SettingsChange.Projects);
             };
             Grid.SetColumn(delete, 2);
             bottom.Children.Add(delete);
@@ -450,7 +473,7 @@ public partial class SettingsView
             {
                 _settings.HiddenDockCards.Remove(id);
                 if (chip.IsChecked != true) _settings.HiddenDockCards.Add(id);
-                Changed?.Invoke();
+                Changed?.Invoke(SettingsChange.DockCards);
             };
             CardChips.Children.Add(chip);
         }

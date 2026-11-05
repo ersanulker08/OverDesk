@@ -149,6 +149,39 @@ internal sealed class TaskRunner
         }
     }
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Task<string?>> ExecutablePaths = new();
+
+    /// <summary>Where the user's shell finds a program (one login shell per name, then cached). Null when it is not installed.</summary>
+    public static Task<string?> FindExecutableAsync(string name) => ExecutablePaths.GetOrAdd(name, async n =>
+    {
+        var output = await CaptureAsync(OperatingSystem.IsWindows() ? $"where {n}" : $"command -v {n}", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        var path = output?.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
+        return path is { Length: > 0 } && File.Exists(path) ? path : null;
+    });
+
+    /// <summary>Run an already resolved program directly (no shell), for the polls that repeat every few seconds.</summary>
+    public static async Task<string?> CaptureAsync(string executable, IEnumerable<string> arguments, string folder, CancellationToken cancellation = default)
+    {
+        var info = new ProcessStartInfo(executable)
+        {
+            WorkingDirectory = Directory.Exists(folder) ? folder : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
+        };
+        foreach (var argument in arguments) info.ArgumentList.Add(argument);
+        try
+        {
+            using var p = Process.Start(info);
+            if (p is null) return null;
+            var output = await p.StandardOutput.ReadToEndAsync(cancellation);
+            await p.WaitForExitAsync(cancellation);
+            return p.ExitCode == 0 ? output : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private void NotifyChanged() => Dispatcher.UIThread.Post(() =>
     {
         Changed?.Invoke();

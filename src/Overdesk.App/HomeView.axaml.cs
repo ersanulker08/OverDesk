@@ -1,10 +1,12 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Transformation;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Overdesk.App.Controls;
 using Overdesk.App.Services;
 using Overdesk.App.Theme;
@@ -67,9 +69,21 @@ public partial class HomeView : UserControl
     public event Action<string>? PinToggled;
     public event Action<string>? RecentRemoved;
 
+    /// <summary>Pinned tiles were dragged into a new order (every pinned path, first to last).</summary>
+    public event Action<IReadOnlyList<string>>? PinsReordered;
+
+    // Pinned tiles reorder by drag, like the tabs in the top bar.
+    private Button? _dragTile;
+    private Point _dragStart;
+    private bool _draggingTile;
+    private int _pinnedCount;
+
     public void Initialize(AppSettings settings, IProgramCatalog catalog)
     {
         _settings = settings;
+        Tiles.AddHandler(PointerPressedEvent, OnTilePointerPressed, RoutingStrategies.Tunnel);
+        Tiles.AddHandler(PointerMovedEvent, OnTilePointerMoved, RoutingStrategies.Tunnel);
+        Tiles.AddHandler(PointerReleasedEvent, OnTilePointerReleased, RoutingStrategies.Tunnel);
         ProgramLibrary.Start(catalog);
         ProgramLibrary.Installed.ContinueWith(t => Dispatcher.UIThread.Post(() =>
         {
@@ -188,10 +202,48 @@ public partial class HomeView : UserControl
         }
 
         Tiles.Children.Clear();
+        _pinnedCount = items.Count(path => pinned.Any(p => ProgramHistory.SamePath(p, path)));
         var index = 0;
         foreach (var path in items)
             Tiles.Children.Add(Animate(ProgramTile(path, pinned.Any(p => ProgramHistory.SamePath(p, path))), index++));
         Tiles.Children.Add(Animate(AddTile(), index));
+    }
+
+    private void OnTilePointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        _dragTile = null;
+        if (!e.GetCurrentPoint(Tiles).Properties.IsLeftButtonPressed) return;
+        if (e.Source is not Visual src || src.FindAncestorOfType<Button>(includeSelf: true) is not { Tag: string } tile) return;
+        if (Tiles.Children.IndexOf(tile) >= _pinnedCount) return;
+        _dragTile = tile;
+        _dragStart = e.GetPosition(Tiles);
+        _draggingTile = false;
+    }
+
+    private void OnTilePointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_dragTile is null || !e.GetCurrentPoint(Tiles).Properties.IsLeftButtonPressed) return;
+        var pos = e.GetPosition(Tiles);
+        if (!_draggingTile && Math.Abs(pos.X - _dragStart.X) < 8 && Math.Abs(pos.Y - _dragStart.Y) < 8) return;
+        _draggingTile = true;
+        var from = Tiles.Children.IndexOf(_dragTile);
+        var target = -1;
+        for (var i = 0; i < _pinnedCount; i++)
+        {
+            if (Tiles.Children[i].Bounds.Contains(pos)) { target = i; break; }
+        }
+        if (target < 0 || target == from) return;
+        Tiles.Children.Move(from, target);
+    }
+
+    private void OnTilePointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        var dragged = _draggingTile;
+        _dragTile = null;
+        _draggingTile = false;
+        if (!dragged) return;
+        e.Handled = true; // the drop is not a click
+        PinsReordered?.Invoke(Tiles.Children.Take(_pinnedCount).Select(c => (string)((Button)c).Tag!).ToList());
     }
 
     private static bool Exists(string path) => path.StartsWith("shell:", StringComparison.OrdinalIgnoreCase) || File.Exists(path) || Directory.Exists(path);
@@ -231,8 +283,8 @@ public partial class HomeView : UserControl
             });
         }
 
-        var tile = new Button { Classes = { "tile" }, Content = grid };
-        ToolTip.SetTip(tile, path);
+        var tile = new Button { Classes = { "tile" }, Content = grid, Tag = path };
+        ToolTip.SetTip(tile, isPinned ? path + "\nDrag to reorder" : path);
         tile.Click += (_, _) => ProgramRequested?.Invoke(path);
         tile.ContextMenu = TileMenu(path, isPinned);
         return tile;

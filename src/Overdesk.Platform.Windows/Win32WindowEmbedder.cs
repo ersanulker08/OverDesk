@@ -1,4 +1,6 @@
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using Overdesk.Core.Platform;
 using static Overdesk.Platform.Windows.NativeMethods;
 
@@ -12,9 +14,12 @@ namespace Overdesk.Platform.Windows;
 /// adopting a window it already had open.
 /// </summary>
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-public sealed class Win32WindowEmbedder : IWindowEmbedder
+public sealed partial class Win32WindowEmbedder : IWindowEmbedder
 {
     private static readonly TimeSpan WindowTimeout = TimeSpan.FromSeconds(25);
+
+    /// <summary>How long a program that is still running gets (Photoshop or a game launcher on a slow disk).</summary>
+    private static readonly TimeSpan SlowWindowTimeout = TimeSpan.FromMinutes(2);
 
     /// <summary>How long to wait for a new window before adopting one the program already had open.</summary>
     private static readonly TimeSpan AdoptAfter = TimeSpan.FromSeconds(3);
@@ -52,30 +57,29 @@ public sealed class Win32WindowEmbedder : IWindowEmbedder
 
     public async Task<IEmbeddedWindow> LaunchAsync(string programPath, IntPtr ownerHandle, CancellationToken cancellation)
     {
-        if (!File.Exists(programPath))
-            throw new EmbeddingException($"Program not found: {programPath}");
-
-        // A dropped Start menu / desktop shortcut stands for the program it starts.
-        if (programPath.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
-            programPath = Shortcuts.Resolve(programPath)
-                          ?? throw new EmbeddingException("This shortcut does not point to a program.");
-
-        var exeName = Path.GetFileNameWithoutExtension(programPath);
+        var launch = Describe(programPath);
         var before = TopWindows().Select(w => w.Hwnd).ToHashSet();
         var started = DateTime.Now;
 
         Process? process;
         try
         {
-            process = Process.Start(new ProcessStartInfo(programPath)
+            process = Process.Start(new ProcessStartInfo(launch.File, launch.Arguments)
             {
                 UseShellExecute = true,
-                WorkingDirectory = Path.GetDirectoryName(programPath) ?? "",
+                WorkingDirectory = launch.Folder,
             });
         }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
         {
             throw new EmbeddingException($"The program could not be started: {ex.Message}", ex);
+        }
+
+        // For a Store app this is only explorer.exe passing the request on.
+        if (launch.AppId is not null)
+        {
+            process?.Dispose();
+            process = null;
         }
 
         var startedPid = process is { HasExited: false } ? (uint)process.Id : 0u;
@@ -83,55 +87,105 @@ public sealed class Win32WindowEmbedder : IWindowEmbedder
         {
             IntPtr candidate = IntPtr.Zero;
             var deadline = DateTime.UtcNow + WindowTimeout;
+            var slowDeadline = DateTime.UtcNow + SlowWindowTimeout;
             var adoptAt = DateTime.UtcNow + AdoptAfter;
             var splashUntil = DateTime.UtcNow + SplashGrace;
-            while (DateTime.UtcNow < deadline)
+            while (DateTime.UtcNow < deadline || (DateTime.UtcNow < slowDeadline && process is { HasExited: false }))
             {
                 cancellation.ThrowIfCancellationRequested();
 
                 var windows = TopWindows();
-                var fresh = Pick(windows.Where(w => !before.Contains(w.Hwnd)), startedPid, exeName, started,
+                var fresh = Pick(windows.Where(w => !before.Contains(w.Hwnd)), startedPid, launch, started,
                                  captionOnly: DateTime.UtcNow < splashUntil);
 
                 // The same window on two polls in a row: it is not a flash (splash, "loading…" popup).
                 if (fresh != IntPtr.Zero && fresh == candidate)
-                    return Embed(fresh, ownerHandle, process, owned: true);
+                    return Embed(fresh, ownerHandle, owned: true);
                 candidate = fresh;
 
                 if (fresh == IntPtr.Zero && DateTime.UtcNow >= adoptAt
-                    && Pick(windows.Where(w => before.Contains(w.Hwnd)), 0, exeName, null, captionOnly: true) is var old
+                    && OpenWindow(windows.Where(w => before.Contains(w.Hwnd)).ToList(), launch) is var old
                     && old != IntPtr.Zero)
                 {
                     // No new window: the program was already running and only brought its window forward.
-                    return Embed(old, ownerHandle, process, owned: false);
+                    return Embed(old, ownerHandle, owned: false);
                 }
 
                 await Task.Delay(150, cancellation);
             }
             throw new EmbeddingException(process is { HasExited: true }
                 ? "The program exited without showing a window."
-                : "The program did not show a window in time.");
+                : "The program did not show a window in time. It may still be running on its own.");
         }
-        catch
+        catch (OperationCanceledException)
         {
-            // Never leave a half-started program running (cancelled tab, timeout).
-            try { if (process is { HasExited: false }) process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
-            process?.Dispose();
+            // The tab was closed while the program was starting: do not leave it half-started.
+            try { if (process is { HasExited: false }) process.Kill(entireProcessTree: true); }
+            catch (Exception ex) when (ex is InvalidOperationException or Win32Exception or AggregateException) { /* gone, or elevated */ }
             throw;
+        }
+        finally
+        {
+            process?.Dispose();
         }
     }
 
-    private static Win32EmbeddedWindow Embed(IntPtr hwnd, IntPtr owner, Process? started, bool owned)
+    /// <summary>What to start and how to recognize the program's windows afterwards.</summary>
+    private sealed record Launch(string File, string Arguments, string Folder, IReadOnlySet<string> Names, string? AppId);
+
+    private static Launch Describe(string programPath)
+    {
+        if (StoreApps.IsStoreApp(programPath))
+            return new Launch("explorer.exe", programPath, "", new HashSet<string>(), StoreApps.AppId(programPath));
+
+        if (!File.Exists(programPath))
+            throw new EmbeddingException($"Program not found: {programPath}");
+
+        // A Start menu / desktop shortcut stands for the program it starts, with its arguments.
+        var file = programPath;
+        var arguments = "";
+        string? folder = null;
+        if (programPath.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
+        {
+            var shortcut = Shortcuts.Resolve(programPath)
+                           ?? throw new EmbeddingException("This shortcut does not point to a program.");
+            (file, arguments, folder) = (shortcut.Target, shortcut.Arguments, shortcut.WorkingDirectory);
+        }
+
+        // "Update.exe --processStart Discord.exe": the windows belong to the program named in the arguments.
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Path.GetFileNameWithoutExtension(file) };
+        foreach (Match exe in ExeArgument().Matches(arguments)) names.Add(Path.GetFileNameWithoutExtension(exe.Value));
+
+        return new Launch(file, arguments, folder ?? Path.GetDirectoryName(file) ?? "", names, null);
+    }
+
+    [GeneratedRegex(@"[^\s""\\/]+\.exe\b", RegexOptions.IgnoreCase)]
+    private static partial Regex ExeArgument();
+
+    /// <summary>A window of the program that was already open before we started it.</summary>
+    private static IntPtr OpenWindow(List<TopWindow> open, Launch launch)
+    {
+        var known = Pick(open, 0, launch, null, captionOnly: true);
+        if (known != IntPtr.Zero || launch.AppId is null) return known;
+
+        // A running UWP app sits in ApplicationFrameHost, which does not say whose frame it is; starting it raises the frame.
+        var front = GetForegroundWindow();
+        return open.Any(w => w.Hwnd == front && w.Class == "ApplicationFrameWindow") ? front : IntPtr.Zero;
+    }
+
+    private static Win32EmbeddedWindow Embed(IntPtr hwnd, IntPtr owner, bool owned)
     {
         GetWindowThreadProcessId(hwnd, out var pid);
         Process windowProcess;
         try { windowProcess = Process.GetProcessById((int)pid); }
         catch (ArgumentException) { throw new EmbeddingException("The program's window disappeared."); }
 
-        // Kill the process we started only when the window really is its own.
-        var ownProcess = started is not null && !started.HasExited && started.Id == (int)pid;
-        if (!ownProcess) started?.Dispose();
-        return new Win32EmbeddedWindow(windowProcess, hwnd, owner, owned, killOnClose: owned && ownProcess);
+        try { return new Win32EmbeddedWindow(windowProcess, hwnd, owner, owned); }
+        catch (EmbeddingException)
+        {
+            windowProcess.Dispose(); // refused (administrator program): it keeps running as a normal window
+            throw;
+        }
     }
 
     private readonly record struct TopWindow(IntPtr Hwnd, uint Pid, bool Caption, string Class);
@@ -166,7 +220,7 @@ public sealed class Win32WindowEmbedder : IWindowEmbedder
     /// another copy of the same program, then (new windows only) a Store-app frame or a window of a process that
     /// started after we launched.
     /// </summary>
-    private static IntPtr Pick(IEnumerable<TopWindow> windows, uint startedPid, string exeName, DateTime? startedAt, bool captionOnly)
+    private static IntPtr Pick(IEnumerable<TopWindow> windows, uint startedPid, Launch launch, DateTime? startedAt, bool captionOnly)
     {
         IntPtr best = IntPtr.Zero;
         var bestScore = 0;
@@ -175,14 +229,18 @@ public sealed class Win32WindowEmbedder : IWindowEmbedder
             if (captionOnly && !w.Caption) continue;
             var score = 0;
             if (startedPid != 0 && w.Pid == startedPid) score = 4;
-            else if (ProcessPath(w.Pid) is { } path
-                     && string.Equals(Path.GetFileNameWithoutExtension(path), exeName, StringComparison.OrdinalIgnoreCase)) score = 3;
+            else if (BelongsTo(w.Pid, launch)) score = 3;
             else if (startedAt is not null && w.Class == "ApplicationFrameWindow") score = 2;
             else if (startedAt is { } since && StartedAfter(w.Pid, since)) score = 1;
             if (score > bestScore) { best = w.Hwnd; bestScore = score; }
         }
         return best;
     }
+
+    private static bool BelongsTo(uint pid, Launch launch)
+        => launch.AppId is { } appId
+            ? string.Equals(ProcessAppId(pid), appId, StringComparison.OrdinalIgnoreCase)
+            : ProcessPath(pid) is { } path && launch.Names.Contains(Path.GetFileNameWithoutExtension(path));
 
     private static bool StartedAfter(uint pid, DateTime since)
     {

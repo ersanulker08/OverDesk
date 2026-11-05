@@ -38,7 +38,7 @@ public interface IEmbeddedWindow : IDisposable
     /// </summary>
     Task FocusAndClickAsync(double screenX, double screenY, bool rightButton);
 
-    /// <summary>Ask the program to close; kill it if it does not.</summary>
+    /// <summary>Ask the program to close, without waiting for it: it may ask the user to save first.</summary>
     void Close();
 }
 

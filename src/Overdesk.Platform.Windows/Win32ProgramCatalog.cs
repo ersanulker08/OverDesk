@@ -5,7 +5,10 @@ using Overdesk.Core.Platform;
 
 namespace Overdesk.Platform.Windows;
 
-/// <summary>Windows catalog: Start menu shortcuts resolved to their .exe, icons through the shell.</summary>
+/// <summary>
+/// Windows catalog: Start menu shortcuts resolved to their .exe (a shortcut that passes arguments stays a .lnk, since the
+/// .exe alone would not start the program), packaged apps as shell:AppsFolder addresses, icons through the shell.
+/// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class Win32ProgramCatalog : IProgramCatalog
 {
@@ -28,27 +31,57 @@ public sealed class Win32ProgramCatalog : IProgramCatalog
 
             foreach (var link in links)
             {
-                if (Shortcuts.Resolve(link) is not { } target
-                    || !target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-                    || Path.GetFileName(target).Contains("unins", StringComparison.OrdinalIgnoreCase))
+                if (Shortcuts.Resolve(link) is not { } shortcut
+                    || !shortcut.Target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                    || IsUninstaller(link, shortcut))
                     continue;
                 var name = Path.GetFileNameWithoutExtension(link);
-                if (programs.ContainsKey(name) || programs.ContainsValue(target)) continue;
-                programs[name] = target;
-                ProgramNames.Register(target, name);
+                var program = shortcut.Arguments.Length > 0 ? link : shortcut.Target;
+                if (programs.ContainsKey(name) || programs.ContainsValue(program)) continue;
+                programs[name] = program;
+                ProgramNames.Register(program, name);
             }
+        }
+
+        try
+        {
+            foreach (var (name, path) in StoreApps.Find())
+                if (programs.TryAdd(name, path)) ProgramNames.Register(path, name);
+        }
+        catch (Exception)
+        {
+            // No package service (stripped-down Windows): the shortcuts above still count.
         }
 
         return programs.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase).Select(p => p.Value).ToList();
     }
 
+    private static bool IsUninstaller(string link, Shortcut shortcut)
+    {
+        var exe = Path.GetFileName(shortcut.Target);
+        return exe.Contains("unins", StringComparison.OrdinalIgnoreCase)
+               || exe.Equals("msiexec.exe", StringComparison.OrdinalIgnoreCase)
+               || Path.GetFileName(link).Contains("unins", StringComparison.OrdinalIgnoreCase)
+               || shortcut.Arguments.Contains("uninstall", StringComparison.OrdinalIgnoreCase);
+    }
+
     public ProgramIcon? GetIcon(string programPath, int size)
     {
-        if (!File.Exists(programPath)) return null;
+        if (StoreApps.IsStoreApp(programPath)) return StoreApps.GetIcon(programPath, size);
+        if (!programPath.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase)) return ExtractIcon(programPath, 0, size);
+
+        if (Shortcuts.Resolve(programPath) is not { } shortcut) return null;
+        return (shortcut.IconFile is { } file ? ExtractIcon(file, shortcut.IconIndex, size) : null)
+               ?? ExtractIcon(shortcut.Target, 0, size);
+    }
+
+    private static ProgramIcon? ExtractIcon(string file, int index, int size)
+    {
+        if (!File.Exists(file)) return null;
 
         var icons = new IntPtr[1];
         var ids = new uint[1];
-        if (PrivateExtractIcons(programPath, 0, size, size, icons, ids, 1, 0) == 0 || icons[0] == IntPtr.Zero)
+        if (PrivateExtractIcons(file, index, size, size, icons, ids, 1, 0) == 0 || icons[0] == IntPtr.Zero)
             return null;
 
         try { return ToBgra(icons[0]); }
@@ -73,22 +106,27 @@ public sealed class Win32ProgramCatalog : IProgramCatalog
                 biPlanes = 1,
                 biBitCount = 32,
             };
+            var maskHeader = header; // GetDIBits writes into the header it gets
             var pixels = new byte[width * height * 4];
+            var mask = new byte[pixels.Length];
+            var maskRead = false;
             var dc = GetDC(IntPtr.Zero);
             try
             {
                 if (GetDIBits(dc, info.hbmColor, 0, (uint)height, pixels, ref header, 0) == 0) return null;
+                // Asked for as 32 bits so that the 1-bit mask needs no color table after the header.
+                maskRead = info.hbmMask != IntPtr.Zero && GetDIBits(dc, info.hbmMask, 0, (uint)height, mask, ref maskHeader, 0) != 0;
             }
             finally
             {
                 ReleaseDC(IntPtr.Zero, dc);
             }
 
-            // Old icons carry no alpha channel: treat them as fully opaque.
+            // Old icons carry no alpha channel: their shape is in the mask, where white means transparent.
             var hasAlpha = false;
             for (var i = 3; i < pixels.Length && !hasAlpha; i += 4) hasAlpha = pixels[i] != 0;
             if (!hasAlpha)
-                for (var i = 3; i < pixels.Length; i += 4) pixels[i] = 255;
+                for (var i = 0; i < pixels.Length; i += 4) pixels[i + 3] = maskRead && mask[i] != 0 ? (byte)0 : (byte)255;
 
             return new ProgramIcon(pixels, IsPng: false, width, height);
         }

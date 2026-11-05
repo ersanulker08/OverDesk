@@ -11,12 +11,16 @@ public static class Fonts
 {
     private const uint OtfFlavor = 0x4F54544F; // "OTTO": CFF outlines
 
-    /// <summary>"otf" or "ttf": what a WOFF file unpacks to.</summary>
+    /// <summary>"otf" or "ttf": what a WOFF file unpacks to. A file that is too short or unreadable counts as "ttf".</summary>
     public static string WoffFlavor(string path)
     {
         Span<byte> header = stackalloc byte[8];
-        using var file = File.OpenRead(path);
-        file.ReadExactly(header);
+        try
+        {
+            using var file = File.OpenRead(path);
+            if (file.Read(header) < header.Length) return "ttf";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return "ttf"; }
         return BinaryPrimitives.ReadUInt32BigEndian(header[4..]) == OtfFlavor ? "otf" : "ttf";
     }
 
@@ -66,17 +70,20 @@ public static class Fonts
 
     public static byte[] FromWoff(byte[] woff)
     {
-        if (woff.Length < 44 || BinaryPrimitives.ReadUInt32BigEndian(woff) != 0x774F4646)
-            throw new InvalidOperationException(BinaryPrimitives.ReadUInt32BigEndian(woff) == 0x774F4632 ? "WOFF2 fonts are not supported yet; only WOFF." : "Not a WOFF font.");
+        var signature = woff.Length >= 4 ? BinaryPrimitives.ReadUInt32BigEndian(woff) : 0;
+        if (signature == 0x774F4632) throw new InvalidOperationException("WOFF2 fonts are not supported yet; only WOFF.");
+        if (woff.Length < 44 || signature != 0x774F4646) throw new InvalidOperationException("Not a WOFF font.");
         var flavor = BinaryPrimitives.ReadUInt32BigEndian(woff.AsSpan(4));
         int count = BinaryPrimitives.ReadUInt16BigEndian(woff.AsSpan(12));
         var tables = new List<(uint Tag, uint Checksum, byte[] Data)>();
+        if (44 + count * 20 > woff.Length) throw new InvalidOperationException("The font is damaged (the table directory is cut off).");
         for (var i = 0; i < count; i++)
         {
             var entry = woff.AsSpan(44 + i * 20);
             var offset = (int)BinaryPrimitives.ReadUInt32BigEndian(entry[4..]);
             var stored = (int)BinaryPrimitives.ReadUInt32BigEndian(entry[8..]);
             var length = (int)BinaryPrimitives.ReadUInt32BigEndian(entry[12..]);
+            if (offset < 0 || stored < 0 || length < 0 || (long)offset + stored > woff.Length) throw new InvalidOperationException("The font is damaged (a table runs past the end).");
             var raw = woff.AsSpan(offset, stored).ToArray();
             var data = stored < length ? Decompress(raw, length) : raw;
             tables.Add((BinaryPrimitives.ReadUInt32BigEndian(entry), BinaryPrimitives.ReadUInt32BigEndian(entry[16..]), data));

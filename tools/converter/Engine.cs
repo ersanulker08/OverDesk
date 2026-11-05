@@ -63,7 +63,29 @@ public static partial class Engine
 
     public static string Ext(string path) => Archives.Format(path) == "tar.gz" ? "tar.gz" : Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
 
-    public static FileKind KindOf(string path) => Ext(path) == "tar.gz" ? FileKind.Archive : Kinds.GetValueOrDefault(Ext(path), FileKind.Unknown);
+    public static FileKind KindOf(string path)
+    {
+        var ext = Ext(path);
+        if (ext == "tar.gz") return FileKind.Archive;
+        // ".ts" / ".mts" are far more often TypeScript than MPEG transport streams.
+        if (ext is "ts" or "mts") return IsTransportStream(path) ? FileKind.Video : FileKind.Unknown;
+        return Kinds.GetValueOrDefault(ext, FileKind.Unknown);
+    }
+
+    /// <summary>MPEG-TS packets are 188 bytes (192 with the AVCHD time stamp) and each starts with the sync byte 0x47.</summary>
+    private static bool IsTransportStream(string path)
+    {
+        try
+        {
+            Span<byte> head = stackalloc byte[392];
+            using var file = File.OpenRead(path);
+            var read = file.Read(head);
+            foreach (var (packet, first) in new[] { (188, 0), (192, 4) })
+                if (read > first + 2 * packet && head[first] == 0x47 && head[first + packet] == 0x47 && head[first + 2 * packet] == 0x47) return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        return false;
+    }
 
     private static bool Mac => OperatingSystem.IsMacOS();
     private static bool HasFfmpeg => Cli.Find("ffmpeg") is not null;
@@ -97,10 +119,28 @@ public static partial class Engine
         return all;
     }
 
-    /// <summary>What is missing for more formats of this kind, or null.</summary>
-    public static string? Hint(FileKind kind) => kind switch
+    /// <summary>What is missing for more formats for this file, or null.</summary>
+    public static string? Hint(string path)
     {
-        FileKind.Audio or FileKind.Video when !HasFfmpeg => Mac
+        var kind = KindOf(path);
+        var ext = Ext(path);
+        if (kind == FileKind.Image && !Mac && PortableImages.Contains(ext)) return null;
+        if (kind == FileKind.Document && !Mac && ext is "html" or "htm") return null;
+        return Hint(kind);
+    }
+
+    /// <summary>True when ffmpeg was looked for and is not installed (never blocks).</summary>
+    public static bool FfmpegMissing => Cli.Peek("ffmpeg") is null;
+
+    /// <summary>Looks for ffmpeg again, e.g. after the user installed it.</summary>
+    public static void ForgetTools() => Cli.Forget();
+
+    /// <summary>Starts the ffmpeg lookup in the background so the first listed audio or video file does not wait for a login shell.</summary>
+    public static void WarmUp() => _ = Task.Run(() => Cli.Find("ffmpeg"));
+
+    private static string? Hint(FileKind kind) => kind switch
+    {
+        FileKind.Audio or FileKind.Video when FfmpegMissing => Mac
             ? "Install ffmpeg for more formats (MP3, WebM, MKV, GIF…): brew install ffmpeg"
             : "Install ffmpeg to convert audio and video: winget install ffmpeg",
         FileKind.Document when !Mac => "Word, RTF and ODT conversion uses macOS's textutil; on Windows only HTML → text works.",
@@ -342,13 +382,26 @@ public static partial class Engine
 /// <summary>Finds and runs command-line converters the way the user's terminal would (login shell PATH on macOS).</summary>
 internal static class Cli
 {
-    private static readonly Dictionary<string, string?> Found = new();
+    private static readonly Dictionary<string, (string? Path, DateTime At)> Found = new();
+    private static readonly TimeSpan MissingFor = TimeSpan.FromSeconds(30);
 
+    /// <summary>What an earlier <see cref="Find"/> learned, without looking again.</summary>
+    public static string? Peek(string command)
+    {
+        lock (Found) return Found.TryGetValue(command, out var known) ? known.Path : null;
+    }
+
+    public static void Forget()
+    {
+        lock (Found) Found.Clear();
+    }
+
+    /// <summary>Blocks while a login shell runs; call from a background thread. A miss is retried after a while.</summary>
     public static string? Find(string command)
     {
         lock (Found)
         {
-            if (Found.TryGetValue(command, out var known)) return known;
+            if (Found.TryGetValue(command, out var known) && (known.Path is not null || DateTime.UtcNow - known.At < MissingFor)) return known.Path;
             string? path = null;
             try
             {
@@ -360,12 +413,17 @@ internal static class Cli
                 info.UseShellExecute = false;
                 info.CreateNoWindow = true;
                 using var p = Process.Start(info);
-                var output = p?.StandardOutput.ReadToEnd() ?? "";
-                p?.WaitForExit(5000);
+                var read = p?.StandardOutput.ReadToEndAsync();
+                var output = "";
+                if (p is not null && read is not null)
+                {
+                    if (read.Wait(5000)) output = read.Result;
+                    else p.Kill(entireProcessTree: true);
+                }
                 path = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault(File.Exists);
             }
             catch (Exception) { /* not installed */ }
-            Found[command] = path;
+            Found[command] = (path, DateTime.UtcNow);
             return path;
         }
     }

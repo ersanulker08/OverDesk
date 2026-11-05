@@ -21,6 +21,8 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
     private sealed class Item
     {
         public required string Path { get; init; }
+        public required FileKind Kind { get; init; }
+        public required IReadOnlyList<string> Targets { get; init; }
         public string? Output;
         public string? Error;
         public double? Progress;
@@ -36,6 +38,7 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
     private readonly ComboBox _size = new() { MinWidth = 150 };
     private readonly CheckBox _combine = new() { Content = "Combine into one PDF", FontSize = 12, IsVisible = false };
     private readonly TextBlock _hint = new() { FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Opacity = 0.7, IsVisible = false };
+    private readonly Button _recheck = new() { Content = "Check again", Padding = new Thickness(10, 4), FontSize = 12, HorizontalAlignment = HorizontalAlignment.Left, IsVisible = false };
     private readonly Button _convert = new() { Content = "Convert", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, Padding = new Thickness(12, 9) };
     private readonly Button _outputButton = new() { Padding = new Thickness(10, 4), FontSize = 12 };
     private readonly StackPanel _empty = new() { Spacing = 10, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
@@ -48,7 +51,9 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
     {
         _convert.Classes.Add("accent");
         _outputButton.Classes.Add("ghost");
-        _convert.Click += (_, _) => _ = ConvertAllAsync();
+        _recheck.Classes.Add("ghost");
+        _recheck.Click += (_, _) => _ = RecheckToolsAsync();
+        _convert.Click += (_, _) => { if (_running is { } running) running.Cancel(); else _ = ConvertAllAsync(); };
         _outputButton.Click += (_, _) => _ = ChooseOutputAsync();
         _quality.PropertyChanged += (_, e) => { if (e.Property == RangeBase.ValueProperty) _qualityText.Text = $"{(int)_quality.Value}"; };
         _qualityText.Text = "90";
@@ -73,7 +78,7 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
         var add = SmallButton("Add…", () => _ = BrowseAsync());
         Grid.SetColumn(add, 1);
         header.Children.Add(add);
-        var clear = SmallButton("Clear", () => { _items.Clear(); Render(); });
+        var clear = SmallButton("Clear", () => { _running?.Cancel(); _items.Clear(); Render(); });
         Grid.SetColumn(clear, 2);
         header.Children.Add(clear);
 
@@ -100,6 +105,7 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
         _work.Children.Add(Eyebrow("CONVERT TO"));
         _work.Children.Add(_targets);
         _work.Children.Add(_hint);
+        _work.Children.Add(_recheck);
         _work.Children.Add(_imageOptions);
         _work.Children.Add(outputRow);
         _work.Children.Add(_convert);
@@ -114,18 +120,59 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
 
     public string DropHint => "Drop to convert: they are added to the Converter's list.";
 
-    public void FilesDropped(IReadOnlyList<string> paths) => Dispatcher.UIThread.Post(() => Add(paths));
-
-    private void Add(IEnumerable<string> paths)
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
+        _running?.Cancel();
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    public void FilesDropped(IReadOnlyList<string> paths) => Dispatcher.UIThread.Post(() => _ = AddAsync(paths));
+
+    /// <summary>Looks at the files off the UI thread (kind sniffing, font headers and the ffmpeg lookup read from disk), then lists them.</summary>
+    private async Task AddAsync(IEnumerable<string> paths)
+    {
+        var known = _items.Select(i => i.Path).ToHashSet();
+        var found = await Task.Run(() => Inspect(paths.ToList(), known));
+        foreach (var item in found) if (_items.All(i => i.Path != item.Path)) _items.Add(item);
+        Render();
+    }
+
+    private static List<Item> Inspect(List<string> paths, HashSet<string> known)
+    {
+        var result = new List<Item>();
         foreach (var path in paths)
         {
             if (Directory.Exists(path))
             {
-                Add(Directory.EnumerateFiles(path).Where(f => Engine.KindOf(f) != FileKind.Unknown).Take(200));
+                result.AddRange(Inspect(Directory.EnumerateFiles(path).Where(f => Engine.KindOf(f) != FileKind.Unknown).Take(200).ToList(), known));
                 continue;
             }
-            if (File.Exists(path) && _items.All(i => i.Path != path)) _items.Add(new Item { Path = path });
+            if (!File.Exists(path) || known.Contains(path) || result.Any(i => i.Path == path)) continue;
+            result.Add(Describe(path));
+        }
+        return result;
+    }
+
+    private static Item Describe(string path)
+    {
+        IReadOnlyList<string> targets;
+        try { targets = Engine.TargetsFor(path); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { targets = Array.Empty<string>(); }
+        return new Item { Path = path, Kind = Engine.KindOf(path), Targets = targets };
+    }
+
+    private async Task RecheckToolsAsync()
+    {
+        Engine.ForgetTools();
+        var items = _items.ToList();
+        var fresh = await Task.Run(() => items.Select(i => Describe(i.Path)).ToList());
+        for (var n = 0; n < items.Count; n++)
+        {
+            var at = _items.IndexOf(items[n]);
+            if (at < 0) continue;
+            fresh[n].Output = items[n].Output;
+            fresh[n].Error = items[n].Error;
+            _items[at] = fresh[n];
         }
         Render();
     }
@@ -134,7 +181,7 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
     {
         if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
         var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "Files to convert", AllowMultiple = true });
-        Add(files.Select(f => f.TryGetLocalPath()).OfType<string>());
+        await AddAsync(files.Select(f => f.TryGetLocalPath()).OfType<string>());
     }
 
     private async Task ChooseOutputAsync()
@@ -156,8 +203,8 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
     {
         var pending = _items.Where(i => i.Output is null).ToList();
         if (pending.Count == 0) return new List<string>();
-        IEnumerable<string> common = Engine.TargetsFor(pending[0].Path);
-        foreach (var item in pending.Skip(1)) common = common.Intersect(Engine.TargetsFor(item.Path));
+        IEnumerable<string> common = pending[0].Targets;
+        foreach (var item in pending.Skip(1)) common = common.Intersect(item.Targets);
         return common.ToList();
     }
 
@@ -177,18 +224,20 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
             var t = target;
             _targets.Children.Add(Chip(Label(target), target == _target, () => { _target = t; Render(); }));
         }
-        var kinds = _items.Where(i => i.Output is null).Select(i => Engine.KindOf(i.Path)).Distinct().ToList();
-        var hint = kinds.Select(Engine.Hint).FirstOrDefault(h => h is not null);
+        var open = _items.Where(i => i.Output is null).ToList();
+        var kinds = open.Select(i => i.Kind).Distinct().ToList();
+        var hint = open.Select(i => Engine.Hint(i.Path)).FirstOrDefault(h => h is not null);
         if (targets.Count == 0 && _items.Any(i => i.Output is null))
             hint = kinds.Count > 1 ? "These files have no format in common: convert one kind at a time." : hint ?? "This kind of file cannot be converted here.";
         _hint.Text = hint ?? "";
         _hint.IsVisible = hint is not null;
+        _recheck.IsVisible = Engine.FfmpegMissing && kinds.Any(k => k is FileKind.Audio or FileKind.Video);
         _imageOptions.IsVisible = kinds.All(k => k == FileKind.Image) && kinds.Count > 0;
         _quality.IsEnabled = _target is "jpg" or "webp" or "heic";
         _combine.IsVisible = _target == "pdf" && _items.Count(i => i.Output is null) > 1;
         _outputButton.Content = _outputFolder is null ? "Next to the originals" : $"{System.IO.Path.GetFileName(_outputFolder)} (click to reset)";
-        _convert.IsEnabled = _running is null && _target is not null;
-        _convert.Content = _running is not null ? "Converting…" : _target is null ? "Convert"
+        _convert.IsEnabled = _running is not null || _target is not null;
+        _convert.Content = _running is not null ? "Stop" : _target is null ? "Convert"
             : _target == "folder" ? "Unpack" : _combine.IsVisible && _combine.IsChecked == true ? "Combine into one PDF" : $"Convert to {Label(_target)}";
     }
 
@@ -200,7 +249,7 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
         text.Children.Add(new TextBlock { Text = System.IO.Path.GetFileName(item.Path), FontSize = 12.5, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
         var detail = item.Error is { } error ? "✗ " + error
             : item.Output is { } output ? "✓ " + System.IO.Path.GetFileName(output)
-            : $"{Engine.KindOf(item.Path)} · {Size(item.Path)}";
+            : $"{item.Kind} · {Size(item.Path)}";
         var detailBlock = new TextBlock { Text = detail, FontSize = 11, TextWrapping = TextWrapping.Wrap, Opacity = item.Output is null && item.Error is null ? 0.6 : 1 };
         if (item.Error is not null) detailBlock[!TextBlock.ForegroundProperty] = this.GetResourceObservable("DangerBrush").ToBinding();
         if (item.Output is not null) detailBlock[!TextBlock.ForegroundProperty] = this.GetResourceObservable("SuccessBrush").ToBinding();
@@ -234,7 +283,7 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
     private async Task ConvertAllAsync()
     {
         if (_target is not { } target || _running is not null) return;
-        var cts = _running = new CancellationTokenSource();
+        using var cts = _running = new CancellationTokenSource();
         var options = new ConvertOptions { Quality = (int)_quality.Value, MaxSize = Sizes[Math.Max(0, _size.SelectedIndex)], OutputFolder = _outputFolder };
         Render();
         if (target == "pdf" && _combine.IsVisible && _combine.IsChecked == true)
@@ -248,6 +297,7 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
                 pending.ForEach(i => i.Output = pdf);
             }
             catch (Exception ex) when (ex is not OperationCanceledException) { pending.ForEach(i => i.Error = ex.Message); }
+            catch (OperationCanceledException) { }
             pending.ForEach(i => i.Progress = null);
             _running = null;
             Render();
@@ -255,16 +305,19 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
         }
         foreach (var item in _items.Where(i => i.Output is null).ToList())
         {
+            if (cts.IsCancellationRequested) break;
             item.Error = null;
             item.Progress = 0;
             Render();
             var progress = new Progress<double>(p =>
             {
+                if (item.Progress is null) return;
                 item.Progress = p;
                 Render();
             });
             try { item.Output = await Engine.ConvertAsync(item.Path, target, options, progress, cts.Token); }
-            catch (Exception ex) when (ex is not OperationCanceledException) { item.Error = ex.Message; }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { item.Error = ex.Message; }
             item.Progress = null;
             Render();
         }

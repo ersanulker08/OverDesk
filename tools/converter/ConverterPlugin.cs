@@ -7,6 +7,8 @@ namespace Overdesk.Tool.Converter;
 /// <summary>Entry point named by <c>typeName</c> in overdesk.plugin.json. Also lets the AI convert files.</summary>
 public sealed class ConverterPlugin : IToolPlugin, IAiToolSource
 {
+    public ConverterPlugin() => Engine.WarmUp();
+
     public object CreateView() => new ConverterView();
 
     public IReadOnlyList<PluginAiTool> AiTools { get; } = new[]

@@ -264,8 +264,9 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
         string File(string key)
         {
             if (input?[key]?.GetValue<string>() is not { } path) return "a file";
+            if (!Path.IsPathRooted(path)) return path.Replace('\\', '/');
             var relative = Path.GetRelativePath(folder, path);
-            if (!relative.StartsWith("..", StringComparison.Ordinal)) return relative;
+            if (!relative.StartsWith("..", StringComparison.Ordinal) && !Path.IsPathRooted(relative)) return relative.Replace('\\', '/');
             // Outside the project (an attached screenshot...): the name says enough.
             var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             return path.StartsWith(home, StringComparison.Ordinal) ? "~" + path[home.Length..] : Path.GetFileName(path);

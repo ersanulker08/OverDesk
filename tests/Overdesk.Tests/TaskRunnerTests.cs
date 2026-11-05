@@ -28,8 +28,8 @@ public class TaskRunnerTests
         runner.Changed += () => changes++;
         runner.OutputChanged += () => outputSeenAtLastNotification = runner.Tasks[0].Output;
 
-        // $- holds "l" in a login shell (bash and zsh alike); the second line arrives after the throttle window.
-        var task = runner.Start("probe", "case $- in *l*) echo login;; *) echo plain;; esac; pwd; sleep 0.4; printf '\\033[32mlast\\033[0m\\n'", dir.Path);
+        // zsh marks a login shell with "l" in $-, bash only through shopt; the second line arrives after the throttle window.
+        var task = runner.Start("probe", "if [ -n \"$ZSH_VERSION\" ]; then case $- in *l*) echo login;; *) echo plain;; esac; else shopt -q login_shell && echo login || echo plain; fi; pwd; sleep 0.4; printf '\\033[32mlast\\033[0m\\n'", dir.Path);
         Assert.Same(task, runner.Tasks[0]);
         Assert.True(task.IsRunning);
         await WaitUntil(() => !task.IsRunning);

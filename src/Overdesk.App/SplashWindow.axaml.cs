@@ -8,7 +8,7 @@ namespace Overdesk.App;
 
 /// <summary>
 /// Opening screen: the logo ring draws itself, the window tile pops in, the wordmark settles and a loading bar
-/// fills. Driven by one frame-clock timeline so every element stays in sync. Click to skip.
+/// fills. Driven by one frame-clock timeline so every element stays in sync. Click or Space/Enter/Esc skips.
 /// </summary>
 public partial class SplashWindow : Window
 {
@@ -52,7 +52,11 @@ public partial class SplashWindow : Window
             }
             RequestAnimationFrame(OnFrame);
         };
-        PointerPressed += OnPointerPressed;
+        PointerPressed += (_, _) => Skip();
+        KeyDown += (_, e) =>
+        {
+            if (e.Key is Key.Space or Key.Enter or Key.Escape) Skip();
+        };
     }
 
     /// <summary>Raised once the intro has played; the app shows the main window and calls <see cref="FadeAway"/>.</summary>
@@ -63,9 +67,8 @@ public partial class SplashWindow : Window
 
     public void FadeAway() => _closingAt = Elapsed;
 
-    private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    private void Skip()
     {
-        // Clicking skips the rest of the intro.
         if (_completed) return;
         _start = _start is { } s ? s - TimeSpan.FromSeconds(Math.Max(Duration - Elapsed - 0.15, 0)) : null;
     }

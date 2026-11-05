@@ -40,10 +40,15 @@ internal sealed class TaskRunner
 {
     public List<RunningTask> Tasks { get; } = new();
 
-    /// <summary>Raised on the UI thread when a task starts, prints or ends (output changes are throttled).</summary>
+    /// <summary>Raised on the UI thread when a task starts, ends or is removed.</summary>
     public event Action? Changed;
 
+    /// <summary>Raised on the UI thread when a task prints (throttled, with a trailing call so the last lines always show).</summary>
+    public event Action? OutputChanged;
+
+    private readonly object _notifyLock = new();
     private DateTime _lastNotify;
+    private bool _outputPending;
 
     public RunningTask Start(string name, string command, string folder, string? projectId = null)
     {
@@ -64,8 +69,8 @@ internal sealed class TaskRunner
         try
         {
             var process = new Process { StartInfo = info, EnableRaisingEvents = true };
-            process.OutputDataReceived += (_, e) => { if (e.Data is not null) { task.Append(StripAnsi(e.Data)); Notify(); } };
-            process.ErrorDataReceived += (_, e) => { if (e.Data is not null) { task.Append(StripAnsi(e.Data)); Notify(); } };
+            process.OutputDataReceived += (_, e) => { if (e.Data is not null) { task.Append(StripAnsi(e.Data)); NotifyOutput(); } };
+            process.ErrorDataReceived += (_, e) => { if (e.Data is not null) { task.Append(StripAnsi(e.Data)); NotifyOutput(); } };
             process.Exited += (_, _) =>
             {
                 // Let the redirected output finish arriving before the "finished" line and IsRunning = false.
@@ -73,7 +78,7 @@ internal sealed class TaskRunner
                 task.IsRunning = false;
                 try { task.ExitCode = process.ExitCode; } catch (InvalidOperationException) { }
                 task.Append(task.ExitCode == 0 ? "✓ finished" : $"✗ exited with code {task.ExitCode}");
-                Notify(force: true);
+                NotifyChanged();
             };
             process.Start();
             process.BeginOutputReadLine();
@@ -87,7 +92,10 @@ internal sealed class TaskRunner
             task.Append("✗ could not start: " + ex.Message);
         }
         Tasks.Insert(0, task);
-        Notify(force: true);
+        const int KeepFinished = 40;
+        for (var i = Tasks.Count - 1; i >= 0 && Tasks.Count(t => !t.IsRunning) > KeepFinished; i--)
+            if (!Tasks[i].IsRunning) { Tasks[i].Process?.Dispose(); Tasks.RemoveAt(i); }
+        NotifyChanged();
         return task;
     }
 
@@ -107,7 +115,8 @@ internal sealed class TaskRunner
     {
         Stop(task);
         Tasks.Remove(task);
-        Notify(force: true);
+        if (!task.IsRunning) task.Process?.Dispose();
+        NotifyChanged();
     }
 
     public void StopAll()
@@ -140,11 +149,32 @@ internal sealed class TaskRunner
         }
     }
 
-    private void Notify(bool force = false)
+    private void NotifyChanged() => Dispatcher.UIThread.Post(() =>
     {
-        if (!force && DateTime.UtcNow - _lastNotify < TimeSpan.FromMilliseconds(250)) return;
-        _lastNotify = DateTime.UtcNow;
-        Dispatcher.UIThread.Post(() => Changed?.Invoke());
+        Changed?.Invoke();
+        OutputChanged?.Invoke();
+    });
+
+    private void NotifyOutput()
+    {
+        TimeSpan wait;
+        lock (_notifyLock)
+        {
+            if (_outputPending) return;
+            wait = TimeSpan.FromMilliseconds(250) - (DateTime.UtcNow - _lastNotify);
+            _outputPending = true;
+        }
+        Dispatcher.UIThread.Post(() => DispatcherTimer.RunOnce(FireOutput, wait > TimeSpan.Zero ? wait : TimeSpan.Zero));
+    }
+
+    private void FireOutput()
+    {
+        lock (_notifyLock)
+        {
+            _outputPending = false;
+            _lastNotify = DateTime.UtcNow;
+        }
+        OutputChanged?.Invoke();
     }
 
     private static string StripAnsi(string text)

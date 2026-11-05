@@ -1,3 +1,4 @@
+using Avalonia.Threading;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -82,15 +83,19 @@ public sealed class SigilBackground : Control
         var dt = _lastFrame is { } last ? Math.Min((now - last).TotalSeconds, 0.1) : 0;
         _lastFrame = now;
 
-        if (IsEffectivelyVisible)
+        if (!IsEffectivelyVisible)
         {
-            _time += dt;
-            _sinceDraw += dt;
-            if (_sinceDraw >= FrameInterval)
-            {
-                _sinceDraw = 0;
-                InvalidateVisual();
-            }
+            // A hidden backdrop must not tick at display rate; look again in a moment.
+            _lastFrame = null;
+            DispatcherTimer.RunOnce(RequestFrame, TimeSpan.FromMilliseconds(250));
+            return;
+        }
+        _time += dt;
+        _sinceDraw += dt;
+        if (_sinceDraw >= FrameInterval)
+        {
+            _sinceDraw = 0;
+            InvalidateVisual();
         }
         RequestFrame();
     }

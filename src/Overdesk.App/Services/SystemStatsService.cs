@@ -73,7 +73,8 @@ internal sealed class SystemStatsService : IDisposable
                 Latest = sample;
                 Sampled?.Invoke();
             }
-            if (WatchPorts && _ticks++ % 4 == 0) _ = RefreshPortsAsync();
+            if (WatchPorts && _ticks % 4 == 0) _ = RefreshPortsAsync();
+            _ticks++;
             try { await Task.Delay(1000, _stop.Token); } catch (OperationCanceledException) { return; }
         }
     }

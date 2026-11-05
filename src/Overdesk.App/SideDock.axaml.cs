@@ -51,8 +51,12 @@ public partial class SideDock : UserControl
         };
 
         CollapseButton.Click += (_, _) => SetExpanded(!_settings.SidebarExpanded, animate: true);
-        foreach (var rail in new[] { RailMedia, RailSystem, RailPorts, RailClips, RailNotes })
-            rail.Click += (_, _) => SetExpanded(true, animate: true);
+        foreach (var (rail, card) in new (Button, Control)[] { (RailMedia, MediaCard), (RailSystem, SystemCard), (RailPorts, PortsCard), (RailClips, ClipCard), (RailNotes, NotesCard) })
+            rail.Click += (_, _) =>
+            {
+                SetExpanded(true, animate: true);
+                Dispatcher.UIThread.Post(() => card.BringIntoView(), DispatcherPriority.Background);
+            };
         RailMedia.Click += (_, _) => SetMediaOpen(true);
 
         MediaCard.PointerReleased += (_, e) =>
@@ -133,8 +137,12 @@ public partial class SideDock : UserControl
         DepthCard.SweepEnabled = animated;
     }
 
+    private bool? _wasExpanded;
+
     public void SetExpanded(bool expanded, bool animate)
     {
+        var unfolding = expanded && _wasExpanded != true;
+        _wasExpanded = expanded;
         if (_settings.SidebarExpanded != expanded)
         {
             _settings.SidebarExpanded = expanded;
@@ -151,7 +159,7 @@ public partial class SideDock : UserControl
         if (expanded) _ = _stats?.RefreshPortsAsync();
 
         var target = expanded ? ExpandedWidth : CollapsedWidth;
-        if (expanded) RiseCards(animate ? 0.12 : 0.35);
+        if (unfolding) RiseCards(animate ? 0.12 : 0.35);
         if (!animate || double.IsNaN(Width))
         {
             Width = target;

@@ -4,6 +4,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Overdesk.App.Controls;
 using Overdesk.App.Services;
 using Overdesk.App.Theme;
@@ -21,15 +22,26 @@ public partial class SettingsView
         ("gemini", "Google Gemini", "aistudio.google.com → Get API key"),
     };
 
+    private readonly Dictionary<string, string> _keyErrors = new();
+
     internal AiService? Ai { get; set; }
     internal Func<Task>? AddProject { get; set; }
+
+    /// <summary>Runs commit when the field loses focus and shortly after typing stops, so a quit mid-edit loses nothing.</summary>
+    private static void CommitOnEdit(TextBox box, Action commit)
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        timer.Tick += (_, _) => { timer.Stop(); commit(); };
+        box.TextChanged += (_, _) => { timer.Stop(); timer.Start(); };
+        box.LostFocus += (_, _) => { timer.Stop(); commit(); };
+    }
 
     private void InitializeSections()
     {
         WebToggle.IsCheckedChanged += (_, _) => Update(s => s.ShowWebStrip = WebToggle.IsChecked == true);
-        OllamaUrl.LostFocus += (_, _) => Update(s => s.OllamaUrl = OllamaUrl.Text?.Trim() is { Length: > 0 } u ? u : s.OllamaUrl);
-        LmStudioUrl.LostFocus += (_, _) => Update(s => s.LmStudioUrl = LmStudioUrl.Text?.Trim() is { Length: > 0 } u ? u : s.LmStudioUrl);
-        SystemPrompt.LostFocus += (_, _) => Update(s => s.AiSystemPrompt = SystemPrompt.Text ?? "");
+        CommitOnEdit(OllamaUrl, () => Update(s => s.OllamaUrl = OllamaUrl.Text?.Trim() is { Length: > 0 } u ? u : s.OllamaUrl));
+        CommitOnEdit(LmStudioUrl, () => Update(s => s.LmStudioUrl = LmStudioUrl.Text?.Trim() is { Length: > 0 } u ? u : s.LmStudioUrl));
+        CommitOnEdit(SystemPrompt, () => Update(s => s.AiSystemPrompt = SystemPrompt.Text ?? ""));
         AiToolsToggle.IsCheckedChanged += (_, _) => Update(s => s.AiTools = AiToolsToggle.IsChecked == true);
         AiEditsToggle.IsCheckedChanged += (_, _) => Update(s => s.AiAllowEdits = AiEditsToggle.IsChecked == true);
         ClearMemoryButton.Click += (_, _) =>
@@ -262,7 +274,12 @@ public partial class SettingsView
             var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("170,*,Auto") };
             var label = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             label.Children.Add(new TextBlock { Text = name, FontWeight = FontWeight.SemiBold, FontSize = 12.5 });
-            label.Children.Add(new TextBlock { Text = has ? "✓ saved in keychain" : hint, Classes = { "faint" }, FontSize = 10.5, Foreground = has ? Res.Brush("SuccessBrush") : Res.Brush("FaintBrush") });
+            _keyErrors.TryGetValue(id, out var keyError);
+            label.Children.Add(new TextBlock
+            {
+                Text = keyError ?? (has ? "✓ saved in keychain" : hint), Classes = { "faint" }, FontSize = 10.5, TextWrapping = TextWrapping.Wrap,
+                Foreground = keyError is not null ? Res.Brush("DangerBrush") : has ? Res.Brush("SuccessBrush") : Res.Brush("FaintBrush"),
+            });
             grid.Children.Add(label);
             var box = new TextBox { PasswordChar = '•', PlaceholderText = has ? "•••••••• (stored)" : "Paste the API key", Margin = new Thickness(10, 0) };
             Grid.SetColumn(box, 1);
@@ -272,8 +289,18 @@ public partial class SettingsView
             save.Click += (_, _) =>
             {
                 if (string.IsNullOrWhiteSpace(box.Text)) return;
-                Ai?.SetKey(id, box.Text.Trim());
-                Ai?.ForgetModels(id == "anthropic" ? "claude" : id);
+                var key = box.Text.Trim();
+                _keyErrors.Remove(id);
+                try
+                {
+                    Ai?.SetKey(id, key);
+                    if (Ai?.GetKey(id) != key) _keyErrors[id] = "Could not save to the keychain. Allow access when macOS asks, then try again.";
+                }
+                catch (Exception ex)
+                {
+                    _keyErrors[id] = "Could not save to the keychain: " + ex.Message;
+                }
+                if (!_keyErrors.ContainsKey(id)) Ai?.ForgetModels(id == "anthropic" ? "claude" : id);
                 BuildKeys();
             };
             buttons.Children.Add(save);
@@ -282,7 +309,16 @@ public partial class SettingsView
                 var remove = new Button { Classes = { "ghost" }, Content = "Remove", Padding = new Thickness(12, 6) };
                 remove.Click += (_, _) =>
                 {
-                    Ai?.SetKey(id, null);
+                    _keyErrors.Remove(id);
+                    try
+                    {
+                        Ai?.SetKey(id, null);
+                        if (!string.IsNullOrEmpty(Ai?.GetKey(id))) _keyErrors[id] = "Could not remove the key from the keychain.";
+                    }
+                    catch (Exception ex)
+                    {
+                        _keyErrors[id] = "Could not remove the key: " + ex.Message;
+                    }
                     BuildKeys();
                 };
                 buttons.Children.Add(remove);
@@ -300,8 +336,8 @@ public partial class SettingsView
         {
             var name = new TextBox { Text = prompt.Name, FontWeight = FontWeight.SemiBold, Width = 200, VerticalAlignment = VerticalAlignment.Top };
             var text = new TextBox { Text = prompt.Text, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 56, Margin = new Thickness(8, 0) };
-            name.LostFocus += (_, _) => { prompt.Name = name.Text ?? ""; Changed?.Invoke(); };
-            text.LostFocus += (_, _) => { prompt.Text = text.Text ?? ""; Changed?.Invoke(); };
+            CommitOnEdit(name, () => { prompt.Name = name.Text ?? ""; Changed?.Invoke(); });
+            CommitOnEdit(text, () => { prompt.Text = text.Text ?? ""; Changed?.Invoke(); });
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
             row.Children.Add(name);
             Grid.SetColumn(text, 1);
@@ -338,12 +374,12 @@ public partial class SettingsView
             }
 
             var name = new TextBox { Text = project.Name };
-            name.LostFocus += (_, _) => { project.Name = name.Text?.Trim() ?? project.Name; Changed?.Invoke(); };
+            CommitOnEdit(name, () => { project.Name = name.Text?.Trim() ?? project.Name; Changed?.Invoke(); });
             Row(0, "Name", name);
 
             var folderRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
             var folder = new TextBox { Text = project.Folder, Classes = { "mono" } };
-            folder.LostFocus += (_, _) => { project.Folder = folder.Text?.Trim() ?? project.Folder; Changed?.Invoke(); };
+            CommitOnEdit(folder, () => { project.Folder = folder.Text?.Trim() ?? project.Folder; Changed?.Invoke(); });
             folderRow.Children.Add(folder);
             var browse = new Button { Classes = { "ghost" }, Content = "Browse…", Margin = new Thickness(8, 0, 0, 0) };
             browse.Click += async (_, _) =>
@@ -361,15 +397,21 @@ public partial class SettingsView
             Row(1, "Folder", folderRow);
 
             var commands = new TextBox { Text = string.Join('\n', project.Commands), AcceptsReturn = true, Classes = { "mono" }, MinHeight = 48, PlaceholderText = "npm run dev   (one command per line)" };
-            commands.LostFocus += (_, _) =>
+            CommitOnEdit(commands, () =>
             {
                 project.Commands = (commands.Text ?? "").Split('\n').Select(c => c.Trim()).Where(c => c.Length > 0).ToList();
                 Changed?.Invoke();
-            };
+            });
             Row(2, "Start with", commands);
 
             var url = new TextBox { Text = project.Url, Classes = { "mono" }, PlaceholderText = "http://localhost:5173  (opened in a web tab)" };
-            url.LostFocus += (_, _) => { project.Url = Overdesk.Core.Tabs.WebUrl.Normalize(url.Text) ?? (string.IsNullOrWhiteSpace(url.Text) ? null : project.Url); Changed?.Invoke(); };
+            url.LostFocus += (_, _) =>
+            {
+                var normalized = Overdesk.Core.Tabs.WebUrl.Normalize(url.Text);
+                if (normalized is null && !string.IsNullOrWhiteSpace(url.Text)) url.Text = project.Url; // invalid: show what is really kept
+                else project.Url = normalized;
+                Changed?.Invoke();
+            };
             Row(3, "Open", url);
 
             var bottom = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };

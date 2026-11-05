@@ -10,6 +10,12 @@ internal sealed class ClipboardHistory
     public const int MaxItems = 12;
     private const int MaxLength = 20_000;
 
+    // Password managers mark secret copies with these so clipboard tools skip them.
+    private static readonly string[] SecretFormats =
+    {
+        "org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType", "ExcludeClipboardContentFromMonitorProcessing",
+    };
+
     private readonly TopLevel _top;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private string? _last;
@@ -32,6 +38,12 @@ internal sealed class ClipboardHistory
         _reading = true;
         try
         {
+            var formats = await clipboard.GetDataFormatsAsync();
+            if (formats.Any(f => SecretFormats.Contains(f.Identifier, StringComparer.OrdinalIgnoreCase)))
+            {
+                _last = null;
+                return;
+            }
             var text = await clipboard.TryGetTextAsync();
             if (string.IsNullOrWhiteSpace(text) || text == _last || text.Length > MaxLength) return;
             _last = text;

@@ -94,7 +94,7 @@ public static class ProjectTools
                 var isDir = Directory.Exists(entry);
                 if (count++ >= limit) { sb.AppendLine(new string(' ', level * 2) + "…"); return; }
                 sb.AppendLine(new string(' ', level * 2) + name + (isDir ? "/" : ""));
-                if (isDir && level + 1 < depth && !Skipped.Contains(name)) Visit(entry, level + 1);
+                if (isDir && level + 1 < depth && !Skipped.Contains(name) && new DirectoryInfo(entry).LinkTarget is null) Visit(entry, level + 1);
             }
         }
         Visit(root, 0);
@@ -116,7 +116,8 @@ public static class ProjectTools
                 dirs = Directory.GetDirectories(current);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
-            foreach (var f in files.OrderBy(f => f, StringComparer.OrdinalIgnoreCase)) yield return f;
+            foreach (var f in files.OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+                if (new FileInfo(f).LinkTarget is null) yield return f;
             if (level >= depth) continue;
             foreach (var d in dirs.OrderByDescending(d => d, StringComparer.OrdinalIgnoreCase))
             {
@@ -188,7 +189,7 @@ public static class ProjectTools
                 var content = a["content"]?.GetValue<string>() ?? "";
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 var existed = File.Exists(path);
-                await File.WriteAllTextAsync(path, content, ct);
+                await File.WriteAllTextAsync(path, content, existed ? EncodingOf(await File.ReadAllBytesAsync(path, ct)) : Utf8, ct);
                 changed?.Invoke(path);
                 return new AiToolResult($"{(existed ? "Replaced" : "Created")} {Relative(root, path)} ({content.Split('\n').Length} lines).");
             },
@@ -206,7 +207,11 @@ public static class ProjectTools
             {
                 var path = ResolveWritable(root, AiToolbox.Str(a, "path"));
                 if (!File.Exists(path)) return AiToolResult.Error("No such file. Use write_file to create it.");
-                var text = await File.ReadAllTextAsync(path, ct);
+                var bytes = await File.ReadAllBytesAsync(path, ct);
+                var encoding = EncodingOf(bytes);
+                string text;
+                try { text = encoding.GetString(bytes, encoding.Preamble.Length, bytes.Length - encoding.Preamble.Length); }
+                catch (DecoderFallbackException) { return AiToolResult.Error("This file is not UTF-8 or UTF-16 text, so it cannot be edited without damaging it."); }
                 var old = a["old_text"]?.GetValue<string>() ?? "";
                 var replacement = a["new_text"]?.GetValue<string>() ?? "";
                 if (old.Length == 0) return AiToolResult.Error("old_text is empty.");
@@ -220,13 +225,26 @@ public static class ProjectTools
                 if (count == 0) return AiToolResult.Error("old_text was not found. Read the file again and copy the text exactly.");
                 if (count > 1 && AiToolbox.Bool(a, "replace_all") != true)
                     return AiToolResult.Error($"old_text appears {count} times. Add more surrounding lines, or set replace_all.");
-                await File.WriteAllTextAsync(path, text.Replace(old, replacement), ct);
+                await File.WriteAllTextAsync(path, text.Replace(old, replacement), encoding, ct);
                 changed?.Invoke(path);
                 return new AiToolResult($"Edited {Relative(root, path)} ({count} change{(count == 1 ? "" : "s")}).");
             },
         });
         return tools;
     }
+
+    private static readonly Encoding Utf8 = new UTF8Encoding(false, throwOnInvalidBytes: true);
+
+    /// <summary>The encoding a file's byte order mark names (UTF-8 without one), so a rewrite keeps the file as it was.</summary>
+    private static Encoding EncodingOf(byte[] bytes) => bytes switch
+    {
+        [0xEF, 0xBB, 0xBF, ..] => new UTF8Encoding(true, throwOnInvalidBytes: true),
+        [0xFF, 0xFE, 0, 0, ..] => new UTF32Encoding(false, true, throwOnInvalidCharacters: true),
+        [0, 0, 0xFE, 0xFF, ..] => new UTF32Encoding(true, true, throwOnInvalidCharacters: true),
+        [0xFF, 0xFE, ..] => new UnicodeEncoding(false, true, throwOnInvalidBytes: true),
+        [0xFE, 0xFF, ..] => new UnicodeEncoding(true, true, throwOnInvalidBytes: true),
+        _ => Utf8,
+    };
 
     private static int Count(string text, string part)
     {
@@ -308,22 +326,44 @@ public static class ProjectTools
     {
         relative = relative.Trim();
         var full = Path.GetFullPath(Path.IsPathRooted(relative) ? relative : Path.Combine(root, relative));
-        var comparison = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        if (!full.Equals(root, comparison) && !full.StartsWith(root + Path.DirectorySeparatorChar, comparison))
+        if (!IsInside(root, full) || !IsInside(RealPath(root), RealPath(full)))
             throw new InvalidOperationException("That path is outside the project folder.");
         return full;
+    }
+
+    private static bool IsInside(string root, string path)
+    {
+        var comparison = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        return path.Equals(root, comparison) || path.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, comparison);
+    }
+
+    /// <summary>
+    /// The path with every link along it followed, for folders on the way as well as the file. Parts that do not
+    /// exist yet stay as they are, and a link to nowhere resolves to where a write through it would land.
+    /// </summary>
+    private static string RealPath(string path, int depth = 0)
+    {
+        if (depth > 32) throw new InvalidOperationException("That path has too many links.");
+        var start = Path.GetPathRoot(path) ?? "";
+        var current = start;
+        foreach (var part in path[start.Length..].Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+        {
+            if (part.Length == 0) continue;
+            current = Path.Combine(current, part);
+            var entry = new FileInfo(current);
+            if (entry.LinkTarget is not null && entry.ResolveLinkTarget(returnFinalTarget: true) is { } target)
+                current = RealPath(target.FullName, depth + 1);
+        }
+        return current;
     }
 
     private static string ResolveWritable(string root, string? relative)
     {
         if (string.IsNullOrWhiteSpace(relative)) throw new InvalidOperationException("A file path is needed.");
         var full = Resolve(root, relative);
-        var parts = Path.GetRelativePath(root, full).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var parts = Path.GetRelativePath(RealPath(root), RealPath(full)).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         if (parts.Any(p => p.Equals(".git", StringComparison.OrdinalIgnoreCase))) throw new InvalidOperationException("Files inside .git are not changed.");
         if (Directory.Exists(full)) throw new InvalidOperationException("That is a folder.");
-        // A link could point anywhere: the real target must be inside the project too.
-        if (File.Exists(full) && new FileInfo(full).LinkTarget is { } target)
-            Resolve(root, Path.GetFullPath(target, Path.GetDirectoryName(full)!));
         return full;
     }
 

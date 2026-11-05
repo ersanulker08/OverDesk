@@ -96,7 +96,7 @@ public static class Xlsx
     /// <summary>Plain numbers only: leading zeros (zip codes, ids) and very long digit runs stay text.</summary>
     private static bool IsNumber(string value)
         => value.Length <= 15 && !(value.Length > 1 && value[0] == '0' && value[1] != '.')
-           && double.TryParse(value, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out _);
+           && double.TryParse(value, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number) && double.IsFinite(number);
 
     /// <summary>XML 1.0 cannot hold most control characters.</summary>
     private static string Clean(string text) => new(text.Where(c => c is '\t' or '\n' or '\r' || c >= ' ').ToArray());

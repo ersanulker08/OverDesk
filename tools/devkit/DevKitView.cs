@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Overdesk.Tools.Shared;
 
 namespace Overdesk.Tool.DevKit;
@@ -23,12 +24,15 @@ internal sealed class DevKitView : UserControl
     private string _group = Utilities.Groups[0];
     private List<Utility> _shown = new();
     private bool _quiet;
+    private int _generation;
+    private readonly DispatcherTimer _debounce = new() { Interval = TimeSpan.FromMilliseconds(150) };
 
     public DevKitView()
     {
         _picker.SelectionChanged += (_, _) => { if (!_quiet) Recompute(); };
-        _input.TextChanged += (_, _) => Recompute();
-        _second.TextChanged += (_, _) => Recompute();
+        _debounce.Tick += (_, _) => { _debounce.Stop(); Recompute(); };
+        _input.TextChanged += (_, _) => Typed();
+        _second.TextChanged += (_, _) => Typed();
         _error.Bind(TextBlock.ForegroundProperty, this.GetResourceObservable("DangerBrush"));
 
         var copy = ToolUi.SmallButton("Copy result", async () =>
@@ -96,30 +100,42 @@ internal sealed class DevKitView : UserControl
         return box;
     }
 
+    private void Typed()
+    {
+        _debounce.Stop();
+        _debounce.Start();
+    }
+
     private void Recompute()
     {
+        _debounce.Stop();
         if (_shown.Count == 0) return;
         var utility = _shown[Math.Clamp(_picker.SelectedIndex, 0, _shown.Count - 1)];
         _hint.Text = utility.Hint;
         _input.PlaceholderText = utility.Hint;
         _second.IsVisible = utility.Second is not null;
         _second.PlaceholderText = utility.Second;
-        if (string.IsNullOrWhiteSpace(_input.Text) && !utility.RunsEmpty)
+        _ = RunAsync(utility, _input.Text ?? "", _second.Text ?? "");
+    }
+
+    /// <summary>Runs off the UI thread (Diff and Regex can be slow); only the newest run may show its result.</summary>
+    private async Task RunAsync(Utility utility, string input, string second)
+    {
+        var generation = ++_generation;
+        if (string.IsNullOrWhiteSpace(input) && !utility.RunsEmpty)
         {
             _output.Text = "";
             _error.IsVisible = false;
             return;
         }
-        try
+        var (result, error) = await Task.Run(() =>
         {
-            _output.Text = utility.Run(_input.Text ?? "", _second.Text ?? "");
-            _error.IsVisible = false;
-        }
-        catch (Exception ex)
-        {
-            _output.Text = "";
-            _error.Text = ex.Message;
-            _error.IsVisible = true;
-        }
+            try { return (utility.Run(input, second), (string?)null); }
+            catch (Exception ex) { return ((string?)null, ex.Message); }
+        });
+        if (generation != _generation) return;
+        _output.Text = result ?? "";
+        _error.Text = error;
+        _error.IsVisible = error is not null;
     }
 }

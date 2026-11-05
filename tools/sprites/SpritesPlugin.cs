@@ -115,6 +115,9 @@ internal sealed class SpritesView : UserControl, IFileDropTarget
     private List<SKRectI> _cells = new();
     private string? _lastOutput;
     private bool _busy;
+    private int _generation;
+    private readonly List<Task> _inFlight = new();
+    private const int PreviewSide = 1024;
 
     public SpritesView()
     {
@@ -123,8 +126,8 @@ internal sealed class SpritesView : UserControl, IFileDropTarget
         _reveal = SmallButton("Show in folder", () => { if (_lastOutput is not null) Reveal(_lastOutput); });
         _reveal.HorizontalAlignment = HorizontalAlignment.Left;
         _reveal.IsVisible = false;
-        _columns.ValueChanged += (_, _) => FindCells();
-        _rows.ValueChanged += (_, _) => FindCells();
+        _columns.ValueChanged += (_, _) => _ = RefreshAsync(recompute: true);
+        _rows.ValueChanged += (_, _) => _ = RefreshAsync(recompute: true);
 
         var packHeader = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto") };
         packHeader.Children.Add(Eyebrow("SPRITES"));
@@ -207,11 +210,13 @@ internal sealed class SpritesView : UserControl, IFileDropTarget
         try
         {
             var bitmap = await Task.Run(() => ImageIO.Load(path));
+            // A refresh may still be reading the old sheet on a worker thread.
+            await Task.WhenAll(_inFlight.ToArray());
             _sheet?.Dispose();
             _sheet = bitmap;
             _sheetPath = path;
             _result.IsVisible = _reveal.IsVisible = false;
-            FindCells();
+            await RefreshAsync(recompute: true);
         }
         catch (Exception ex)
         {
@@ -219,29 +224,53 @@ internal sealed class SpritesView : UserControl, IFileDropTarget
         }
     }
 
-    private void FindCells()
+    /// <summary>Finds the cells (optionally) and draws the outlined preview, both off the UI thread; only the newest call may show.</summary>
+    private async Task RefreshAsync(bool recompute)
     {
-        if (_sheet is null) { Render(); return; }
-        try { _cells = _byGrid ? Sprites.Grid(_sheet.Width, _sheet.Height, (int)(_columns.Value ?? 1), (int)(_rows.Value ?? 1)) : Sprites.Detect(_sheet); }
-        catch (Exception ex) { _cells = new(); ShowResult(false, ex.Message); }
-        Render();
-        ShowSheet();
+        if (_sheet is not { } sheet) { Render(); return; }
+        var generation = ++_generation;
+        var byGrid = _byGrid;
+        int columns = (int)(_columns.Value ?? 1), rows = (int)(_rows.Value ?? 1);
+        var known = _cells;
+        var accent = this.TryFindResource("AccentColor", out var value) && value is Color c ? new SKColor(c.R, c.G, c.B) : new SKColor(0xFF, 0x3B, 0x5C);
+        var work = Task.Run(() =>
+        {
+            try
+            {
+                var cells = !recompute ? known : byGrid ? Sprites.Grid(sheet.Width, sheet.Height, columns, rows) : Sprites.Detect(sheet);
+                return (cells, Preview: OutlinedPreview(sheet, cells, accent), Error: (string?)null);
+            }
+            catch (Exception ex) { return (new List<SKRectI>(), Preview: (SKBitmap?)null, Error: ex.Message); }
+        });
+        _inFlight.Add(work);
+        var (found, preview, error) = await work;
+        _inFlight.Remove(work);
+        using (preview)
+        {
+            if (generation != _generation) return;
+            _cells = found;
+            if (error is not null) ShowResult(false, error);
+            Render();
+            if (preview is not null && !_packing) Show(preview);
+        }
     }
 
-    /// <summary>The sheet with every cell outlined in the accent color.</summary>
-    private void ShowSheet()
+    /// <summary>The sheet at preview size (longest side 1024 px) with every cell outlined in the accent color.</summary>
+    private static SKBitmap OutlinedPreview(SKBitmap sheet, IReadOnlyList<SKRectI> cells, SKColor accent)
     {
-        if (_sheet is null) return;
-        var accent = this.TryFindResource("AccentColor", out var value) && value is Color c ? new SKColor(c.R, c.G, c.B) : new SKColor(0xFF, 0x3B, 0x5C);
-        using var surface = SKSurface.Create(new SKImageInfo(_sheet.Width, _sheet.Height, SKColorType.Rgba8888, SKAlphaType.Premul));
+        var scale = Math.Min(1.0, PreviewSide / (double)Math.Max(sheet.Width, sheet.Height));
+        var width = Math.Max(1, (int)Math.Round(sheet.Width * scale));
+        var height = Math.Max(1, (int)Math.Round(sheet.Height * scale));
+        using var surface = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul));
         surface.Canvas.Clear(SKColors.Transparent);
-        surface.Canvas.DrawBitmap(_sheet, 0, 0);
-        using var paint = new SKPaint { Color = accent, Style = SKPaintStyle.Stroke, StrokeWidth = Math.Max(1, Math.Max(_sheet.Width, _sheet.Height) / 400f), IsAntialias = false };
-        foreach (var cell in _cells) surface.Canvas.DrawRect(cell.Left + 0.5f, cell.Top + 0.5f, cell.Width - 1, cell.Height - 1, paint);
+        using (var image = SKImage.FromBitmap(sheet))
+            surface.Canvas.DrawImage(image, SKRect.Create(0, 0, width, height), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+        using var paint = new SKPaint { Color = accent, Style = SKPaintStyle.Stroke, StrokeWidth = 1.5f, IsAntialias = false };
+        foreach (var cell in cells)
+            surface.Canvas.DrawRect((float)(cell.Left * scale) + 0.5f, (float)(cell.Top * scale) + 0.5f, Math.Max(1, (float)(cell.Width * scale) - 1), Math.Max(1, (float)(cell.Height * scale) - 1), paint);
         using var snapshot = surface.Snapshot();
         using var premul = SKBitmap.FromImage(snapshot);
-        using var rgba = ImageIO.ToRgba(premul);
-        Show(rgba);
+        return ImageIO.ToRgba(premul);
     }
 
     private void Show(SKBitmap rgba)
@@ -262,7 +291,7 @@ internal sealed class SpritesView : UserControl, IFileDropTarget
     {
         _modes.Children.Clear();
         _modes.Children.Add(Chip("Pack into an atlas", _packing, () => { _packing = true; _previewFrame.IsVisible = false; Render(); }));
-        _modes.Children.Add(Chip("Slice a sheet", !_packing, () => { _packing = false; Render(); ShowSheet(); }));
+        _modes.Children.Add(Chip("Slice a sheet", !_packing, () => { _packing = false; Render(); _ = RefreshAsync(recompute: false); }));
         _pack.IsVisible = _packing;
         _slice.IsVisible = !_packing;
 
@@ -283,8 +312,8 @@ internal sealed class SpritesView : UserControl, IFileDropTarget
         _packButton.Content = _busy && _packing ? "Packing…" : $"Pack {_paths.Count} sprite{(_paths.Count == 1 ? "" : "s")}";
 
         _sliceModes.Children.Clear();
-        _sliceModes.Children.Add(Chip("Find shapes", !_byGrid, () => { _byGrid = false; FindCells(); }));
-        _sliceModes.Children.Add(Chip("Grid", _byGrid, () => { _byGrid = true; FindCells(); }));
+        _sliceModes.Children.Add(Chip("Find shapes", !_byGrid, () => { _byGrid = false; _ = RefreshAsync(recompute: true); }));
+        _sliceModes.Children.Add(Chip("Grid", _byGrid, () => { _byGrid = true; _ = RefreshAsync(recompute: true); }));
         _gridOptions.IsVisible = _byGrid;
         _sheetInfo.Text = _sheet is null ? "Drop a sprite sheet here, or choose one."
             : $"{Path.GetFileName(_sheetPath)} · {_sheet.Width} × {_sheet.Height} · {_cells.Count} frame{(_cells.Count == 1 ? "" : "s")}";
@@ -302,8 +331,13 @@ internal sealed class SpritesView : UserControl, IFileDropTarget
             var output = FreePath(Path.GetDirectoryName(_paths[0])!, "atlas", "png");
             var options = new PackOptions { Trim = _trim.IsChecked == true, PowerOfTwo = _pow2.IsChecked == true, Padding = (int)_padding.Value };
             var paths = _paths.ToList();
-            var result = await Task.Run(() => Sprites.Pack(paths, output, options));
-            using (var atlas = ImageIO.Load(result.Image)) Show(atlas);
+            var (result, preview) = await Task.Run(() =>
+            {
+                var packed = Sprites.Pack(paths, output, options);
+                using var atlas = ImageIO.Load(packed.Image);
+                return (packed, OutlinedPreview(atlas, Array.Empty<SKRectI>(), SKColors.Transparent));
+            });
+            using (preview) Show(preview);
             _lastOutput = result.Image;
             ShowResult(true, $"✓ {result.Count} sprites in {result.Width} × {result.Height}: {Path.GetFileName(result.Image)} + {Path.GetFileName(result.Json)}");
         }

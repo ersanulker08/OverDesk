@@ -107,7 +107,14 @@ public static partial class DataFormats
     {
         var result = new JsonArray();
         if (rows.Count == 0) return result;
-        var headers = rows[0].Select((h, i) => h.Trim().Length > 0 ? h.Trim() : $"column{i + 1}").ToList();
+        var headers = new List<string>();
+        for (var i = 0; i < rows[0].Count; i++)
+        {
+            var name = rows[0][i].Trim().Length > 0 ? rows[0][i].Trim() : $"column{i + 1}";
+            var unique = name;
+            for (var n = 2; headers.Contains(unique); n++) unique = $"{name} ({n})";
+            headers.Add(unique);
+        }
         foreach (var row in rows.Skip(1))
         {
             var item = new JsonObject();
@@ -124,7 +131,7 @@ public static partial class DataFormats
         if (value is "true" or "false") return JsonValue.Create(value == "true");
         // Leading zeros (zip codes, ids) stay text.
         if (!(value.Length > 1 && value[0] == '0' && value[1] != '.')
-            && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) && !double.IsInfinity(number))
+            && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) && double.IsFinite(number))
             return value.Contains('.') || value.Contains('e') || value.Contains('E') ? JsonValue.Create(number) : long.TryParse(value, out var whole) ? JsonValue.Create(whole) : JsonValue.Create(number);
         return JsonValue.Create(value);
     }

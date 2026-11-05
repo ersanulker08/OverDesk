@@ -31,6 +31,7 @@ public static class Sprites
     public static PackResult Pack(IReadOnlyList<string> paths, string output, PackOptions options)
     {
         if (paths.Count == 0) throw new InvalidOperationException("No images to pack.");
+        output = FreeAtlasPath(output);
         var sprites = new List<(string Name, SKBitmap Bitmap, SKRectI Trim, int SourceW, int SourceH)>();
         var names = new HashSet<string>();
         try
@@ -114,6 +115,17 @@ public static class Sprites
         {
             foreach (var s in sprites) s.Bitmap.Dispose();
         }
+    }
+
+    /// <summary>The atlas path itself, or "name (2).png"…, so neither the image nor its JSON overwrites an existing file.</summary>
+    private static string FreeAtlasPath(string output)
+    {
+        var folder = Path.GetDirectoryName(Path.GetFullPath(output))!;
+        var name = Path.GetFileNameWithoutExtension(output);
+        var ext = Path.GetExtension(output);
+        var path = Path.Combine(folder, name + ext);
+        for (var i = 2; File.Exists(path) || File.Exists(Path.ChangeExtension(path, ".json")); i++) path = Path.Combine(folder, $"{name} ({i}){ext}");
+        return path;
     }
 
     /// <summary>MaxRects, best short side fit. Null when it does not fit.</summary>

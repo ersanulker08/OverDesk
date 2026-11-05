@@ -384,4 +384,29 @@ public class ToolsTests
         Assert.Matches("^[A-Za-z0-9]+$", password);
         Assert.Equal(26, (await Devkit("ULID", "")).Length);
     }
+
+    [Fact]
+    public void Packing_twice_never_overwrites_the_atlas_or_its_json()
+    {
+        using var dir = new TempFolder();
+        var paths = new[] { Png(dir, "coin.png", 16, 16, (_, _) => SKColors.Gold) };
+        var output = Path.Combine(dir.Path, "atlas.png");
+        dir.Write("atlas.json", "{}");
+        var first = Sprites.Pack(paths, output, new PackOptions());
+        var second = Sprites.Pack(paths, output, new PackOptions());
+        Assert.Equal("{}", File.ReadAllText(Path.Combine(dir.Path, "atlas.json")));
+        Assert.Equal(3, new[] { Path.Combine(dir.Path, "atlas.json"), first.Json, second.Json }.Distinct().Count());
+        Assert.NotEqual(first.Image, second.Image);
+    }
+
+    [Fact]
+    public void Texture_blur_with_a_small_radius_still_softens()
+    {
+        var input = new float[16 * 16];
+        input[8 * 16 + 8] = 1;
+        var blurred = Maps.Blur(input, 16, 16, 0.5f, wrap: false);
+        Assert.True(blurred[8 * 16 + 8] < 1);
+        Assert.True(blurred[8 * 16 + 9] > 0);
+        Assert.Equal(input, Maps.Blur(input, 16, 16, 0, wrap: false));
+    }
 }

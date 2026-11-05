@@ -299,10 +299,21 @@ public static class Maps
         return y * w + x;
     }
 
-    /// <summary>Gaussian-like blur: three box passes each way. Radius in pixels; under half a pixel nothing happens.</summary>
+    /// <summary>Gaussian-like blur: three box passes each way. A fractional radius blends the two nearest whole radii, so small sliders still soften.</summary>
     public static float[] Blur(float[] input, int w, int h, float radius, bool wrap)
     {
-        var r = (int)MathF.Round(radius);
+        if (radius <= 0.05f) return (float[])input.Clone();
+        var low = (int)MathF.Floor(radius);
+        var blend = radius - low;
+        var soft = BlurWhole(input, w, h, low, wrap);
+        if (blend < 0.02f) return soft;
+        var softer = BlurWhole(input, w, h, low + 1, wrap);
+        for (var i = 0; i < soft.Length; i++) soft[i] += (softer[i] - soft[i]) * blend;
+        return soft;
+    }
+
+    private static float[] BlurWhole(float[] input, int w, int h, int r, bool wrap)
+    {
         var current = (float[])input.Clone();
         if (r < 1) return current;
         var temp = new float[current.Length];

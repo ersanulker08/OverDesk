@@ -280,6 +280,80 @@ public class ConverterTests
         Assert.Equal(1, PdfPages(output));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(5)]
+    public void Truncated_woff_lists_targets_instead_of_throwing(int length)
+    {
+        using var dir = new TempFolder();
+        var path = Path.Combine(dir.Path, "broken.woff");
+        File.WriteAllBytes(path, new byte[length]);
+        Assert.Contains("ttf", Engine.TargetsFor(path));
+        var error = Assert.Throws<InvalidOperationException>(() => Fonts.FromWoff(new byte[length]));
+        Assert.Contains("Not a WOFF", error.Message);
+        Assert.Equal("ttf", Fonts.WoffFlavor(Path.Combine(dir.Path, "missing.woff")));
+    }
+
+    [Fact]
+    public void Woff_with_a_cut_off_table_directory_is_reported_as_damaged()
+    {
+        var woff = new byte[44];
+        woff[0] = 0x77; woff[1] = 0x4F; woff[2] = 0x46; woff[3] = 0x46;
+        woff[13] = 9;
+        Assert.Contains("damaged", Assert.Throws<InvalidOperationException>(() => Fonts.FromWoff(woff)).Message);
+    }
+
+    [Fact]
+    public void Csv_nan_cells_stay_text_in_every_target()
+    {
+        const string csv = "id,score\n1,NaN\n2,nan\n3,4.5\n";
+        var json = JsonNode.Parse(DataFormats.Convert(csv, "csv", "json"))!.AsArray();
+        Assert.Equal("NaN", json[0]!["score"]!.GetValue<string>());
+        Assert.Equal(4.5, json[2]!["score"]!.GetValue<double>());
+        Assert.Contains("NaN", DataFormats.Convert(csv, "csv", "yaml"));
+
+        using var dir = new TempFolder();
+        var output = Path.Combine(dir.Path, "nan.xlsx");
+        Xlsx.Write(output, DataFormats.Rows(csv, "csv"));
+        Assert.Equal("NaN", Xlsx.Read(output)[1][1]);
+    }
+
+    [Fact]
+    public void Duplicate_csv_columns_keep_all_their_data()
+    {
+        var json = JsonNode.Parse(DataFormats.Convert("id,name,name\n1,a,b\n", "csv", "json"))!.AsArray();
+        Assert.Equal("a", json[0]!["name"]!.GetValue<string>());
+        Assert.Equal("b", json[0]!["name (2)"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Typescript_files_are_not_video_but_real_transport_streams_are()
+    {
+        using var dir = new TempFolder();
+        var source = dir.Write("app.ts", "export const answer: number = 42;\n");
+        Assert.Equal(FileKind.Unknown, Engine.KindOf(source));
+        Assert.DoesNotContain("mp4", Engine.TargetsFor(source));
+
+        var stream = new byte[188 * 4];
+        for (var i = 0; i < 4; i++) stream[i * 188] = 0x47;
+        var video = Path.Combine(dir.Path, "clip.ts");
+        File.WriteAllBytes(video, stream);
+        Assert.Equal(FileKind.Video, Engine.KindOf(video));
+    }
+
+    [Fact]
+    public async Task A_cancelled_conversion_throws_and_leaves_no_half_written_file()
+    {
+        if (!OperatingSystem.IsMacOS()) return;
+        using var dir = new TempFolder();
+        var wav = Path.Combine(dir.Path, "tone.wav");
+        File.WriteAllBytes(wav, Wave(20));
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Engine.ConvertAsync(wav, "aiff", new ConvertOptions(), null, cts.Token));
+        Assert.Equal(new[] { wav }, Directory.GetFiles(dir.Path));
+    }
+
     /// <summary>A 16-bit mono 22 kHz sine wave as a WAV file.</summary>
     private static byte[] Wave(int seconds)
     {

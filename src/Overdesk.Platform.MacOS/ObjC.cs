@@ -24,6 +24,7 @@ internal static class ObjC
     [DllImport(Lib, EntryPoint = "objc_msgSend")] private static extern IntPtr Send(IntPtr receiver, IntPtr selector, IntPtr arg);
     [DllImport(Lib, EntryPoint = "objc_msgSend")] private static extern IntPtr Send(IntPtr receiver, IntPtr selector, nuint arg, IntPtr arg2);
     [DllImport(Lib, EntryPoint = "objc_msgSend")] private static extern IntPtr Send(IntPtr receiver, IntPtr selector, IntPtr arg, IntPtr arg2);
+    [DllImport(Lib, EntryPoint = "objc_msgSend")] private static extern IntPtr Send(IntPtr receiver, IntPtr selector, IntPtr arg, IntPtr arg2, IntPtr arg3);
     [DllImport(Lib, EntryPoint = "objc_msgSend")] private static extern IntPtr Send(IntPtr receiver, IntPtr selector, ref CGRect rect, IntPtr arg2, IntPtr arg3);
     [DllImport(Lib, EntryPoint = "objc_msgSend")] private static extern nuint SendNUInt(IntPtr receiver, IntPtr selector);
     [DllImport(Lib, EntryPoint = "objc_msgSend")] private static extern int SendInt(IntPtr receiver, IntPtr selector);
@@ -53,6 +54,7 @@ internal static class ObjC
     public static IntPtr Call(IntPtr receiver, string selector, IntPtr arg) => Send(receiver, sel_registerName(selector), arg);
     public static IntPtr Call(IntPtr receiver, string selector, nuint arg, IntPtr arg2) => Send(receiver, sel_registerName(selector), arg, arg2);
     public static IntPtr Call(IntPtr receiver, string selector, IntPtr arg, IntPtr arg2) => Send(receiver, sel_registerName(selector), arg, arg2);
+    public static IntPtr Call(IntPtr receiver, string selector, IntPtr arg, IntPtr arg2, IntPtr arg3) => Send(receiver, sel_registerName(selector), arg, arg2, arg3);
     public static IntPtr Call(IntPtr receiver, string selector, ref CGRect rect, IntPtr arg2, IntPtr arg3)
         => Send(receiver, sel_registerName(selector), ref rect, arg2, arg3);
     public static nuint CallNUInt(IntPtr receiver, string selector) => SendNUInt(receiver, sel_registerName(selector));

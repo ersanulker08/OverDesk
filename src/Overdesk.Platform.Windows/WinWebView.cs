@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Microsoft.Web.WebView2.Core;
 using Overdesk.Core.Platform;
+using Overdesk.Core.Settings;
 
 namespace Overdesk.Platform.Windows;
 
@@ -20,9 +21,12 @@ public sealed class WinWebViewFactory : IWebViewFactory
 
     public IWebView Create(IntPtr parentHandle, string url)
     {
-        // One shared profile for all web tabs, kept next to Overdesk's settings.
-        _environment ??= CoreWebView2Environment.CreateAsync(null,
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Overdesk", "WebView2"));
+        // One shared profile for all web tabs, kept next to Overdesk's settings. A failed start may pass (runtime mid-update).
+        if (_environment is null or { IsFaulted: true })
+        {
+            var data = Environment.GetEnvironmentVariable("OVERDESK_DATA_DIR") is { Length: > 0 } dir ? dir : SettingsStore.DefaultDirectory();
+            _environment = CoreWebView2Environment.CreateAsync(null, Path.Combine(data, "WebView2"));
+        }
         return new WinWebView(parentHandle, url, _environment);
     }
 }
@@ -31,17 +35,23 @@ internal sealed class WinWebView : IWebView
 {
     private const int WsChild = 0x40000000, WsVisible = 0x10000000, WsClipChildren = 0x02000000;
 
+    /// <summary>WebView2 reports stages, not percentages.</summary>
+    private const double StartedProgress = 0.15, ContentProgress = 0.6;
+
     private readonly IntPtr _hwnd;
     private readonly Task<CoreWebView2Environment> _environment;
     private readonly TaskCompletionSource<CoreWebView2?> _ready = new();
     private CoreWebView2Controller? _controller;
     private string? _pendingUrl;
+    private ulong _navigation;
     private (int W, int H) _size = (800, 600);
 
     /// <param name="url">The first page, or null for a popup whose content WebView2 supplies itself.</param>
     public WinWebView(IntPtr parent, string? url, Task<CoreWebView2Environment> environment)
     {
         _pendingUrl = url;
+        IsLoading = url is not null;
+        Progress = StartedProgress;
         _environment = environment;
         _hwnd = CreateWindowEx(0, "Static", "", WsChild | WsVisible | WsClipChildren, 0, 0, 800, 600, parent, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
         _ = InitializeAsync();
@@ -63,12 +73,26 @@ internal sealed class WinWebView : IWebView
             var core = _controller.CoreWebView2;
             core.NewWindowRequested += OnNewWindow;
             core.WindowCloseRequested += (_, _) => CloseRequested?.Invoke();
+            core.NavigationStarting += (_, e) =>
+            {
+                _navigation = e.NavigationId;
+                IsLoading = true;
+                Progress = StartedProgress;
+            };
+            core.ContentLoading += (_, _) => Progress = ContentProgress;
+            core.NavigationCompleted += (_, e) =>
+            {
+                // A navigation replaced by a newer one also ends here, while the newer one is still loading.
+                if (e.NavigationId == _navigation) IsLoading = false;
+            };
             _ready.TrySetResult(core);
             if (_pendingUrl is not null) core.Navigate(_pendingUrl);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            _controller = null; // no WebView2 runtime: the tab stays empty
+            _controller = null;
+            IsLoading = false;
+            SetWindowTextW(_hwnd, "The web view could not start: " + ex.Message); // the host window is a Static control
             _ready.TrySetResult(null);
         }
     }
@@ -102,13 +126,15 @@ internal sealed class WinWebView : IWebView
     public string? Title => _controller?.CoreWebView2?.DocumentTitle;
     public string? Url => _controller?.CoreWebView2?.Source ?? _pendingUrl;
     public bool IsLoading { get; private set; }
-    public double Progress => 0;
+    public double Progress { get; private set; }
 
     public void Navigate(string url)
     {
         // Before the engine is ready the address waits; it is loaded as soon as it is.
         if (_controller?.CoreWebView2 is { } core) core.Navigate(url);
         else _pendingUrl = url;
+        IsLoading = true;
+        Progress = StartedProgress;
     }
 
     /// <summary>WebView2 answers with JSON; a JSON string is unwrapped to its text.</summary>
@@ -120,7 +146,14 @@ internal sealed class WinWebView : IWebView
         return json.StartsWith('"') ? System.Text.Json.JsonSerializer.Deserialize<string>(json) : json;
     }
 
-    public void Reload() => _controller?.CoreWebView2?.Reload();
+    public void Reload()
+    {
+        if (_controller?.CoreWebView2 is not { } core) return;
+        core.Reload();
+        IsLoading = true;
+        Progress = StartedProgress;
+    }
+
     public void GoBack() { if (_controller?.CoreWebView2 is { CanGoBack: true } c) c.GoBack(); }
     public void GoForward() { if (_controller?.CoreWebView2 is { CanGoForward: true } c) c.GoForward(); }
 
@@ -147,6 +180,7 @@ internal sealed class WinWebView : IWebView
     private static extern IntPtr CreateWindowEx(int exStyle, string className, string windowName, int style, int x, int y,
         int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
     [DllImport("user32.dll")] private static extern bool DestroyWindow(IntPtr hwnd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool SetWindowTextW(IntPtr hwnd, string text);
     [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern IntPtr SetParent(IntPtr child, IntPtr parent);
     [DllImport("user32.dll")] private static extern bool MoveWindow(IntPtr hwnd, int x, int y, int width, int height, bool repaint);

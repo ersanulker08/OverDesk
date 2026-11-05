@@ -62,7 +62,12 @@ public partial class MainWindow
         _aiPanel = new AiPanelView { CaptureStage = CaptureStagePngAsync };
         _aiPanel.Initialize(_ai, _settings);
         _aiPanel.Copied += () => ShowToast("Copied to clipboard", "IconCopy");
-        _aiPanel.SettingsChanged += SaveSettings;
+        _aiPanel.SettingsChanged += () =>
+        {
+            Settings.AiEditsToggle.IsChecked = _settings.AiAllowEdits;
+            SaveSettings();
+        };
+        Settings.AiEditsToggle.IsCheckedChanged += (_, _) => _aiPanel.RenderFolder();
         _aiPanel.SaveAsWork += SaveChatAsWork;
         _aiPanel.OpenAiSettings += () =>
         {

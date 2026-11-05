@@ -61,20 +61,31 @@ internal sealed class AiService
         _store = new ChatStore(Path.Combine(dataFolder, "chats"));
         var workspace = Path.Combine(dataFolder, "ai-workspace");
         var keys = new KeySource(secrets);
-        Ollama = new OllamaProvider(settings.OllamaUrl);
+        Ollama = new OllamaProvider(() => settings.OllamaUrl);
         Providers = new IChatProvider[]
         {
             new ClaudeCodeProvider(workspace),
             new GeminiCliProvider(workspace),
             Ollama,
-            new OpenAiCompatibleProvider("lmstudio", "LM Studio", settings.LmStudioUrl, isLocal: true),
+            new OpenAiCompatibleProvider("lmstudio", "LM Studio", () => settings.LmStudioUrl, isLocal: true),
             new ClaudeProvider(keys),
             new OpenAiCompatibleProvider("openai", "OpenAI", "https://api.openai.com/v1", isLocal: false, keys, "openai"),
             new GeminiProvider(keys),
         };
-        Threads = _store.LoadAll();
         Memory = new AiMemory(Path.Combine(dataFolder, "ai-memory"));
         Current = new ChatThread();
+        _ = LoadThreadsAsync();
+    }
+
+    /// <summary>Months of chats take a while to parse, and this runs while the main window is being built.</summary>
+    private async Task LoadThreadsAsync()
+    {
+        var saved = await Task.Run(_store.LoadAll);
+        Dispatcher.UIThread.Post(() =>
+        {
+            Threads.AddRange(saved);
+            Changed?.Invoke();
+        });
     }
 
     public OllamaProvider Ollama { get; }
@@ -84,7 +95,7 @@ internal sealed class AiService
     public IReadOnlyList<IChatProvider> Providers { get; }
 
     /// <summary>Saved conversations, newest first (the current one only once it has a message).</summary>
-    public List<ChatThread> Threads { get; }
+    public List<ChatThread> Threads { get; } = new();
 
     public ChatThread Current { get; private set; }
     public List<AiTurn> Conversation => Current.Turns;
@@ -97,8 +108,11 @@ internal sealed class AiService
     /// <summary>Raised on the UI thread whenever the conversation or status changes.</summary>
     public event Action? Changed;
 
-    /// <summary>OverDesk's own tools (works, tabs, programs...), supplied by the main window.</summary>
-    public Func<IReadOnlyList<AiTool>>? AppTools { get; set; }
+    /// <summary>
+    /// OverDesk's own tools (works, tabs, programs...), supplied by the main window. True asks for every tool there is,
+    /// also those that need a project folder, for the list in Settings.
+    /// </summary>
+    public Func<bool, IReadOnlyList<AiTool>>? AppTools { get; set; }
 
     /// <summary>A line about what is on stage, included with every message while tools are on.</summary>
     public Func<string>? StageInfo { get; set; }
@@ -176,6 +190,8 @@ internal sealed class AiService
 
     public void ForgetModels(string providerId) => _models.Remove(providerId);
 
+    public void ForgetModels() => _models.Clear();
+
     // ---------------------------------------------------------------- conversations
 
     public void NewChat()
@@ -201,10 +217,29 @@ internal sealed class AiService
 
     public void Delete(ChatThread thread)
     {
+        if (Current == thread)
+        {
+            Stop();
+            Current = new ChatThread();
+        }
         Threads.Remove(thread);
         _store.Delete(thread);
-        if (Current == thread) Current = new ChatThread();
         Changed?.Invoke();
+    }
+
+    public void Rename(ChatThread thread, string title)
+    {
+        thread.Title = title;
+        if (Threads.Contains(thread)) _store.Save(thread);
+        Changed?.Invoke();
+    }
+
+    /// <summary>The app is closing: end a running answer (and the command-line tool behind it) and the local tool server.</summary>
+    public void Shutdown()
+    {
+        Stop();
+        if (Threads.Contains(Current)) _store.Save(Current);
+        _mcp?.Dispose();
     }
 
     public void Stop()
@@ -224,7 +259,10 @@ internal sealed class AiService
         thread.Turns.Add(user);
         thread.Turns.Add(answer);
         if (thread.Turns.Count == 2) thread.Title = Shorten(user.Text);
-        if (!Threads.Contains(thread)) Threads.Insert(0, thread);
+        thread.Updated = DateTime.Now;
+        Threads.Remove(thread);
+        Threads.Insert(0, thread);
+        AiContext? context = null;
         var cts = _running = new CancellationTokenSource();
         Changed?.Invoke();
 
@@ -247,15 +285,13 @@ internal sealed class AiService
             var folder = Folder;
             thread.Folder = folder;
 
-            var context = BuildContext(provider, folder, thread, answer, cts.Token);
+            context = BuildContext(provider, folder, thread, answer, cts.Token);
             var system = await SystemPromptAsync(context, cts.Token);
             var stream = Stream(provider, model, system, context, thread, answer, cts.Token);
             var lastUpdate = DateTime.MinValue;
-            // Off the UI thread from the first step: providers parse streams and run tools in their awaits,
-            // which would otherwise come back to the UI thread.
-            await Task.Run(async () =>
+            async Task ReadAsync(IAsyncEnumerable<ChatChunk> chunks)
             {
-                await foreach (var chunk in stream.ConfigureAwait(false))
+                await foreach (var chunk in chunks.ConfigureAwait(false))
                 {
                     answer.Text += chunk.Text;
                     if (chunk.TokensPerSecond is { } speed) LastTokensPerSecond = speed;
@@ -273,6 +309,18 @@ internal sealed class AiService
                         Dispatcher.UIThread.Post(() => Changed?.Invoke());
                     }
                 }
+            }
+            // Off the UI thread from the first step: providers parse streams and run tools in their awaits,
+            // which would otherwise come back to the UI thread.
+            await Task.Run(async () =>
+            {
+                try { await ReadAsync(stream); }
+                catch (ChatSessionNotFoundException)
+                {
+                    // Claude Code prunes old sessions: go on in a new one, with the history folded into the message.
+                    thread.SessionId = null;
+                    await ReadAsync(Stream(provider, model, system, context, thread, answer, cts.Token));
+                }
             });
         }
         catch (OperationCanceledException)
@@ -288,11 +336,12 @@ internal sealed class AiService
             answer.IsStreaming = false;
             thread.Updated = DateTime.Now;
             if (ReferenceEquals(_running, cts)) _running = null;
-            _activeTools = null;
+            // After Stop a new message may already be running with its own tools.
+            if (ReferenceEquals(_activeTools, context?.Tools)) _activeTools = null;
             // Posted, so it runs after the tool lines that are still queued for the UI thread.
             Dispatcher.UIThread.Post(() =>
             {
-                _store.Save(thread);
+                if (Threads.Contains(thread)) _store.Save(thread);
                 Changed?.Invoke();
             });
         }
@@ -354,7 +403,7 @@ internal sealed class AiService
     public IReadOnlyList<AiTool> AllTools()
     {
         var tools = new List<AiTool>();
-        if (AppTools is not null) tools.AddRange(AppTools());
+        if (AppTools is not null) tools.AddRange(AppTools(true));
         tools.Add(Memory.Tool(() => Folder));
         // File tools are described even without a folder, so they can be switched off ahead of time.
         tools.AddRange(ProjectTools.Create(Folder ?? Path.GetTempPath(), allowEdits: true));
@@ -370,21 +419,21 @@ internal sealed class AiService
         var tools = new List<AiTool>();
         if (_settings.AiTools && AppTools is not null)
         {
-            tools.AddRange(AppTools());
+            tools.AddRange(AppTools(false));
             tools.Add(Memory.Tool(() => folder));
         }
         if (folder is not null) tools.AddRange(ProjectTools.Create(folder, _settings.AiAllowEdits));
         tools.RemoveAll(t => _settings.AiDisabledTools.Contains(t.Name));
         if (tools.Count == 0 && folder is null) return null;
 
-        var box = new AiToolbox(tools);
+        var box = new AiToolbox(tools) { TurnStop = stop };
         box.Activity += line => Dispatcher.UIThread.Post(() =>
         {
             answer.Actions.Add(line);
             Changed?.Invoke();
         });
         box.Failed += line => Dispatcher.UIThread.Post(() => answer.Actions.Add("⚠ " + line));
-        box.Approve = (question, cancellation) => AskAsync(thread, answer, question, cancellation, stop);
+        box.Approve = (question, cancellation) => AskAsync(thread, answer, question, cancellation);
         _activeTools = box;
 
         McpEndpoint? mcp = null;
@@ -403,10 +452,9 @@ internal sealed class AiService
     }
 
     /// <summary>
-    /// Show the question in the answer and wait for Allow / Deny. Stopping the chat counts as a no. Calls over MCP
-    /// carry the server's token, so the chat's own stop token is watched too.
+    /// Show the question in the answer and wait for Allow / Deny. Stopping the chat counts as a no.
     /// </summary>
-    private async Task<bool> AskAsync(ChatThread thread, AiTurn answer, string question, CancellationToken cancellation, CancellationToken stop)
+    private async Task<bool> AskAsync(ChatThread thread, AiTurn answer, string question, CancellationToken cancellation)
     {
         if (thread.AllowAll)
         {
@@ -420,8 +468,7 @@ internal sealed class AiService
             answer.Pending = approval;
             Changed?.Invoke();
         });
-        await using var a = cancellation.Register(() => approval.Answer.TrySetResult(false));
-        await using var b = stop.Register(() => approval.Answer.TrySetResult(false));
+        await using var stopped = cancellation.Register(() => approval.Answer.TrySetResult(false));
         var allowed = await approval.Answer.Task;
         Dispatcher.UIThread.Post(() =>
         {

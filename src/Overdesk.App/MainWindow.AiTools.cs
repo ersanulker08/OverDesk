@@ -529,20 +529,10 @@ public partial class MainWindow
             {
                 if (FindWork(a, out var work) is { } error) return error;
                 _works.Flush();
-                var trash = Path.Combine(_store.Directory, "works-trash");
-                try
-                {
-                    Directory.CreateDirectory(trash);
-                    var source = Path.Combine(_works.Library.Folder, work!.Id + ".json");
-                    if (File.Exists(source)) File.Copy(source, Path.Combine(trash, $"{work.Id}.json"), overwrite: true);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    return AiToolResult.Error("Could not keep a backup copy, so the work was not deleted: " + ex.Message);
-                }
-                _works.Library.Delete(work);
-                ShowToast($"AI deleted “{work.Title}” (a copy is in works-trash)", "IconTrash");
-                return new AiToolResult($"Deleted “{work.Title}”. A backup is in {trash}.");
+                if (_works.Library.Delete(work!) is not { } trash)
+                    return AiToolResult.Error("Could not keep a backup copy, so the work was not deleted.");
+                ShowToast($"AI deleted “{work!.Title}” (a copy is in works-trash)", "IconTrash");
+                return new AiToolResult($"Deleted “{work!.Title}”. A backup is in {trash}.");
             }),
         };
         yield return new AiTool

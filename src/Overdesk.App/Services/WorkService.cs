@@ -41,6 +41,9 @@ internal sealed class WorkService
     /// <summary>The dirty works were just written to disk.</summary>
     public event Action? Saved;
 
+    /// <summary>Writing to disk failed (message); the work stays dirty and the save is retried.</summary>
+    public event Action<string>? SaveFailed;
+
     /// <summary>The user asked the AI to do something with a work (instruction), or to talk about it (null).</summary>
     public event Action<Work, string?>? AiRequested;
 
@@ -57,8 +60,14 @@ internal sealed class WorkService
     public void Flush()
     {
         if (!Library.HasDirty) return;
-        Library.FlushDirty();
-        Saved?.Invoke();
+        if (Library.FlushDirty())
+        {
+            Saved?.Invoke();
+            return;
+        }
+        SaveFailed?.Invoke(Library.LastSaveError ?? "the disk is not writable");
+        _saveTimer.Stop();
+        _saveTimer.Start();
     }
 
     public string TitleFontName(Work work) => work.TitleFont ?? Settings.WorkTitleFont;

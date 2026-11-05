@@ -25,19 +25,32 @@ public sealed class WorkLibrary
 
     public Work? Find(string? id) => _works.FirstOrDefault(w => w.Id == id);
 
+    /// <summary>Folder beside the works folder that keeps deleted works (user deletes and AI deletes alike).</summary>
+    public string TrashFolder => Path.Combine(Path.GetDirectoryName(Folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) ?? Folder, "works-trash");
+
+    /// <summary>Files that could not be read by the last <see cref="Load"/>.</summary>
+    public IReadOnlyList<string> LoadErrors { get; private set; } = Array.Empty<string>();
+
+    /// <summary>Why the last write failed, or null when the last write worked.</summary>
+    public string? LastSaveError { get; private set; }
+
     public void Load()
     {
         _works.Clear();
+        var errors = new List<string>();
+        LoadErrors = errors;
         if (!Directory.Exists(Folder)) return;
         foreach (var file in Directory.EnumerateFiles(Folder, "*.json"))
         {
             try
             {
                 if (JsonSerializer.Deserialize<Work>(File.ReadAllText(file)) is { } work && work.Id.Length > 0) _works.Add(work);
+                else errors.Add(file);
             }
             catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
             {
                 // A damaged file is left alone, never fatal.
+                errors.Add(file);
             }
         }
     }
@@ -60,12 +73,64 @@ public sealed class WorkLibrary
         return copy;
     }
 
-    public void Delete(Work work)
+    /// <summary>
+    /// Moves the work to the trash folder (its current state, even if not yet saved) and returns the trash file.
+    /// Returns null, leaving the work in place, when the backup could not be written.
+    /// </summary>
+    public string? Delete(Work work)
     {
+        string trashed;
+        try
+        {
+            Directory.CreateDirectory(TrashFolder);
+            trashed = Path.Combine(TrashFolder, $"{work.Id}-{DateTime.Now:yyyyMMdd-HHmmss-fff}.json");
+            File.WriteAllText(trashed, JsonSerializer.Serialize(work, Json));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
         _works.Remove(work);
         _dirty.Remove(work.Id);
         try { File.Delete(PathOf(work)); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         Changed?.Invoke(null, null);
+        return trashed;
+    }
+
+    /// <summary>Deleted works, newest first.</summary>
+    public IReadOnlyList<TrashedWork> ListTrash()
+    {
+        var list = new List<TrashedWork>();
+        if (!Directory.Exists(TrashFolder)) return list;
+        foreach (var file in Directory.EnumerateFiles(TrashFolder, "*.json"))
+        {
+            try
+            {
+                if (JsonSerializer.Deserialize<Work>(File.ReadAllText(file)) is { } work && work.Id.Length > 0)
+                    list.Add(new TrashedWork(file, work.Title, File.GetLastWriteTime(file)));
+            }
+            catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { }
+        }
+        return list.OrderByDescending(t => t.Deleted).ToList();
+    }
+
+    /// <summary>Brings a trashed work back (with a new id if its old one is taken) and removes the trash file.</summary>
+    public Work? Restore(string trashFile)
+    {
+        try
+        {
+            if (JsonSerializer.Deserialize<Work>(File.ReadAllText(trashFile)) is not { } work || work.Id.Length == 0) return null;
+            if (Find(work.Id) is not null) work.Id = Guid.NewGuid().ToString("N");
+            if (!Write(work)) return null;
+            _works.Add(work);
+            try { File.Delete(trashFile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            Changed?.Invoke(null, null);
+            return work;
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     /// <summary>Call after every edit. <paramref name="sender"/> is the view that made it (so it can skip refreshing itself).</summary>
@@ -79,10 +144,12 @@ public sealed class WorkLibrary
 
     public bool HasDirty => _dirty.Count > 0;
 
-    public void FlushDirty()
+    /// <summary>Writes every dirty work; false when at least one could not be written (it stays dirty).</summary>
+    public bool FlushDirty()
     {
         foreach (var id in _dirty.ToList())
             if (Find(id) is not { } work || Write(work)) _dirty.Remove(id);
+        return _dirty.Count == 0;
     }
 
     private string PathOf(Work work) => Path.Combine(Folder, work.Id + ".json");
@@ -95,13 +162,18 @@ public sealed class WorkLibrary
             var tmp = PathOf(work) + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(work, Json));
             File.Move(tmp, PathOf(work), overwrite: true);
+            LastSaveError = null;
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Keep it dirty so the next flush tries again.
             _dirty.Add(work.Id);
+            LastSaveError = ex.Message;
             return false;
         }
     }
 }
+
+/// <summary>A deleted work waiting in the trash folder.</summary>
+public sealed record TrashedWork(string File, string Title, DateTime Deleted);

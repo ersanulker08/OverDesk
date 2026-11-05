@@ -49,6 +49,26 @@ public sealed class WorkBlock
     {
         Kind = Kind, Text = Text, Value = Value, Checked = Checked, Number = Number, Level = Level,
     };
+
+    /// <summary>A copy that keeps the id, for undo snapshots.</summary>
+    public WorkBlock Snapshot()
+    {
+        var copy = Clone();
+        copy.Id = Id;
+        return copy;
+    }
+
+    /// <summary>Changes the kind; leaving a Field folds its value into the text so nothing is lost.</summary>
+    public void ConvertTo(BlockKind kind)
+    {
+        if (Kind == BlockKind.Field && kind != BlockKind.Field && Value.Length > 0)
+        {
+            Text = Text.Length > 0 ? $"{Text}: {Value}" : Value;
+            Value = "";
+        }
+        Kind = kind;
+        if (kind == BlockKind.Heading && Level is < 1 or > 3) Level = 2;
+    }
 }
 
 /// <summary>A note, list, story, sheet... anything the user writes. Saved as one JSON file.</summary>
@@ -104,6 +124,18 @@ public sealed class Work
             }
             return "";
         }
+    }
+
+    /// <summary>True when the title or any row (text, field value, number) contains the query.</summary>
+    public bool ContainsText(string query)
+    {
+        if (Title.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
+        foreach (var b in Blocks)
+        {
+            if (b.Text.Contains(query, StringComparison.OrdinalIgnoreCase) || b.Value.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
+            if (b.Kind == BlockKind.Number && b.Number.ToString(System.Globalization.CultureInfo.InvariantCulture).Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
     }
 
     public Work Duplicate() => new()

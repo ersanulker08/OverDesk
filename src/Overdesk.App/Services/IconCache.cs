@@ -15,7 +15,7 @@ internal static class IconCache
 {
     private const int PixelSize = 128;
     private static readonly ConcurrentDictionary<string, Bitmap?> Cache = new(StringComparer.Ordinal);
-    private static readonly ConcurrentDictionary<string, List<Action<Bitmap?>>> Pending = new(StringComparer.Ordinal);
+    private static readonly Dictionary<string, List<Action<Bitmap?>>> Pending = new(StringComparer.Ordinal);
     private static readonly BlockingCollection<string> Queue = new();
     private static Thread? _worker;
 
@@ -28,12 +28,18 @@ internal static class IconCache
         if (string.IsNullOrEmpty(programPath)) return true;
         if (Cache.TryGetValue(programPath, out bitmap)) return true;
 
-        var waiting = Pending.GetOrAdd(programPath, _ => new List<Action<Bitmap?>>());
-        lock (waiting)
+        // One lock for the cache check and the waiting list, so a load finishing right now cannot lose this callback.
+        lock (Pending)
         {
-            waiting.Add(loaded);
-            if (waiting.Count == 1) Enqueue(programPath);
+            if (Cache.TryGetValue(programPath, out bitmap)) return true;
+            if (Pending.TryGetValue(programPath, out var waiting))
+            {
+                waiting.Add(loaded);
+                return false;
+            }
+            Pending[programPath] = new List<Action<Bitmap?>> { loaded };
         }
+        Enqueue(programPath);
         return false;
     }
 
@@ -52,10 +58,13 @@ internal static class IconCache
         foreach (var path in Queue.GetConsumingEnumerable())
         {
             var bitmap = Load(path);
-            Cache[path] = bitmap;
-            if (!Pending.TryRemove(path, out var waiting)) continue;
-            Action<Bitmap?>[] callbacks;
-            lock (waiting) callbacks = waiting.ToArray();
+            List<Action<Bitmap?>>? callbacks;
+            lock (Pending)
+            {
+                Cache[path] = bitmap;
+                Pending.Remove(path, out callbacks);
+            }
+            if (callbacks is null) continue;
             Dispatcher.UIThread.Post(() =>
             {
                 foreach (var callback in callbacks) callback(bitmap);

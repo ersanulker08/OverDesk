@@ -59,6 +59,30 @@ public class ClaudeCodeProviderTests
         var blocked = args.Skip(args.IndexOf("--disallowedTools") + 1).ToList();
         Assert.Contains("Bash", blocked);
         Assert.DoesNotContain("Edit", blocked);
+        Assert.Contains("--restricted", args);
+    }
+
+    [Fact]
+    public async Task An_older_claude_without_restricted_mode_runs_without_it()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var dir = new TempFolder();
+        var exe = FakeClaude(dir, """
+            for a in "$@"; do
+              if [ "$a" = "--restricted" ]; then echo "error: unknown option '--restricted'" >&2; exit 1; fi
+            done
+            echo '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}}'
+            echo '{"type":"result","is_error":false,"session_id":"s"}'
+            """);
+        var provider = new ClaudeCodeProvider(Path.Combine(dir.Path, "w"), exe);
+        var chunks = await Run(provider, null);
+        Assert.Equal("ok", string.Concat(chunks.Select(c => c.Text)));
+        Assert.DoesNotContain("--restricted", File.ReadAllLines(Path.Combine(dir.Path, "args.txt")));
+
+        // Remembered: the next turn does not try the flag again.
+        File.Delete(Path.Combine(dir.Path, "args.txt"));
+        await Run(provider, null);
+        Assert.DoesNotContain("--restricted", File.ReadAllLines(Path.Combine(dir.Path, "args.txt")));
     }
 
     [Fact]

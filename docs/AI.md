@@ -64,9 +64,11 @@ src/Overdesk.App/
 
 - OverDesk's file tools never leave the chosen folder and never write inside `.git`. Every path is checked with all
   links along it followed, for reads and writes, and `search_files` and `list_files` do not follow links.
-- Claude Code's own Read/Grep/Glob and Gemini CLI's own read tools are not OverDesk's: they follow those apps'
-  permissions, so they can read outside the folder, also in *Read only* mode and in chats without a folder.
-  Only changes are held to the folder (Claude Code's edit tools are off in *Read only*, and its shell is always off).
+- Claude Code runs with `--restricted`, which confines its own Read/Grep/Glob to the chosen folder (plus OverDesk's
+  AI workspace) and skips the user's and project's Claude Code settings files for that run; an older Claude Code
+  without the flag runs without it and can then read outside the folder. Gemini CLI's own read tools follow Gemini's
+  permissions and can read outside the folder. Only changes are held to the folder (Claude Code's edit tools are off
+  in *Read only*, and its shell is always off).
 - With *Read only*, the write tools are not offered at all, and Claude Code runs with its edit tools blocked.
 - Commands, scripts for other programs, deleting a work and closing a tab always ask. A deleted work is copied to
   `works-trash` first.

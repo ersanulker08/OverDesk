@@ -58,34 +58,42 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
     /// <summary>Set once an older Claude Code refused --append-system-prompt-file; the prompt then goes inline.</summary>
     private bool _promptFileUnsupported;
 
-    private sealed class PromptFileUnsupportedException : Exception;
+    /// <summary>Set once an older Claude Code refused --restricted; its file tools then roam as its own permissions allow.</summary>
+    private bool _restrictedUnsupported;
+
+    private sealed class UnsupportedFlagException(string flag) : Exception
+    {
+        public string Flag { get; } = flag;
+    }
 
     public async IAsyncEnumerable<ChatChunk> StreamTurnAsync(string model, string? system, ChatMessage message, string? sessionId, AiContext? context,
         [EnumeratorCancellation] CancellationToken cancellation)
     {
-        var useFile = !_promptFileUnsupported;
-        var retry = false;
-        await using (var run = RunAsync(model, system, message, sessionId, context, useFile, cancellation).GetAsyncEnumerator(cancellation))
+        var retry = true;
+        while (retry)
         {
+            retry = false;
+            await using var run = RunAsync(model, system, message, sessionId, context, !_promptFileUnsupported, !_restrictedUnsupported, cancellation)
+                .GetAsyncEnumerator(cancellation);
             while (true)
             {
                 bool more;
                 try { more = await run.MoveNextAsync(); }
-                catch (PromptFileUnsupportedException)
+                catch (UnsupportedFlagException ex)
                 {
-                    _promptFileUnsupported = retry = true;
+                    if (ex.Flag == "--restricted") _restrictedUnsupported = true;
+                    else _promptFileUnsupported = true;
+                    retry = true;
                     break;
                 }
                 if (!more) break;
                 yield return run.Current;
             }
         }
-        if (retry)
-            await foreach (var chunk in RunAsync(model, system, message, sessionId, context, false, cancellation)) yield return chunk;
     }
 
     private async IAsyncEnumerable<ChatChunk> RunAsync(string model, string? system, ChatMessage message, string? sessionId, AiContext? context,
-        bool promptFile, [EnumeratorCancellation] CancellationToken cancellation)
+        bool promptFile, bool restricted, [EnumeratorCancellation] CancellationToken cancellation)
     {
         var exe = Executable ?? throw new InvalidOperationException("Claude Code is not installed.");
         Directory.CreateDirectory(_workspace);
@@ -114,6 +122,8 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
             info.ArgumentList.Add(promptPath);
         }
         if (inProject) { info.ArgumentList.Add("--add-dir"); info.ArgumentList.Add(_workspace); }
+        // Keeps Read/Grep/Glob inside the folder (and the workspace); it also skips the user's own settings files for this run.
+        if (restricted) info.ArgumentList.Add("--restricted");
         if (edits) { info.ArgumentList.Add("--permission-mode"); info.ArgumentList.Add("acceptEdits"); }
 
         var allowed = new List<string>(ReadTools);
@@ -226,7 +236,8 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
 
         var error = (await errors).Trim();
         if (sessionId is { Length: > 0 } && error.Contains(NoSession, StringComparison.OrdinalIgnoreCase)) throw new ChatSessionNotFoundException();
-        if (promptFile && error.Contains("append-system-prompt-file", StringComparison.Ordinal)) throw new PromptFileUnsupportedException();
+        if (promptFile && error.Contains("append-system-prompt-file", StringComparison.Ordinal)) throw new UnsupportedFlagException("--append-system-prompt-file");
+        if (restricted && error.Contains("unknown option '--restricted'", StringComparison.Ordinal)) throw new UnsupportedFlagException("--restricted");
         if (error.Contains("login", StringComparison.OrdinalIgnoreCase) || error.Contains("auth", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Claude Code is not signed in. Open a terminal and run: claude  (then /login).");
         throw new InvalidOperationException(error.Length > 0

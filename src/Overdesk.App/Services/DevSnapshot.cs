@@ -37,6 +37,15 @@ internal static class DevSnapshot
         // OVERDESK_SNAPSHOT_AI_PROMPT="..." sends one real message with the current provider (OVERDESK_SNAPSHOT_AI_MODEL picks
         // the model), waits for the answer, prints what the AI did and saves ai-live.png. Spends real tokens.
         // OVERDESK_SNAPSHOT_WEB_TEXT=<url> opens a web tab and prints the text the AI's read_web_page gets.
+        // OVERDESK_SNAPSHOT_NOTIFY=1 posts one system notification through the platform layer and prints whether it was accepted.
+        if (Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT_NOTIFY") == "1")
+        {
+            Console.WriteLine("NOTIFY: " + PlatformFactory.CreateDesktop().Notify("OverDesk", "Notifications work."));
+            await Task.Delay(1500);
+            main.Close();
+            return;
+        }
+
         if (Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT_WEB_TEXT") is { Length: > 0 } url)
         {
             Console.WriteLine("WEB TEXT: " + await main.DevReadWebAsync(url));

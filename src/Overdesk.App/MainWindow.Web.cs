@@ -31,7 +31,7 @@ public partial class MainWindow
     private readonly Dictionary<Guid, List<WebViewHost>> _popups = new();
 
     /// <summary>Web tabs whose engine could not start, with the reason.</summary>
-    private readonly Dictionary<Guid, string> _webFailures = new();
+    private readonly Dictionary<Guid, (string Reason, bool Engine)> _webFailures = new();
 
     private void InitializeWeb()
     {
@@ -54,6 +54,13 @@ public partial class MainWindow
         WebFailedRetry.Click += (_, _) =>
         {
             if (_activeWeb is not { } web) return;
+            if (_webFailures.TryGetValue(web.Id, out var failure) && !failure.Engine)
+            {
+                _webFailures.Remove(web.Id);
+                _webHosts[web.Id].View?.Reload();
+                UpdateWebContent();
+                return;
+            }
             // A fresh view: the runtime may have finished installing or updating meanwhile.
             if (_webHosts.Remove(web.Id, out var host))
             {
@@ -330,7 +337,12 @@ public partial class MainWindow
         host.DownloadStatus += ShowDownloadStatus;
         host.Failed += reason => Dispatcher.UIThread.Post(() =>
         {
-            _webFailures[tab.Id] = reason;
+            _webFailures[tab.Id] = (reason, true);
+            if (_activeWeb == tab) UpdateWebContent();
+        });
+        host.LoadFailed += (url, reason) => Dispatcher.UIThread.Post(() =>
+        {
+            _webFailures[tab.Id] = ($"{url}\n{reason}", false);
             if (_activeWeb == tab) UpdateWebContent();
         });
         _webHosts[tab.Id] = host;
@@ -412,15 +424,18 @@ public partial class MainWindow
         WebHosts.IsVisible = !OverlayOpen;
         // The newest popup of the shown site covers the page until it closes.
         var popup = web is null ? null : CurrentPopup(web);
-        var failure = web is not null && _webFailures.TryGetValue(web.Id, out var reason) ? reason : null;
+        var failure = web is not null && _webFailures.TryGetValue(web.Id, out var f) ? f : ((string Reason, bool Engine)?)null;
         foreach (var (id, host) in _webHosts) host.IsVisible = web is not null && id == web.Id && popup is null && failure is null;
         foreach (var p in _popups.Values.SelectMany(l => l)) p.IsVisible = p == popup;
         PopupBanner.IsVisible = popup is not null;
         WebFailed.IsVisible = failure is not null;
-        if (failure is not null)
-            WebFailedText.Text = OperatingSystem.IsWindows()
-                ? $"Websites inside OverDesk need the Microsoft Edge WebView2 runtime. Install it (or let a running update finish), then try again.\n{failure}"
-                : failure;
+        if (failure is { } fail)
+        {
+            WebFailedInstall.IsVisible = fail.Engine && OperatingSystem.IsWindows();
+            WebFailedText.Text = fail.Engine && OperatingSystem.IsWindows()
+                ? $"Websites inside OverDesk need the Microsoft Edge WebView2 runtime. Install it (or let a running update finish), then try again.\n{fail.Reason}"
+                : fail.Engine ? fail.Reason : $"The page could not be loaded.\n{fail.Reason}";
+        }
         // These act on the page under the popup, not on the popup.
         WebBack.IsEnabled = WebForward.IsEnabled = WebReload.IsEnabled = WebAddress.IsEnabled = popup is null && failure is null;
         if (web is not null) PollActiveWeb();

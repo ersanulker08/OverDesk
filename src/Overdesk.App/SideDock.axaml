@@ -121,6 +121,8 @@
                                 </StackPanel>
 
                                 <TextBlock x:Name="MediaHint" Classes="faint" FontSize="11" TextWrapping="Wrap" IsVisible="False"/>
+                                <Button x:Name="MediaPermission" Classes="ghost" FontSize="11" Padding="10,4" HorizontalAlignment="Left"
+                                        Content="Open Automation settings" IsVisible="False"/>
                             </StackPanel>
                         </Panel>
                         </Border>

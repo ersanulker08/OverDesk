@@ -4,16 +4,74 @@ using Overdesk.Core.Platform;
 
 namespace Overdesk.Platform.MacOS;
 
-/// <summary>Notifications through AppleScript, screenshots with screencapture, app badges read from the Dock.</summary>
+/// <summary>Notifications through the notification center (bundled) or AppleScript, screenshots with screencapture, app badges read from the Dock.</summary>
 public sealed class MacDesktopServices : IDesktopServices
 {
+    private const string UserNotifications = "/System/Library/Frameworks/UserNotifications.framework/UserNotifications";
+    private const nuint AuthorizationBadgeSoundAlert = 1 | 2 | 4;
+
     private static readonly IntPtr AttrChildren = Cf("AXChildren");
     private static readonly IntPtr AttrTitle = Cf("AXTitle");
     private static readonly IntPtr AttrStatusLabel = Cf("AXStatusLabel");
 
+    // UNUserNotificationCenter throws (and kills the process) without a bundle, which is how `dotnet run` runs.
+    private static readonly Lazy<bool> Bundled = new(() =>
+        ObjC.ReadNSString(ObjC.Call(ObjC.Call(ObjC.Class("NSBundle"), "mainBundle"), "bundleIdentifier")) is { Length: > 0 });
+
+    private static bool _authorizationRequested;
+
     private static IntPtr Cf(string s) => Native.CFStringCreateWithCString(IntPtr.Zero, s, Native.CFStringEncodingUTF8);
 
     public bool Notify(string title, string text)
+        => (Bundled.Value && NotifyThroughCenter(title, text)) || NotifyThroughScript(title, text);
+
+    /// <summary>The app's own notifications (name, icon and switch in System Settings). The first call asks the user.</summary>
+    private static bool NotifyThroughCenter(string title, string text)
+    {
+        var pool = ObjC.objc_autoreleasePoolPush();
+        try
+        {
+            NativeLibrary.Load(UserNotifications);
+            var center = ObjC.Call(ObjC.Class("UNUserNotificationCenter"), "currentNotificationCenter");
+            if (center == IntPtr.Zero) return false;
+            if (_authorizationRequested)
+            {
+                Post(center, title, text);
+                return true;
+            }
+            _authorizationRequested = true;
+            // Anything posted before the answer is dropped, so the first notification waits for it.
+            var block = ObjC.CompletionBlock((granted, _) =>
+            {
+                if (granted == IntPtr.Zero) return;
+                var inner = ObjC.objc_autoreleasePoolPush();
+                try { Post(center, title, text); }
+                catch (Exception) { }
+                finally { ObjC.objc_autoreleasePoolPop(inner); }
+            });
+            ObjC.Call(center, "requestAuthorizationWithOptions:completionHandler:", AuthorizationBadgeSoundAlert, block);
+            ObjC.ReleaseBlock(block);
+            return true;
+        }
+        catch (Exception) { return false; }
+        finally { ObjC.objc_autoreleasePoolPop(pool); }
+    }
+
+    private static void Post(IntPtr center, string title, string text)
+    {
+        var content = ObjC.Call(ObjC.Call(ObjC.Class("UNMutableNotificationContent"), "alloc"), "init");
+        ObjC.Call(content, "setTitle:", ObjC.NSString(title));
+        ObjC.Call(content, "setBody:", ObjC.NSString(text));
+        var request = ObjC.Call(ObjC.Class("UNNotificationRequest"), "requestWithIdentifier:content:trigger:",
+            ObjC.NSString(Guid.NewGuid().ToString("N")), content, IntPtr.Zero);
+        var done = ObjC.CompletionBlock((_, _) => { });
+        ObjC.Call(center, "addNotificationRequest:withCompletionHandler:", request, done);
+        ObjC.ReleaseBlock(done);
+        ObjC.Call(content, "release");
+    }
+
+    /// <summary>Unbundled (dotnet run): macOS shows these as Script Editor's.</summary>
+    private static bool NotifyThroughScript(string title, string text)
     {
         static string Quote(string s) => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
         try

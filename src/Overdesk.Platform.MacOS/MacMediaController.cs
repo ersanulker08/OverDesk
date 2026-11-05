@@ -34,11 +34,14 @@ public sealed class MacMediaController : IMediaController
     private NowPlaying? _last;
     private DateTime _nextQuery;
 
+    public string? BlockedPlayer { get; private set; }
+
     public async Task<NowPlaying?> GetAsync(CancellationToken cancellation)
     {
         if (DateTime.UtcNow < _nextQuery) return _last;
         _last = await QueryPlayersAsync(cancellation);
         _nextQuery = _last is { IsPlaying: true } ? DateTime.MinValue : DateTime.UtcNow + IdleInterval;
+        BlockedPlayer = Players.FirstOrDefault(p => _deniedUntil.ContainsKey(p.BundleId) && RunningApps.Pids(p.BundleId).Count > 0)?.Name;
         return _last;
     }
 
@@ -109,7 +112,10 @@ public sealed class MacMediaController : IMediaController
                 return s & linefeed & (name of t) & linefeed & (artist of t) & linefeed & (album of t) & linefeed & ((duration of t) as string) & linefeed & ((player position) as string) & linefeed & {{modes}}
             end tell
             """;
-        var output = await RunAsync(script, cancellation, () => _deniedUntil[player.BundleId] = DateTime.UtcNow + DeniedRetry);
+        var denied = false;
+        var output = await RunAsync(script, cancellation, () => denied = true);
+        if (denied) _deniedUntil[player.BundleId] = DateTime.UtcNow + DeniedRetry;
+        else _deniedUntil.Remove(player.BundleId);
         if (output is null) return null;
         var lines = output.Split('\n');
         if (lines.Length < 6 || lines[0] == "stopped") return null;

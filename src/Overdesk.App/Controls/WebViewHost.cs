@@ -42,6 +42,9 @@ public sealed class WebViewHost : NativeControlHost
     /// <summary>The engine could not start (forwarded from the view).</summary>
     public event Action<string>? Failed;
 
+    /// <summary>A page could not be loaded (url, reason); only platforms without their own error page raise it.</summary>
+    public event Action<string, string>? LoadFailed;
+
     private void Attach(IWebView view)
     {
         View = view;
@@ -49,6 +52,7 @@ public sealed class WebViewHost : NativeControlHost
         view.CloseRequested += () => CloseRequested?.Invoke();
         view.DownloadStatus += text => DownloadStatus?.Invoke(text);
         view.Failed += reason => Failed?.Invoke(reason);
+        view.LoadFailed += (url, reason) => LoadFailed?.Invoke(url, reason);
     }
 
     protected override IPlatformHandle CreateNativeControlCore(IPlatformHandle parent)

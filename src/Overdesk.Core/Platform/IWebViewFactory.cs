@@ -49,6 +49,12 @@ public interface IWebView : IDisposable
 
     /// <summary>The engine could not start (why); the view will never show a page. Only where starting can fail (WebView2).</summary>
     event Action<string>? Failed { add { } remove { } }
+
+    /// <summary>
+    /// The page could not be loaded (url, reason) or the engine could not start; the host shows it. Only where the
+    /// platform does not show its own error page in the view (WebKit on macOS does).
+    /// </summary>
+    event Action<string, string>? LoadFailed { add { } remove { } }
 }
 
 public interface IWebViewFactory

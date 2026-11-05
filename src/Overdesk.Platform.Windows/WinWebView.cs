@@ -43,6 +43,7 @@ internal sealed class WinWebView : IWebView
     private readonly TaskCompletionSource<CoreWebView2?> _ready = new();
     private CoreWebView2Controller? _controller;
     private string? _pendingUrl;
+    private string? _navigatingUrl;
     private ulong _navigation;
     private (int W, int H) _size = (800, 600);
 
@@ -60,6 +61,7 @@ internal sealed class WinWebView : IWebView
     public event Action<IWebView>? PopupRequested;
     public event Action? CloseRequested;
     public event Action<string>? Failed;
+    public event Action<string, string>? LoadFailed;
 
     /// <summary>The engine once it is ready (null when WebView2 is missing).</summary>
     internal Task<CoreWebView2?> Ready => _ready.Task;
@@ -77,6 +79,7 @@ internal sealed class WinWebView : IWebView
             core.NavigationStarting += (_, e) =>
             {
                 _navigation = e.NavigationId;
+                _navigatingUrl = e.Uri;
                 IsLoading = true;
                 Progress = StartedProgress;
             };
@@ -84,7 +87,10 @@ internal sealed class WinWebView : IWebView
             core.NavigationCompleted += (_, e) =>
             {
                 // A navigation replaced by a newer one also ends here, while the newer one is still loading.
-                if (e.NavigationId == _navigation) IsLoading = false;
+                if (e.NavigationId != _navigation) return;
+                IsLoading = false;
+                if (!e.IsSuccess && e.WebErrorStatus != CoreWebView2WebErrorStatus.OperationCanceled)
+                    LoadFailed?.Invoke(_navigatingUrl ?? core.Source, Describe(e.WebErrorStatus));
             };
             _ready.TrySetResult(core);
             if (_pendingUrl is not null) core.Navigate(_pendingUrl);
@@ -96,6 +102,19 @@ internal sealed class WinWebView : IWebView
             _ready.TrySetResult(null);
             Failed?.Invoke(ex.Message);
         }
+    }
+
+    /// <summary>"HostNameNotResolved" → "Host name not resolved".</summary>
+    private static string Describe(CoreWebView2WebErrorStatus status)
+    {
+        var words = status.ToString();
+        var text = new System.Text.StringBuilder(words.Length + 8);
+        for (var i = 0; i < words.Length; i++)
+        {
+            if (i > 0 && char.IsUpper(words[i])) { text.Append(' '); text.Append(char.ToLowerInvariant(words[i])); }
+            else text.Append(words[i]);
+        }
+        return text.ToString();
     }
 
     /// <summary>

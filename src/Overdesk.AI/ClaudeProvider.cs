@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Anthropic;
 using Anthropic.Models.Messages;
 
@@ -38,7 +39,20 @@ public sealed class ClaudeProvider : IChatProvider
 
     private string? Key => _keys.Get("anthropic") is { Length: > 0 } k ? k : Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
 
-    private AnthropicClient Client() => _baseUrl is null ? new() { ApiKey = Key } : new() { ApiKey = Key, BaseUrl = _baseUrl };
+    private (string? Key, AnthropicClient Client)? _client;
+
+    /// <summary>One client per key: each holds its own connection pool, which every tool round reuses.</summary>
+    private AnthropicClient Client()
+    {
+        var key = Key;
+        if (_client is { } current && current.Key == key) return current.Client;
+        var client = _baseUrl is null ? new AnthropicClient { ApiKey = key } : new AnthropicClient { ApiKey = key, BaseUrl = _baseUrl };
+        _client = (key, client);
+        return client;
+    }
+
+    /// <summary>Models from before Claude 4.6 (still listed by the API): they reject adaptive thinking, and most reject effort.</summary>
+    private static readonly Regex BeforeAdaptiveThinking = new(@"^claude-(\d|(opus|sonnet|haiku)-[1-4](-[0-5])?(-\d{8})?$)");
 
     public Task<string?> CheckAsync(CancellationToken cancellation)
         => Task.FromResult(string.IsNullOrEmpty(Key) ? "Add your Anthropic API key in OverDesk settings → AI." : null);
@@ -78,12 +92,12 @@ public sealed class ClaudeProvider : IChatProvider
                 Model = model,
                 MaxTokens = 64000,
                 Messages = history,
-                // A side-panel chat: answer quickly, still think when the question needs it.
-                Thinking = new ThinkingConfigAdaptive(),
-                OutputConfig = new OutputConfig { Effort = Effort.Medium },
                 // Tool rounds resend the whole conversation: cache it, so each round pays only for what is new.
                 CacheControl = new CacheControlEphemeral(),
             };
+            // A side-panel chat: answer quickly, still think when the question needs it.
+            if (!BeforeAdaptiveThinking.IsMatch(model))
+                parameters = parameters with { Thinking = new ThinkingConfigAdaptive(), OutputConfig = new OutputConfig { Effort = Effort.Medium } };
             if (!string.IsNullOrWhiteSpace(system)) parameters = parameters with { System = system };
             if (tools is { Count: > 0 }) parameters = parameters with { Tools = tools };
 

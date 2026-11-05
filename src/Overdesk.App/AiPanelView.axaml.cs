@@ -34,6 +34,9 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         InitializeComponent();
         ModelButton.Click += (_, _) => ToggleModelSheet();
         CloseSheet.Click += (_, _) => HideModelSheet();
+        RefreshSheet.Click += (_, _) => BuildModelSheet();
+        ProblemClose.Click += (_, _) => ProblemBar.IsVisible = false;
+        AttachedToVisualTree += (_, _) => BuildQuickActions();
         NewChatButton.Click += (_, _) => StartNewChat();
         ChatMenuButton.Click += (_, _) => ShowChatMenu();
         RailNewChat.Click += (_, _) => StartNewChat();
@@ -57,7 +60,9 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         {
             if (e.Key != Key.Enter || e.KeyModifiers.HasFlag(KeyModifiers.Shift)) return;
             e.Handled = true;
-            SendOrStop();
+            // Only the button stops an answer: a follow-up typed meanwhile must not end it.
+            if (_ai?.IsBusy != true) SendOrStop();
+            else if (!string.IsNullOrWhiteSpace(Input.Text)) ShowProblem("Enter sends once this answer is done. The stop button ends it now.", transient: true);
         };
     }
 
@@ -105,13 +110,21 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         var clip = template.Contains("{{clipboard}}", StringComparison.OrdinalIgnoreCase) ? await ClipboardTextAsync() : null;
         if (clip is not null && string.IsNullOrWhiteSpace(clip))
         {
-            ShowProblem("The clipboard is empty: copy some text first.");
+            ShowProblem("The clipboard is empty: copy some text first.", transient: true);
             return;
         }
-        if (_ai is not null) await _ai.SendAsync(AiService.Expand(template, clip));
+        await AskAsync(AiService.Expand(template, clip));
     }
 
-    internal Task AskAsync(string question) => _ai?.SendAsync(question) ?? Task.CompletedTask;
+    internal Task AskAsync(string question)
+    {
+        if (_ai is null) return Task.CompletedTask;
+        if (!_ai.IsBusy) return _ai.SendAsync(question);
+        // One answer at a time: the question waits in the message box instead of getting lost.
+        Draft(string.IsNullOrWhiteSpace(Input.Text) ? question : Input.Text.TrimEnd() + "\n\n" + question);
+        ShowProblem("Wait for the current answer, then press Enter.", transient: true);
+        return Task.CompletedTask;
+    }
 
     // ---------------------------------------------------------------- sending
 
@@ -151,7 +164,7 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         var text = await ClipboardTextAsync();
         if (string.IsNullOrWhiteSpace(text))
         {
-            ShowProblem("The clipboard has no text.");
+            ShowProblem("The clipboard has no text.", transient: true);
             return;
         }
         _pendingClipboard = text;
@@ -164,7 +177,7 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         var png = CaptureStage is null ? null : await CaptureStage();
         if (png is null)
         {
-            ShowProblem("Open a program on stage first. On macOS the screenshot needs the Screen Recording permission.");
+            ShowProblem("Open a program on stage first. On macOS the screenshot needs the Screen Recording permission.", transient: true);
             return;
         }
         _pendingImages.Add(("Screenshot", png));
@@ -212,7 +225,7 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
             }
         }
         RenderAttachments();
-        if (skipped.Count > 0) ShowProblem($"Not attached (not text or an image, or too large): {string.Join(", ", skipped)}");
+        if (skipped.Count > 0) ShowProblem($"Not attached (not text or an image, or too large): {string.Join(", ", skipped)}", transient: true);
         FocusInput();
     }
 
@@ -282,12 +295,33 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         {
             ItemsSource = new[]
             {
+                MenuEntry("Rename…", "IconNote", () => Dispatcher.UIThread.Post(() => ShowRename(thread))),
                 MenuEntry("Save as a work", "IconNote", () => SaveAsWork?.Invoke(thread.Title, ChatMarkdownText(thread))),
                 MenuEntry("Copy as Markdown", "IconCopy", () => _ = CopyAsync(ChatMarkdownText(thread))),
                 MenuEntry("Delete this chat", "IconTrash", () => _ai.Delete(thread)),
             },
         };
         menu.Open(ChatMenuButton);
+    }
+
+    private void ShowRename(ChatThread thread)
+    {
+        var box = new TextBox { Text = thread.Title, Width = 240, FontSize = 12.5 };
+        var flyout = new Flyout { Content = box, Placement = PlacementMode.BottomEdgeAlignedRight };
+        box.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape) flyout.Hide();
+            if (e.Key != Key.Enter) return;
+            e.Handled = true;
+            if (box.Text?.Trim() is { Length: > 0 } title) _ai?.Rename(thread, title);
+            flyout.Hide();
+        };
+        flyout.Opened += (_, _) => Dispatcher.UIThread.Post(() =>
+        {
+            box.Focus();
+            box.SelectAll();
+        }, DispatcherPriority.Background);
+        flyout.ShowAt(ChatMenuButton);
     }
 
     private static MenuItem MenuEntry(string text, string icon, Action click)
@@ -314,7 +348,7 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
     /// <summary>Raised after the panel changed a setting itself (edit mode), so the host saves.</summary>
     public event Action? SettingsChanged;
 
-    private void RenderFolder()
+    internal void RenderFolder()
     {
         if (_ai is null) return;
         var folder = _ai.Folder;
@@ -326,8 +360,8 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         EditModeText.Text = _settings.AiAllowEdits ? "Can edit files" : "Read only";
         EditModeDot.Fill = Res.Brush(_settings.AiAllowEdits ? "SuccessBrush" : "FaintBrush");
         ToolTip.SetTip(EditModeButton, _settings.AiAllowEdits
-            ? "The AI may create and change files in this folder (never outside it, never shell commands). Click for read only."
-            : "The AI only reads this folder. Click to let it change files.");
+            ? "The AI may create and change files in this folder (never outside it, never shell commands). Claude Code and Gemini CLI read files with their own permissions. Click for read only."
+            : "The AI changes nothing here. Claude Code and Gemini CLI read files with their own permissions. Click to let it change files.");
     }
 
     private static string FolderName(string folder) => Path.GetFileName(folder.TrimEnd('/', '\\')) is { Length: > 0 } name ? name : folder;
@@ -422,8 +456,13 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         else ShowProblem(problem);
     }
 
-    private void ShowProblem(string text)
+    private IDisposable? _problemTimer;
+
+    /// <summary>A transient note (nothing attached, one answer at a time) goes away by itself; a provider problem stays.</summary>
+    private void ShowProblem(string text, bool transient = false)
     {
+        _problemTimer?.Dispose();
+        _problemTimer = transient ? DispatcherTimer.RunOnce(() => ProblemBar.IsVisible = false, TimeSpan.FromSeconds(6)) : null;
         ProblemText.Text = text;
         ProblemBar.IsVisible = true;
     }
@@ -466,6 +505,9 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         if (_ai is null) return;
         ModelList.Children.Clear();
         _pullViews.Clear();
+        // Models pulled or loaded elsewhere, and tools installed meanwhile, show up without a restart.
+        _ai.ForgetModels();
+        CliTools.ForgetMissing();
         var groups = new (AiSourceKind Kind, string Title, string Caption)[]
         {
             (AiSourceKind.App, "YOUR APPS", "Installed on this computer and signed in with your own account. No API key."),
@@ -540,7 +582,7 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         if (models.Count > 0)
         {
             var chips = new WrapPanel();
-            foreach (var model in models.Take(30))
+            foreach (var model in models)
             {
                 var chip = new Button { Classes = { "modelchip" }, Content = model.Name };
                 chip.Classes.Set("selected", _ai.Provider == provider && _ai.Model == model.Id);
@@ -583,6 +625,7 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
 
     private readonly Dictionary<string, (ProgressBar Bar, TextBlock Status, Button Button)> _pullViews = new();
     private readonly Dictionary<string, (string Status, double? Fraction)> _pulls = new();
+    private readonly Dictionary<string, CancellationTokenSource> _pullStops = new();
 
     private Control DownloadRow(string name, string size, string about)
     {
@@ -600,7 +643,11 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         var button = new Button { Classes = { "icon" }, Width = 28, Height = 28, VerticalAlignment = VerticalAlignment.Center,
             Content = new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small", "accent" }, Data = Res.Icon("IconDownload") } };
         ToolTip.SetTip(button, $"Download {name} ({size})");
-        button.Click += (_, _) => _ = PullAsync(name);
+        button.Click += (_, _) =>
+        {
+            if (_pullStops.TryGetValue(name, out var stop)) stop.Cancel();
+            else _ = PullAsync(name);
+        };
 
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         row.Children.Add(text);
@@ -618,12 +665,19 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         view.Bar.IsIndeterminate = fraction is null;
         if (fraction is { } f) view.Bar.Value = f;
         view.Status.Text = fraction is { } p ? $"{status} · {p:P0}" : status;
-        view.Button.IsEnabled = false;
+        SetPullButton(view.Button, "IconStop", $"Stop downloading {name}");
+    }
+
+    private static void SetPullButton(Button button, string icon, string tip)
+    {
+        if (button.Content is Avalonia.Controls.Shapes.Path glyph) glyph.Data = Res.Icon(icon);
+        ToolTip.SetTip(button, tip);
     }
 
     private async Task PullAsync(string name)
     {
         if (_ai is null || _pulls.ContainsKey(name)) return;
+        using var stop = _pullStops[name] = new CancellationTokenSource();
         _pulls[name] = ("Starting download…", null);
         ShowPull(name, "Starting download…", null);
         var progress = new Progress<(string Status, double? Fraction)>(p =>
@@ -633,7 +687,7 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         });
         try
         {
-            await _ai.Ollama.PullAsync(name, progress, CancellationToken.None);
+            await _ai.Ollama.PullAsync(name, progress, stop.Token);
             _pulls.Remove(name);
             _ai.ForgetModels(_ai.Ollama.Id);
             _ai.Choose(_ai.Ollama, name);
@@ -646,9 +700,13 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
             if (_pullViews.TryGetValue(name, out var view))
             {
                 view.Bar.IsVisible = false;
-                view.Status.Text = "Download failed: " + ex.Message;
-                view.Button.IsEnabled = true;
+                view.Status.Text = ex is OperationCanceledException ? "Download cancelled" : "Download failed: " + ex.Message;
+                SetPullButton(view.Button, "IconDownload", $"Download {name}");
             }
+        }
+        finally
+        {
+            _pullStops.Remove(name);
         }
     }
 
@@ -740,7 +798,7 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
     {
         if (_ai is null) return;
         var query = RailSearch.Text?.Trim() ?? "";
-        var signature = _ai.Current.Id + "|" + query + "|" + string.Join(",", _ai.Threads.Select(t => t.Id + t.Title));
+        var signature = _ai.Current.Id + "|" + query + "|" + string.Join(",", _ai.Threads.Select(t => t.Id + t.Title + t.Updated.Ticks));
         if (signature == _historySignature) return;
         _historySignature = signature;
 
@@ -797,13 +855,28 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
             FontWeight = current ? FontWeight.SemiBold : FontWeight.Normal });
         text.Children.Add(new TextBlock { Text = $"{provider?.Name ?? "AI"} · {Ago(thread.Updated)}", Classes = { "faint" }, FontSize = 10, TextTrimming = TextTrimming.CharacterEllipsis });
 
-        var delete = new Button { Classes = { "icon", "rowdelete" }, Width = 22, Height = 22, Opacity = fade,
-            Content = new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small" }, Data = Res.Icon("IconTrash"), Height = 11 } };
+        // Chats are gone for good once deleted, so the button sits under a passing pointer only as a first step.
+        var trash = new Avalonia.Controls.Shapes.Path { Classes = { "icon", "small" }, Data = Res.Icon("IconTrash"), Height = 11 };
+        var delete = new Button { Classes = { "icon", "rowdelete" }, Width = 22, Height = 22, Opacity = fade, Content = trash };
         ToolTip.SetTip(delete, "Delete conversation");
+        var armed = false;
         delete.Click += (_, e) =>
         {
             e.Handled = true;
-            _ai?.Delete(thread);
+            if (armed)
+            {
+                _ai?.Delete(thread);
+                return;
+            }
+            armed = true;
+            trash.Stroke = Res.Brush("DangerBrush");
+            ToolTip.SetTip(delete, "Click again to delete");
+        };
+        delete.PointerExited += (_, _) =>
+        {
+            armed = false;
+            trash.ClearValue(Avalonia.Controls.Shapes.Shape.StrokeProperty);
+            ToolTip.SetTip(delete, "Delete conversation");
         };
 
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Width = RailOpen - 18 };
@@ -842,8 +915,13 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
 
     // ---------------------------------------------------------------- prompts & quick actions
 
+    private string _quickActions = "";
+
     private void BuildQuickActions()
     {
+        var signature = string.Join('\n', _settings.Prompts.Take(4).Select(p => p.Name + "\t" + p.Text));
+        if (signature == _quickActions) return;
+        _quickActions = signature;
         QuickActions.Children.Clear();
         foreach (var prompt in _settings.Prompts.Take(4))
         {
@@ -890,10 +968,14 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
         KindText.Foreground = new SolidColorBrush(tint);
         RenderHistory();
         RenderFolder();
+        BuildQuickActions();
         SpeedText.Text = _ai.LastTokensPerSecond is { } speed ? $"{speed:0} tok/s" : "";
         SendIcon.Data = Res.Icon(_ai.IsBusy ? "IconStop" : "IconSend");
         SendIcon.Fill = _ai.IsBusy ? Brushes.White : null;
         ToolTip.SetTip(SendButton, _ai.IsBusy ? "Stop" : "Send (Enter)");
+        Input.PlaceholderText = _ai.IsBusy ? "You can write your next message while this answer finishes…" : "Message… (Enter to send, Shift+Enter for a new line)";
+        // An answer is arriving, so a warning about the provider no longer holds.
+        if (_problemTimer is null && _ai.Conversation.LastOrDefault() is { IsStreaming: true, Text.Length: > 0 }) ProblemBar.IsVisible = false;
 
         EmptyState.IsVisible = _ai.Conversation.Count == 0;
         var stickToBottom = Scroller.Offset.Y >= Scroller.Extent.Height - Scroller.Viewport.Height - 40;
@@ -937,7 +1019,7 @@ public partial class AiPanelView : UserControl, Overdesk.Core.Plugins.IFileDropT
 
     /// <summary>The friendly name of a model when the picker already knows it ("Your plan's default" for Claude Code).</summary>
     private static string ModelLabel(IChatProvider provider, string model)
-        => provider is ClaudeCodeProvider ? model switch { "default" => "Default model", _ => char.ToUpperInvariant(model[0]) + model[1..] } : model;
+        => provider is ClaudeCodeProvider or GeminiCliProvider ? model switch { "default" => "Default model", _ => char.ToUpperInvariant(model[0]) + model[1..] } : model;
 
     private Control Bubble(AiTurn turn)
     {

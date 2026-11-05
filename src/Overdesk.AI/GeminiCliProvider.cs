@@ -13,22 +13,36 @@ public sealed class GeminiCliProvider : IChatProvider
 {
     private readonly string _workspace;
 
-    public GeminiCliProvider(string workspace) => _workspace = workspace;
+    private readonly string? _executable;
+
+    /// <param name="executable">The gemini command to run; null finds the installed one (tests pass a fake).</param>
+    public GeminiCliProvider(string workspace, string? executable = null)
+    {
+        _workspace = workspace;
+        _executable = executable;
+    }
+
+    private string? Executable => _executable ?? CliTools.Find("gemini");
 
     public string Id => "gemini-cli";
     public string Name => "Gemini CLI";
     public bool IsLocal => false;
 
     public Task<string?> CheckAsync(CancellationToken cancellation)
-        => Task.Run(() => CliTools.Find("gemini") is null ? "Gemini CLI is not installed (npm install -g @google/gemini-cli)." : null, cancellation);
+        => Task.Run(() => Executable is null ? "Gemini CLI is not installed (npm install -g @google/gemini-cli)." : null, cancellation);
 
     public Task<IReadOnlyList<AiModel>> ListModelsAsync(CancellationToken cancellation)
-        => Task.FromResult<IReadOnlyList<AiModel>>(new[] { new AiModel("default", "Your account's default") });
+        => Task.FromResult<IReadOnlyList<AiModel>>(new AiModel[]
+        {
+            new("default", "Your account's default", "whatever Gemini CLI uses"),
+            new("pro", "Pro", "most capable"),
+            new("flash", "Flash", "fast"),
+        });
 
     public async IAsyncEnumerable<ChatChunk> StreamAsync(string model, string? system, IReadOnlyList<ChatMessage> messages, AiContext? context,
         [EnumeratorCancellation] CancellationToken cancellation)
     {
-        var exe = CliTools.Find("gemini") ?? throw new InvalidOperationException("Gemini CLI is not installed.");
+        var exe = Executable ?? throw new InvalidOperationException("Gemini CLI is not installed.");
         Directory.CreateDirectory(_workspace);
         await WriteSettingsAsync(context?.Mcp, cancellation);
         var prompt = new StringBuilder();
@@ -40,8 +54,12 @@ public sealed class GeminiCliProvider : IChatProvider
             prompt.AppendLine().AppendLine("Now answer the user's new message:");
         }
         prompt.Append(messages[^1].Text);
+        // It runs in the workspace, so its own read_file tool can load pictures saved there.
+        using var images = await ImageFiles.WriteAsync(_workspace, messages[^1].Images, cancellation);
+        foreach (var file in images.Paths) prompt.Append($"\n\n(Attached image: {file} — read it to see it.)");
 
         var info = CliTools.StartInfo(exe, _workspace);
+        if (model is { Length: > 0 } && model != "default") { info.ArgumentList.Add("-m"); info.ArgumentList.Add(model); }
         // The project folder is readable through Gemini CLI's own tools; changes go through OverDesk's file tools.
         if (context?.Folder is { } folder && Directory.Exists(folder)) { info.ArgumentList.Add("--include-directories"); info.ArgumentList.Add(folder); }
         // The conversation goes in on stdin (Gemini CLI runs headless when stdin is not a terminal): a long,

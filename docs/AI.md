@@ -39,7 +39,11 @@ src/Overdesk.App/
 4. Apps that run as their own process cannot be handed C# objects, so `McpServer` serves the same toolbox. Claude Code
    gets `--mcp-config` (with a random token) and `--allowedTools mcp__overdesk`; it runs inside the project folder with
    its own Read/Grep/Glob, Edit/Write only when file changes are allowed, and never its own shell (it uses
-   `run_command`, which asks first).
+   `run_command`, which asks first). A tool call over MCP stops with the chat turn (`AiToolbox.TurnStop`), so Stop also
+   ends a `run_command` or a script that Claude Code started.
+5. Attached images reach the two apps as `screenshot-*.png` files in `ai-workspace`, referenced in the prompt and deleted
+   when the run ends. When Claude Code no longer has the session of an old chat, `AiService` sends the message again
+   in a new session with the earlier turns folded in.
 
 ## Tools
 
@@ -58,7 +62,11 @@ src/Overdesk.App/
 
 ## Safety rules
 
-- File tools never leave the chosen folder (symbolic links included) and never write inside `.git`.
+- OverDesk's file tools never leave the chosen folder and never write inside `.git`. Every path is checked with all
+  links along it followed, for reads and writes, and `search_files` and `list_files` do not follow links.
+- Claude Code's own Read/Grep/Glob and Gemini CLI's own read tools are not OverDesk's: they follow those apps'
+  permissions, so they can read outside the folder, also in *Read only* mode and in chats without a folder.
+  Only changes are held to the folder (Claude Code's edit tools are off in *Read only*, and its shell is always off).
 - With *Read only*, the write tools are not offered at all, and Claude Code runs with its edit tools blocked.
 - Commands, scripts for other programs, deleting a work and closing a tab always ask. A deleted work is copied to
   `works-trash` first.

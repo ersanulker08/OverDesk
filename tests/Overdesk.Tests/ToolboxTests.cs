@@ -120,4 +120,40 @@ public class ConditionalApprovalTests
         Assert.True((await box.RunAsync("projects", new JsonObject { ["action"] = "launch" }, CancellationToken.None)).IsError);
         Assert.Equal(1, runs);
     }
+
+    [Fact]
+    public void A_full_memory_keeps_both_titles_and_the_newest_whole_notes()
+    {
+        using var dir = new TempFolder();
+        var memory = new AiMemory(dir.Path);
+        for (var i = 0; i < 40; i++)
+        {
+            memory.Add(null, $"user note {i:00} " + new string('u', 300));
+            memory.Add("/project", $"project note {i:00} " + new string('p', 300));
+        }
+
+        var prompt = memory.PromptSection("/project");
+
+        Assert.True(prompt.Length <= 4200, prompt.Length.ToString());
+        Assert.StartsWith("What you remember about the user", prompt);
+        Assert.Contains("What you remember about this project", prompt);
+        Assert.Contains("user note 39", prompt);
+        Assert.Contains("project note 39", prompt);
+        Assert.DoesNotContain("user note 00", prompt);
+        Assert.Contains("older notes left out", prompt);
+        Assert.All(prompt.Split('\n').Where(l => l.StartsWith("- [")), l => Assert.EndsWith(new string('u', 5), l.TrimEnd().Replace('p', 'u')));
+    }
+
+    [Fact]
+    public async Task The_memory_list_shows_every_note_even_when_the_prompt_cannot()
+    {
+        using var dir = new TempFolder();
+        var memory = new AiMemory(dir.Path);
+        for (var i = 0; i < 40; i++) memory.Add(null, $"note {i:00} " + new string('n', 300));
+
+        var list = await memory.Tool(() => null).Run(new System.Text.Json.Nodes.JsonObject { ["action"] = "list" }, CancellationToken.None);
+
+        Assert.Contains("note 00", list.Text);
+        Assert.Contains("note 39", list.Text);
+    }
 }

@@ -99,20 +99,37 @@ public sealed class AiMemory
         File.Move(file + ".tmp", file, overwrite: true);
     }
 
-    /// <summary>The notes as a system-prompt section, or empty when there are none.</summary>
-    public string PromptSection(string? project)
+    /// <summary>
+    /// The notes as a system-prompt section, or empty when there are none. When they do not all fit, each list keeps its
+    /// title and its newest whole notes, and says how many older ones were left out.
+    /// </summary>
+    public string PromptSection(string? project) => Section(project, MaxPromptChars);
+
+    private string Section(string? project, int limit)
     {
+        var lists = new List<(string Title, IReadOnlyList<MemoryNote> Notes)> { ("What you remember about the user (from earlier chats):", Notes(null)) };
+        if (project is not null) lists.Add(($"What you remember about this project ({Path.GetFileName(project.TrimEnd('/', '\\'))}):", Notes(project)));
+        lists.RemoveAll(l => l.Notes.Count == 0);
+
         var sb = new StringBuilder();
-        void Add(string title, IReadOnlyList<MemoryNote> notes)
+        for (var i = 0; i < lists.Count; i++)
         {
-            if (notes.Count == 0) return;
+            var (title, notes) = lists[i];
+            var share = limit / (lists.Count - i);
+            var used = title.Length + 1;
+            var kept = new List<string>();
+            foreach (var line in notes.Reverse().Select(n => $"- [{n.Id}] {n.Text}"))
+            {
+                if (used + line.Length + 1 > share) break;
+                used += line.Length + 1;
+                kept.Insert(0, line);
+            }
+            limit -= used;
             sb.AppendLine(title);
-            foreach (var n in notes) sb.AppendLine($"- [{n.Id}] {n.Text}");
+            if (kept.Count < notes.Count) sb.AppendLine($"({notes.Count - kept.Count} older notes left out here; the memory tool's list shows them.)");
+            foreach (var line in kept) sb.AppendLine(line);
         }
-        Add("What you remember about the user (from earlier chats):", Notes(null));
-        if (project is not null) Add($"What you remember about this project ({Path.GetFileName(project.TrimEnd('/', '\\'))}):", Notes(project));
-        var text = sb.ToString();
-        return text.Length > MaxPromptChars ? text[^MaxPromptChars..] : text;
+        return sb.ToString();
     }
 
     /// <summary>The "memory" tool: remember, forget, or list.</summary>
@@ -148,7 +165,7 @@ public sealed class AiMemory
                     var removed = Remove(scope, id) || Remove(scope is null ? project() : null, id);
                     return Task.FromResult(removed ? new AiToolResult("Forgotten.") : AiToolResult.Error("No note with that id."));
                 default:
-                    var all = PromptSection(project());
+                    var all = Section(project(), int.MaxValue);
                     return Task.FromResult(new AiToolResult(all.Length > 0 ? all : "Nothing saved yet."));
             }
         },

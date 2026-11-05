@@ -103,4 +103,85 @@ public class ClaudeCodeProviderTests
         var args = File.ReadAllLines(Path.Combine(dir.Path, "args.txt")).ToList();
         Assert.Equal("Be brief.", args[args.IndexOf("--append-system-prompt") + 1]);
     }
+
+    private static async Task<List<ChatChunk>> Resume(ClaudeCodeProvider provider, ChatMessage? message = null)
+    {
+        var chunks = new List<ChatChunk>();
+        await foreach (var chunk in provider.StreamTurnAsync("haiku", null, message ?? new ChatMessage("user", "hello"), "old-session", null, CancellationToken.None))
+            chunks.Add(chunk);
+        return chunks;
+    }
+
+    [Theory]
+    [InlineData("echo 'No conversation found with session ID: old-session' >&2; exit 1")]
+    [InlineData("""echo '{"type":"result","is_error":true,"errors":["No conversation found with session ID: old-session"]}'; exit 1""")]
+    public async Task An_expired_session_is_reported_as_such(string body)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var dir = new TempFolder();
+        var provider = new ClaudeCodeProvider(Path.Combine(dir.Path, "w"), FakeClaude(dir, body));
+        await Assert.ThrowsAsync<ChatSessionNotFoundException>(() => Resume(provider));
+    }
+
+    [Fact]
+    public async Task A_crash_after_the_session_started_is_an_error_not_an_empty_answer()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var dir = new TempFolder();
+        var exe = FakeClaude(dir, """
+            echo '{"type":"system","session_id":"s-1"}'
+            echo 'MCP connection failed' >&2
+            exit 1
+            """);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => Run(new ClaudeCodeProvider(Path.Combine(dir.Path, "w"), exe), null));
+        Assert.Contains("MCP connection failed", error.Message);
+    }
+
+    [Theory]
+    [InlineData("exit 3", "exit code 3")]
+    [InlineData("exit 0", "without an answer")]
+    public async Task Ending_silently_is_an_error(string body, string expected)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var dir = new TempFolder();
+        var provider = new ClaudeCodeProvider(Path.Combine(dir.Path, "w"), FakeClaude(dir, body));
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => Run(provider, null));
+        Assert.Contains(expected, error.Message);
+    }
+
+    [Fact]
+    public async Task A_refused_tool_shows_as_failed()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var dir = new TempFolder();
+        var exe = FakeClaude(dir, """
+            echo '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"WebSearch","input":{"query":"cats"}},{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"a.txt"}}]}}'
+            echo '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"Permission denied\nsecond line"}]}}'
+            echo '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":[{"type":"text","text":"fine"}]}]}}'
+            echo '{"type":"result","is_error":false,"session_id":"s"}'
+            """);
+        var chunks = await Run(new ClaudeCodeProvider(Path.Combine(dir.Path, "w"), exe), null);
+        Assert.Equal(new[] { "Searching the web for “cats”", "Reading a.txt", "⚠ Searching the web for “cats”: Permission denied" },
+            chunks.Where(c => c.Activity is not null).Select(c => c.Activity));
+    }
+
+    [Fact]
+    public async Task Screenshots_exist_during_the_run_and_are_gone_after_it()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var dir = new TempFolder();
+        var workspace = Directory.CreateDirectory(Path.Combine(dir.Path, "w")).FullName;
+        File.WriteAllText(Path.Combine(workspace, "screenshot-120000-0.png"), "left by an older version");
+        var exe = FakeClaude(dir, $$$"""
+            ls '{{{workspace}}}' > '{{{dir.Path}}}/seen.txt'
+            echo '{"type":"result","is_error":false,"session_id":"s"}'
+            """);
+        await Resume(new ClaudeCodeProvider(workspace, exe), new ChatMessage("user", "look", new[] { new byte[] { 1 }, new byte[] { 2 } }));
+
+        var seen = File.ReadAllLines(Path.Combine(dir.Path, "seen.txt")).Where(f => f.StartsWith("screenshot-")).ToList();
+        Assert.Equal(2, seen.Count);
+        Assert.DoesNotContain("screenshot-120000-0.png", seen);
+        Assert.All(seen, f => Assert.Contains(f, File.ReadAllText(Path.Combine(dir.Path, "stdin.txt"))));
+        Assert.Empty(Directory.GetFiles(workspace, "screenshot-*"));
+    }
 }

@@ -84,9 +84,12 @@ public sealed class AiToolbox
     /// <summary>Asks the user to allow an action (the text says what); without it, actions that need approval are refused.</summary>
     public Func<string, CancellationToken, Task<bool>>? Approve { get; set; }
 
+    /// <summary>Stops with the chat turn. Calls that come in over MCP run under this token too.</summary>
+    public CancellationToken TurnStop { get; init; }
+
     public AiToolbox Without(Func<AiTool, bool> skip)
     {
-        var copy = new AiToolbox(Tools.Where(t => !skip(t)).ToList()) { Approve = Approve };
+        var copy = new AiToolbox(Tools.Where(t => !skip(t)).ToList()) { Approve = Approve, TurnStop = TurnStop };
         copy.Activity += line => Activity?.Invoke(line);
         copy.Failed += line => Failed?.Invoke(line);
         return copy;

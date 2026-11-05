@@ -46,6 +46,51 @@ public class McpServerTests : IDisposable
     }
 
     [Fact]
+    public async Task Stopping_the_chat_cancels_a_running_tool_and_refuses_new_calls()
+    {
+        using var turn = new CancellationTokenSource();
+        var started = new TaskCompletionSource();
+        var cancelled = false;
+        var box = new AiToolbox(new[]
+        {
+            new AiTool
+            {
+                Name = "slow", Description = "Waits.", Schema = AiTool.Object(),
+                Run = async (_, ct) =>
+                {
+                    started.SetResult();
+                    try { await Task.Delay(TimeSpan.FromMinutes(5), ct); }
+                    catch (OperationCanceledException) { cancelled = true; throw; }
+                    return new AiToolResult("finished");
+                },
+            },
+        }) { TurnStop = turn.Token };
+        using var server = new McpServer(() => box);
+        server.Start();
+        object Call(int id) => new { jsonrpc = "2.0", id, method = "tools/call", @params = new { name = "slow" } };
+        async Task<JsonNode?> Post(int id)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, server.Endpoint(true).Url)
+            {
+                Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(Call(id)), Encoding.UTF8, "application/json"),
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", server.Token);
+            using var response = await _http.SendAsync(request);
+            return JsonNode.Parse(await response.Content.ReadAsStringAsync());
+        }
+
+        var running = Post(1);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        turn.Cancel();
+        var answer = await running.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.True(cancelled);
+        Assert.True(answer!["result"]!["isError"]!.GetValue<bool>());
+        var late = await Post(2);
+        Assert.True(late!["result"]!["isError"]!.GetValue<bool>());
+    }
+
+    [Fact]
     public async Task Initialize_echoes_a_known_protocol_version()
     {
         var (status, body) = await PostAsync(_server.Endpoint(true).Url,

@@ -170,4 +170,89 @@ public class ProviderLoopTests
         Assert.Equal("tool", last["role"]!.GetValue<string>());
         Assert.Equal("echo", last["tool_name"]!.GetValue<string>());
     }
+
+    private static string ClaudeReply() => FakeApiServer.Sse(
+        ("message_start", J(new { type = "message_start", message = new { id = "m", type = "message", role = "assistant", model = "x", content = Array.Empty<object>(), stop_reason = (string?)null, stop_sequence = (string?)null, usage = new { input_tokens = 1, output_tokens = 1, cache_creation_input_tokens = 0, cache_read_input_tokens = 0 } } })),
+        ("content_block_start", J(new { type = "content_block_start", index = 0, content_block = new { type = "text", text = "" } })),
+        ("content_block_delta", J(new { type = "content_block_delta", index = 0, delta = new { type = "text_delta", text = "Hi." } })),
+        ("content_block_stop", J(new { type = "content_block_stop", index = 0 })),
+        ("message_delta", J(new { type = "message_delta", delta = new { stop_reason = "end_turn", stop_sequence = (string?)null }, usage = new { output_tokens = 1 } })),
+        ("message_stop", J(new { type = "message_stop" })));
+
+    [Theory]
+    [InlineData("claude-opus-5-5", true)]
+    [InlineData("claude-sonnet-4-6", true)]
+    [InlineData("claude-opus-4-8", true)]
+    [InlineData("claude-fable-5-1", true)]
+    [InlineData("claude-haiku-5-5", true)]
+    [InlineData("claude-haiku-4-5", false)]
+    [InlineData("claude-haiku-4-5-20251001", false)]
+    [InlineData("claude-sonnet-4-5", false)]
+    [InlineData("claude-opus-4-5-20251101", false)]
+    [InlineData("claude-opus-4-20250514", false)]
+    [InlineData("claude-3-5-haiku-20241022", false)]
+    public async Task Claude_gets_thinking_and_effort_only_on_models_that_take_them(string model, bool modern)
+    {
+        using var server = new FakeApiServer();
+        server.Enqueue("text/event-stream", ClaudeReply());
+
+        await Collect(new ClaudeProvider(new Keys(), server.Url).StreamAsync(model, null, new[] { new ChatMessage("user", "hi") }, null, CancellationToken.None));
+
+        var body = server.Requests[0].Body!;
+        Assert.Equal(modern, body["thinking"] is not null);
+        Assert.Equal(modern, body["output_config"] is not null);
+        if (modern) Assert.Equal("adaptive", body["thinking"]!["type"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Gemini_tools_without_arguments_send_no_parameters()
+    {
+        using var server = new FakeApiServer();
+        server.Enqueue("text/event-stream", FakeApiServer.Sse((null, J(new { candidates = new[] { new { content = new { role = "model", parts = new object[] { new { text = "ok" } } } } } }))));
+        var context = new AiContext(new AiToolbox(new[]
+        {
+            new AiTool { Name = "state", Description = "State.", Schema = AiTool.Object(), Run = (_, _) => Task.FromResult(new AiToolResult("")) },
+            new AiTool { Name = "echo", Description = "Echo.", Schema = AiTool.Object(("text", "string", "Text.", true)), Run = (_, _) => Task.FromResult(new AiToolResult("")) },
+        }), null, false, null);
+
+        await Collect(new GeminiProvider(new Keys(), server.Url).StreamAsync("gemini-test", null, new[] { new ChatMessage("user", "hi") }, context, CancellationToken.None));
+
+        var declarations = server.Requests[0].Body!["tools"]![0]!["functionDeclarations"]!.AsArray();
+        Assert.False(declarations[0]!.AsObject().ContainsKey("parameters"));
+        Assert.NotNull(declarations[1]!["parameters"]!["properties"]!["text"]);
+    }
+
+    [Fact]
+    public async Task OpenAi_lists_only_chat_models_newest_first()
+    {
+        using var server = new FakeApiServer();
+        var ids = new (string Id, long Created)[]
+        {
+            ("gpt-4-0125-preview", 100), ("gpt-5.1", 300), ("o4-mini", 200), ("omni-moderation-latest", 400), ("gpt-image-1", 500),
+            ("gpt-4o-search-preview", 500), ("text-embedding-3-small", 500), ("gpt-4o-audio-preview", 500), ("gpt-3.5-turbo-instruct", 500), ("dall-e-3", 500),
+        };
+        server.Enqueue("application/json", J(new { data = ids.Select(m => new { id = m.Id, created = m.Created }) }));
+
+        var models = await new OpenAiCompatibleProvider("openai", "OpenAI", server.Url, isLocal: false).ListModelsAsync(CancellationToken.None);
+
+        Assert.Equal(new[] { "gpt-5.1", "o4-mini", "gpt-4-0125-preview" }, models.Select(m => m.Id));
+    }
+
+    [Fact]
+    public async Task Local_servers_use_the_address_from_settings_as_it_changes()
+    {
+        using var before = new FakeApiServer();
+        using var after = new FakeApiServer();
+        before.Enqueue("application/json", J(new { models = new[] { new { name = "old:1b" } } }));
+        after.Enqueue("application/json", J(new { models = new[] { new { name = "new:1b" } } }));
+        after.Enqueue("application/json", J(new { data = new[] { new { id = "local" } } }));
+        var url = before.Url;
+        var ollama = new OllamaProvider(() => url);
+        var lmStudio = new OpenAiCompatibleProvider("lmstudio", "LM Studio", () => url + "/", isLocal: true);
+
+        Assert.Equal("old:1b", (await ollama.ListModelsAsync(CancellationToken.None))[0].Id);
+        url = after.Url;
+        Assert.Equal("new:1b", (await ollama.ListModelsAsync(CancellationToken.None))[0].Id);
+        Assert.Equal("local", (await lmStudio.ListModelsAsync(CancellationToken.None))[0].Id);
+    }
 }

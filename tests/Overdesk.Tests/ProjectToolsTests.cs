@@ -136,4 +136,115 @@ public class ProjectToolsTests
         Assert.Equal("image/png", AiImages.MediaType(new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G' }));
         Assert.Equal("image/webp", AiImages.MediaType(System.Text.Encoding.ASCII.GetBytes("RIFF\0\0\0\0WEBPVP8 ")));
     }
+
+    [Fact]
+    public async Task A_linked_folder_does_not_let_writes_or_reads_out()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var dir = new TempFolder();
+        using var outside = new TempFolder();
+        outside.Write("secret.txt", "hidden");
+        Directory.CreateSymbolicLink(Path.Combine(dir.Path, "public"), outside.Path);
+        Directory.CreateSymbolicLink(Path.Combine(dir.Path, "deep"), Path.Combine(dir.Path, "public"));
+        var box = Box(dir.Path);
+
+        foreach (var folder in new[] { "public", "deep" })
+        {
+            Assert.True((await Run(box, "write_file", new { path = $"{folder}/new/notes.md", content = "x" })).IsError);
+            Assert.True((await Run(box, "edit_file", new { path = $"{folder}/secret.txt", old_text = "hidden", new_text = "x" })).IsError);
+            Assert.True((await Run(box, "read_file", new { path = $"{folder}/secret.txt" })).IsError);
+            Assert.True((await Run(box, "list_files", new { path = folder })).IsError);
+        }
+        Assert.False(Directory.Exists(Path.Combine(outside.Path, "new")));
+        Assert.Equal("hidden", File.ReadAllText(Path.Combine(outside.Path, "secret.txt")));
+    }
+
+    [Fact]
+    public async Task A_link_to_nowhere_outside_is_not_written_through()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var dir = new TempFolder();
+        using var outside = new TempFolder();
+        var target = Path.Combine(outside.Path, "created.txt");
+        File.CreateSymbolicLink(Path.Combine(dir.Path, "file.txt"), target);
+
+        Assert.True((await Run(Box(dir.Path), "write_file", new { path = "file.txt", content = "x" })).IsError);
+        Assert.False(File.Exists(target));
+    }
+
+    [Fact]
+    public async Task A_link_into_git_is_not_written_through()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var dir = new TempFolder();
+        dir.Write(".git/config", "x");
+        Directory.CreateSymbolicLink(Path.Combine(dir.Path, "hooks"), Path.Combine(dir.Path, ".git"));
+
+        Assert.True((await Run(Box(dir.Path), "write_file", new { path = "hooks/pre-commit", content = "x" })).IsError);
+        Assert.False(File.Exists(Path.Combine(dir.Path, ".git", "pre-commit")));
+    }
+
+    [Fact]
+    public async Task Links_that_stay_inside_and_a_linked_project_root_keep_working()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var dir = new TempFolder();
+        dir.Write("real/a.txt", "one");
+        Directory.CreateSymbolicLink(Path.Combine(dir.Path, "alias"), Path.Combine(dir.Path, "real"));
+        var box = Box(dir.Path);
+        Assert.False((await Run(box, "write_file", new { path = "alias/b.txt", content = "two" })).IsError);
+        Assert.Equal("two", File.ReadAllText(Path.Combine(dir.Path, "real", "b.txt")));
+
+        using var other = new TempFolder();
+        var linkedRoot = Path.Combine(other.Path, "project");
+        Directory.CreateSymbolicLink(linkedRoot, dir.Path);
+        Assert.False((await Run(Box(linkedRoot), "write_file", new { path = "c.txt", content = "three" })).IsError);
+        Assert.Equal("three", File.ReadAllText(Path.Combine(dir.Path, "c.txt")));
+    }
+
+    [Fact]
+    public async Task Search_does_not_read_a_linked_file_outside_the_project()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var dir = new TempFolder();
+        using var outside = new TempFolder();
+        dir.Write("a.txt", "nothing here");
+        File.CreateSymbolicLink(Path.Combine(dir.Path, "b.txt"), outside.Write("secret.txt", "needle"));
+
+        var result = await Run(Box(dir.Path), "search_files", new { pattern = "needle" });
+        Assert.Equal("No matches.", result.Text);
+    }
+
+    [Fact]
+    public async Task Edits_keep_the_byte_order_mark_and_the_encoding()
+    {
+        using var dir = new TempFolder();
+        var utf8 = Path.Combine(dir.Path, "bom.cs");
+        File.WriteAllBytes(utf8, new byte[] { 0xEF, 0xBB, 0xBF }.Concat(System.Text.Encoding.UTF8.GetBytes("old line")).ToArray());
+        var utf16 = Path.Combine(dir.Path, "wide.txt");
+        File.WriteAllText(utf16, "old line", System.Text.Encoding.Unicode);
+        var box = Box(dir.Path);
+
+        Assert.False((await Run(box, "edit_file", new { path = "bom.cs", old_text = "old", new_text = "new" })).IsError);
+        Assert.Equal(new byte[] { 0xEF, 0xBB, 0xBF, (byte)'n' }, File.ReadAllBytes(utf8).Take(4));
+        Assert.False((await Run(box, "edit_file", new { path = "wide.txt", old_text = "old", new_text = "new" })).IsError);
+        Assert.Equal(new byte[] { 0xFF, 0xFE, (byte)'n', 0 }, File.ReadAllBytes(utf16).Take(4));
+        Assert.Equal("new line", File.ReadAllText(utf16));
+        Assert.False((await Run(box, "write_file", new { path = "bom.cs", content = "all new" })).IsError);
+        Assert.Equal(new byte[] { 0xEF, 0xBB, 0xBF, (byte)'a' }, File.ReadAllBytes(utf8).Take(4));
+    }
+
+    [Fact]
+    public async Task A_file_in_an_unknown_encoding_is_refused_instead_of_damaged()
+    {
+        using var dir = new TempFolder();
+        var path = Path.Combine(dir.Path, "latin.txt");
+        byte[] latin1 = { (byte)'c', (byte)'a', (byte)'f', 0xE9, (byte)' ', (byte)'x' };
+        File.WriteAllBytes(path, latin1);
+
+        var result = await Run(Box(dir.Path), "edit_file", new { path = "latin.txt", old_text = "x", new_text = "y" });
+
+        Assert.True(result.IsError);
+        Assert.Equal(latin1, File.ReadAllBytes(path));
+    }
 }

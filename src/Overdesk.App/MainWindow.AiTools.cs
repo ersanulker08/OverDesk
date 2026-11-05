@@ -22,7 +22,7 @@ public partial class MainWindow
     private static Task<T> Ui<T>(Func<T> action) => Dispatcher.UIThread.InvokeAsync(action).GetTask();
     private static Task<T> Ui<T>(Func<Task<T>> action) => Dispatcher.UIThread.InvokeAsync(action);
 
-    private IReadOnlyList<AiTool> BuildAiTools()
+    private IReadOnlyList<AiTool> BuildAiTools(bool describeAll)
     {
         var tools = new List<AiTool>();
         tools.AddRange(AppTools());
@@ -34,6 +34,7 @@ public partial class MainWindow
         if (_webFactory.IsSupported) tools.AddRange(WebTools());
         tools.AddRange(PluginAiTools(tools.Select(t => t.Name).ToHashSet()));
         if (_settings.AiFolder is { } folder && Directory.Exists(folder)) tools.Add(RunCommandTool(folder));
+        else if (describeAll) tools.Add(RunCommandTool(""));
         return tools;
     }
 

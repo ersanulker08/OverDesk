@@ -1,6 +1,8 @@
 using System.Text.Json.Nodes;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -26,6 +28,9 @@ public partial class SideDock
     private AiService? _ai;
     private IDesktopServices? _desktop;
     private bool _polling;
+    private int _devTicks;
+    private bool _dockerDown;
+    private string? _gitSkipFolder;
 
     // Focus timer state (lives for the session only).
     private TimeSpan _focusLeft;
@@ -46,7 +51,7 @@ public partial class SideDock
         _focusTick.Tick += (_, _) => FocusTick();
 
         ProjectsActions.Children.Add(CardButton("IconPlus", "Add a project folder", () => _ = actions.AddProjectAsync()));
-        GitActions.Children.Add(CardButton("IconRefresh", "Refresh", () => _ = PollGitAsync()));
+        GitActions.Children.Add(CardButton("IconRefresh", "Refresh", () => { _gitSkipFolder = null; _ = PollGitAsync(); }));
         DockerActions.Children.Add(CardButton("IconRefresh", "Refresh", () => _ = PollDockerAsync()));
         AiActions.Children.Add(CardButton("IconSparkle", "Open the AI panel", () => actions.OpenAi()));
         FocusActions.Children.Add(CardButton("IconRefresh", "Reset", ResetFocus));
@@ -61,14 +66,25 @@ public partial class SideDock
     internal void RefreshDev()
     {
         ApplyCardVisibility();
-        RenderProjects();
+        RefreshProjects();
         RenderSnippets();
+        RefreshFocus();
+    }
+
+    /// <summary>The project list or the active project changed: redraw the rows and read git again.</summary>
+    internal void RefreshProjects()
+    {
+        _gitSkipFolder = null;
+        RenderProjects();
         _ = PollGitAsync();
-        if (!_focusRunning)
-        {
-            _focusLeft = TimeSpan.FromMinutes(_onBreak ? _settings.BreakMinutes : _settings.FocusMinutes);
-            RenderFocus();
-        }
+    }
+
+    /// <summary>A new session or break length applies to the idle timer right away.</summary>
+    internal void RefreshFocus()
+    {
+        if (_focusRunning) return;
+        _focusLeft = TimeSpan.FromMinutes(_onBreak ? _settings.BreakMinutes : _settings.FocusMinutes);
+        RenderFocus();
     }
 
     internal void ApplyCardVisibility()
@@ -117,12 +133,14 @@ public partial class SideDock
     {
         if (_polling || !_settings.SidebarExpanded) return;
         _polling = true;
+        _devTicks++;
         try
         {
+            // Docker that is missing or stopped is asked again only once a minute (Refresh asks at once).
             await Task.WhenAll(
                 AiCard.IsVisible ? PollAiAsync() : Task.CompletedTask,
                 GitCard.IsVisible ? PollGitAsync() : Task.CompletedTask,
-                DockerCard.IsVisible ? PollDockerAsync() : Task.CompletedTask);
+                DockerCard.IsVisible && (!_dockerDown || _devTicks % 10 == 0) ? PollDockerAsync() : Task.CompletedTask);
         }
         finally
         {
@@ -364,9 +382,8 @@ public partial class SideDock
             MenuItem("Stop", "IconStop", () => _actions!.StopProject(project)),
             new Separator(),
             MenuItem("Open terminal here", "IconTerminal", () => _actions!.RunCommand(
-                OperatingSystem.IsMacOS() ? $"open -a Terminal '{project.Folder}'" : $"start cmd /k cd /d \"{project.Folder}\"", project.Folder)),
-            MenuItem("Reveal the folder", "IconFolder", () => _actions!.RunCommand(
-                OperatingSystem.IsMacOS() ? $"open '{project.Folder}'" : $"explorer \"{project.Folder}\"", project.Folder)),
+                OperatingSystem.IsMacOS() ? $"open -a Terminal '{project.Folder}'" : $"start cmd /k cd /d \"{project.Folder}\"", project.Folder, showLog: false)),
+            MenuItem("Reveal the folder", "IconFolder", () => _actions!.RevealFolder(project.Folder)),
             MenuItem("Edit projects…", "IconSliders", () => _actions!.EditProjects()),
             new Separator(),
             MenuItem("Remove project", "IconClose", () =>
@@ -378,9 +395,9 @@ public partial class SideDock
         },
     };
 
-    private static MenuItem MenuItem(string header, string icon, Action click)
+    private static MenuItem MenuItem(string header, string icon, Action click, bool enabled = true)
     {
-        var item = new MenuItem { Header = header, Icon = new Avalonia.Controls.Shapes.Path { Classes = { "icon" }, Data = Res.Icon(icon) } };
+        var item = new MenuItem { Header = header, IsEnabled = enabled, Icon = new Avalonia.Controls.Shapes.Path { Classes = { "icon" }, Data = Res.Icon(icon) } };
         item.Click += (_, _) => click();
         return item;
     }
@@ -394,13 +411,21 @@ public partial class SideDock
             SetGitCard(Faint("Add a project to see its branch and changes here."));
             return;
         }
+        if (folder == _gitSkipFolder) return;
+        if (await TaskRunner.FindExecutableAsync("git") is not { } git)
+        {
+            _gitSkipFolder = folder;
+            SetGitCard(Faint("git is not installed."));
+            return;
+        }
         // Both captures finish before the card is touched, so overlapping polls cannot interleave their rows.
-        var statusTask = TaskRunner.CaptureAsync("git status --porcelain=v2 --branch", folder);
-        var remoteTask = TaskRunner.CaptureAsync("git remote get-url origin", folder);
+        var statusTask = TaskRunner.CaptureAsync(git, ["status", "--porcelain=v2", "--branch"], folder);
+        var remoteTask = TaskRunner.CaptureAsync(git, ["remote", "get-url", "origin"], folder);
         var status = await statusTask;
         var remote = await remoteTask;
         if (status is null)
         {
+            _gitSkipFolder = folder; // a folder without a repository stays one until the project changes or Refresh is pressed
             SetGitCard(Faint($"{Path.GetFileName(folder)} is not a git repository."));
             return;
         }
@@ -463,11 +488,14 @@ public partial class SideDock
 
     private async Task PollDockerAsync()
     {
-        var output = await TaskRunner.CaptureAsync("docker ps -a --format \"{{json .}}\"", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var docker = await TaskRunner.FindExecutableAsync("docker");
+        var output = docker is null ? null : await TaskRunner.CaptureAsync(docker, ["ps", "-a", "--format", "{{json .}}"], home);
         DockerBody.Children.Clear();
+        _dockerDown = output is null;
         if (output is null)
         {
-            DockerBody.Children.Add(Faint("Docker is not running (or not installed)."));
+            DockerBody.Children.Add(Faint(docker is null ? "Docker is not installed." : "Docker is not running."));
             return;
         }
         var containers = output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => { try { return JsonNode.Parse(l); } catch { return null; } })
@@ -486,15 +514,14 @@ public partial class SideDock
             row.Children.Add(text);
             var button = new Button { Classes = { "dockrow" }, Content = row };
             ToolTip.SetTip(button, c["Ports"]?.ToString() is { Length: > 0 } ports ? ports : name);
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             button.Click += (_, _) => ShowLogs(name, home);
             button.ContextMenu = new ContextMenu
             {
                 ItemsSource = new Control[]
                 {
                     MenuItem("Logs", "IconTerminal", () => ShowLogs(name, home)),
-                    MenuItem(up ? "Stop" : "Start", up ? "IconStop" : "IconPlay", () => _actions?.RunCommand($"docker {(up ? "stop" : "start")} {name}", home)),
-                    MenuItem("Restart", "IconRefresh", () => _actions?.RunCommand($"docker restart {name}", home)),
+                    MenuItem(up ? "Stop" : "Start", up ? "IconStop" : "IconPlay", () => _actions?.RunCommand($"docker {(up ? "stop" : "start")} {name}", home, showLog: false)),
+                    MenuItem("Restart", "IconRefresh", () => _actions?.RunCommand($"docker restart {name}", home, showLog: false)),
                 },
             };
             DockerBody.Children.Add(button);
@@ -527,10 +554,17 @@ public partial class SideDock
                 if (_clips is not null) await _clips.CopyAsync(snippet.Text);
                 Toast?.Invoke("Snippet copied", "IconCopy");
             };
+            var index = _settings.Snippets.IndexOf(snippet);
             button.ContextMenu = new ContextMenu
             {
                 ItemsSource = new Control[]
                 {
+                    MenuItem("Rename…", "IconNote", () => EditSnippet(button, snippet, name: true)),
+                    MenuItem("Edit text…", "IconTerminal", () => EditSnippet(button, snippet, name: false)),
+                    new Separator(),
+                    MenuItem("Move up", "IconChevronUp", () => MoveSnippet(snippet, -1), enabled: index > 0),
+                    MenuItem("Move down", "IconChevronDown", () => MoveSnippet(snippet, 1), enabled: index < _settings.Snippets.Count - 1),
+                    new Separator(),
                     MenuItem("Unpin snippet", "IconClose", () =>
                     {
                         _settings.Snippets.Remove(snippet);
@@ -541,6 +575,46 @@ public partial class SideDock
             };
             SnippetList.Children.Add(button);
         }
+    }
+
+    private void MoveSnippet(Snippet snippet, int delta)
+    {
+        var index = _settings.Snippets.IndexOf(snippet);
+        var target = index + delta;
+        if (index < 0 || target < 0 || target >= _settings.Snippets.Count) return;
+        _settings.Snippets.RemoveAt(index);
+        _settings.Snippets.Insert(target, snippet);
+        SettingsChanged?.Invoke();
+        RenderSnippets();
+    }
+
+    /// <summary>A small flyout over the row: Enter keeps the new name (or text; Shift+Enter adds a line), Escape drops it.</summary>
+    private void EditSnippet(Control anchor, Snippet snippet, bool name)
+    {
+        var box = new TextBox
+        {
+            Text = name ? snippet.Name : snippet.Text, Width = 260, Classes = { "mono" }, FontSize = 12,
+            AcceptsReturn = !name, TextWrapping = name ? TextWrapping.NoWrap : TextWrapping.Wrap, MaxHeight = 220,
+        };
+        var flyout = new Flyout { Content = box, Placement = PlacementMode.BottomEdgeAlignedLeft };
+        var keep = false;
+        box.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape) { e.Handled = true; flyout.Hide(); }
+            else if (e.Key == Key.Enter && (name || !e.KeyModifiers.HasFlag(KeyModifiers.Shift))) { e.Handled = true; keep = true; flyout.Hide(); }
+        };
+        flyout.Closed += (_, _) =>
+        {
+            var text = box.Text ?? "";
+            if (!keep || text.Trim().Length == 0 || text == (name ? snippet.Name : snippet.Text)) return;
+            if (name) snippet.Name = text.Trim();
+            else snippet.Text = text;
+            SettingsChanged?.Invoke();
+            RenderSnippets();
+        };
+        flyout.ShowAt(anchor);
+        box.Focus();
+        box.SelectAll();
     }
 
     /// <summary>Pin a clipboard entry so it stays (saved in settings).</summary>

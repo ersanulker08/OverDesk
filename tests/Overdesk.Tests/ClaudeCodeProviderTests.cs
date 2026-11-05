@@ -1,19 +1,60 @@
+using System.Text.RegularExpressions;
 using Overdesk.AI;
 
 namespace Overdesk.Tests;
 
-/// <summary>Claude Code is driven through a fake `claude` script that records its arguments and prints canned stream-json.</summary>
+/// <summary>
+/// Claude Code is driven through a fake `claude` script that records its arguments and prints canned stream-json.
+/// On Windows the fake is a `claude.cmd` (like the npm shim), so the cmd.exe path, --append-system-prompt-file and the
+/// prompt on stdin are covered there too.
+/// </summary>
 public class ClaudeCodeProviderTests
 {
-    private static string FakeClaude(TempFolder dir, string body)
+    private static string FakeClaude(TempFolder dir, string body, string? windowsBody = null)
     {
+        if (OperatingSystem.IsWindows())
+        {
+            var cmd = Path.Combine(dir.Path, "claude.cmd");
+            File.WriteAllText(cmd, "@echo off\r\n" +
+                                   $"type nul > \"{dir.Path}\\args.txt\"\r\n" +
+                                   ":args\r\n" +
+                                   "if \"%~1\"==\"\" goto body\r\n" +
+                                   $">> \"{dir.Path}\\args.txt\" echo %~1\r\n" +
+                                   "shift\r\n" +
+                                   "goto args\r\n" +
+                                   ":body\r\n" +
+                                   $"findstr \"^\" > \"{dir.Path}\\stdin.txt\"\r\n" +
+                                   (windowsBody ?? ToCmd(body)) + "\r\n");
+            return cmd;
+        }
         var path = Path.Combine(dir.Path, "claude");
         File.WriteAllText(path, "#!/bin/bash\n" +
                                 $"printf '%s\\n' \"$@\" > '{dir.Path}/args.txt'\n" +
                                 $"cat > '{dir.Path}/stdin.txt'\n" + body + "\n");
-        if (!OperatingSystem.IsWindows())
-            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         return path;
+    }
+
+    /// <summary>The bash bodies are echo lines, echo-to-stderr lines and exit codes; anything else needs an explicit Windows body.</summary>
+    private static string ToCmd(string bash)
+    {
+        var lines = new List<string>();
+        foreach (var statement in bash.Split('\n').SelectMany(l => l.Split("; ")).Select(l => l.Trim()).Where(l => l.Length > 0))
+        {
+            var echo = Regex.Match(statement, @"^echo '(.*)'( >&2)?$");
+            if (echo.Success) { lines.Add($"echo {echo.Groups[1].Value}{(echo.Groups[2].Success ? " 1>&2" : "")}"); continue; }
+            var exit = Regex.Match(statement, @"^exit (\d+)$");
+            if (exit.Success) { lines.Add($"exit {exit.Groups[1].Value}"); continue; }
+            throw new InvalidOperationException($"No Windows translation for: {statement}");
+        }
+        return string.Join("\r\n", lines);
+    }
+
+    private static string Stdin(TempFolder dir)
+    {
+        var text = File.ReadAllText(Path.Combine(dir.Path, "stdin.txt"));
+        // findstr writes CRLF line ends, including one after the last line.
+        return OperatingSystem.IsWindows() ? text.Replace("\r\n", "\n").TrimEnd('\n') : text;
     }
 
     private static async Task<List<ChatChunk>> Run(ClaudeCodeProvider provider, AiContext? context, string? system = "Be brief.")
@@ -27,14 +68,13 @@ public class ClaudeCodeProviderTests
     [Fact]
     public async Task Streams_text_tool_lines_and_session_and_sends_the_right_flags()
     {
-        if (OperatingSystem.IsWindows()) return;
         using var dir = new TempFolder();
         var project = Directory.CreateDirectory(Path.Combine(dir.Path, "project")).FullName;
         var exe = FakeClaude(dir, $$$$$"""
             echo '{"type":"system","session_id":"s-1"}'
             echo '{"type":"stream_event","event":{"type":"message_start"}}'
             echo '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Looking."}}}'
-            echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"{{{{{project}}}}}/src/a.cs"}},{"type":"tool_use","name":"Bash","input":{}}]}}'
+            echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"{{{{{project.Replace("\\", "\\\\")}}}}}/src/a.cs"}},{"type":"tool_use","name":"Bash","input":{}}]}}'
             echo '{"type":"stream_event","event":{"type":"message_start"}}'
             echo '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Done."}}}'
             echo '{"type":"result","is_error":false,"session_id":"s-1","usage":{"output_tokens":4}}'
@@ -47,7 +87,7 @@ public class ClaudeCodeProviderTests
         Assert.Equal("Looking.\n\nDone.", string.Concat(chunks.Select(c => c.Text)));
         Assert.Equal(new[] { "Reading src/a.cs" }, chunks.Where(c => c.Activity is not null).Select(c => c.Activity));
         Assert.Equal("s-1", chunks.Last().SessionId);
-        Assert.Equal("hello", File.ReadAllText(Path.Combine(dir.Path, "stdin.txt")));
+        Assert.Equal("hello", Stdin(dir));
 
         var args = File.ReadAllLines(Path.Combine(dir.Path, "args.txt")).ToList();
         string After(string flag) => args[args.IndexOf(flag) + 1];
@@ -88,7 +128,6 @@ public class ClaudeCodeProviderTests
     [Fact]
     public async Task Without_a_project_or_edits_the_edit_tools_are_blocked()
     {
-        if (OperatingSystem.IsWindows()) return;
         using var dir = new TempFolder();
         var exe = FakeClaude(dir, """echo '{"type":"result","is_error":false,"session_id":"s"}'""");
         await Run(new ClaudeCodeProvider(Path.Combine(dir.Path, "workspace"), exe), null);
@@ -102,7 +141,6 @@ public class ClaudeCodeProviderTests
     [Fact]
     public async Task The_usage_limit_is_explained()
     {
-        if (OperatingSystem.IsWindows()) return;
         using var dir = new TempFolder();
         var exe = FakeClaude(dir, """echo '{"type":"result","is_error":true,"session_id":"s","result":"You have hit your session limit · resets 2:40am"}'""");
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => Run(new ClaudeCodeProvider(Path.Combine(dir.Path, "w"), exe), null));
@@ -113,7 +151,6 @@ public class ClaudeCodeProviderTests
     [Fact]
     public async Task An_older_claude_without_the_prompt_file_flag_gets_the_prompt_inline()
     {
-        if (OperatingSystem.IsWindows()) return;
         using var dir = new TempFolder();
         var exe = FakeClaude(dir, """
             for a in "$@"; do
@@ -121,6 +158,14 @@ public class ClaudeCodeProviderTests
             done
             echo '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}}'
             echo '{"type":"result","is_error":false,"session_id":"s"}'
+            """, $$$$"""
+            findstr /x /c:"--append-system-prompt-file" "{{{{dir.Path}}}}\args.txt" > nul
+            if errorlevel 1 goto answer
+            echo error: unknown option '--append-system-prompt-file' 1>&2
+            exit 1
+            :answer
+            echo {"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}}
+            echo {"type":"result","is_error":false,"session_id":"s"}
             """);
         var chunks = await Run(new ClaudeCodeProvider(Path.Combine(dir.Path, "w"), exe), null);
         Assert.Equal("ok", string.Concat(chunks.Select(c => c.Text)));
@@ -141,7 +186,6 @@ public class ClaudeCodeProviderTests
     [InlineData("""echo '{"type":"result","is_error":true,"errors":["No conversation found with session ID: old-session"]}'; exit 1""")]
     public async Task An_expired_session_is_reported_as_such(string body)
     {
-        if (OperatingSystem.IsWindows()) return;
         using var dir = new TempFolder();
         var provider = new ClaudeCodeProvider(Path.Combine(dir.Path, "w"), FakeClaude(dir, body));
         await Assert.ThrowsAsync<ChatSessionNotFoundException>(() => Resume(provider));
@@ -150,7 +194,6 @@ public class ClaudeCodeProviderTests
     [Fact]
     public async Task A_crash_after_the_session_started_is_an_error_not_an_empty_answer()
     {
-        if (OperatingSystem.IsWindows()) return;
         using var dir = new TempFolder();
         var exe = FakeClaude(dir, """
             echo '{"type":"system","session_id":"s-1"}'
@@ -166,7 +209,6 @@ public class ClaudeCodeProviderTests
     [InlineData("exit 0", "without an answer")]
     public async Task Ending_silently_is_an_error(string body, string expected)
     {
-        if (OperatingSystem.IsWindows()) return;
         using var dir = new TempFolder();
         var provider = new ClaudeCodeProvider(Path.Combine(dir.Path, "w"), FakeClaude(dir, body));
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => Run(provider, null));
@@ -176,7 +218,6 @@ public class ClaudeCodeProviderTests
     [Fact]
     public async Task A_refused_tool_shows_as_failed()
     {
-        if (OperatingSystem.IsWindows()) return;
         using var dir = new TempFolder();
         var exe = FakeClaude(dir, """
             echo '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"WebSearch","input":{"query":"cats"}},{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"a.txt"}}]}}'
@@ -192,20 +233,22 @@ public class ClaudeCodeProviderTests
     [Fact]
     public async Task Screenshots_exist_during_the_run_and_are_gone_after_it()
     {
-        if (OperatingSystem.IsWindows()) return;
         using var dir = new TempFolder();
         var workspace = Directory.CreateDirectory(Path.Combine(dir.Path, "w")).FullName;
         File.WriteAllText(Path.Combine(workspace, "screenshot-120000-0.png"), "left by an older version");
         var exe = FakeClaude(dir, $$$"""
             ls '{{{workspace}}}' > '{{{dir.Path}}}/seen.txt'
             echo '{"type":"result","is_error":false,"session_id":"s"}'
+            """, $$$"""
+            dir /b "{{{workspace}}}" > "{{{dir.Path}}}\seen.txt"
+            echo {"type":"result","is_error":false,"session_id":"s"}
             """);
         await Resume(new ClaudeCodeProvider(workspace, exe), new ChatMessage("user", "look", new[] { new byte[] { 1 }, new byte[] { 2 } }));
 
         var seen = File.ReadAllLines(Path.Combine(dir.Path, "seen.txt")).Where(f => f.StartsWith("screenshot-")).ToList();
         Assert.Equal(2, seen.Count);
         Assert.DoesNotContain("screenshot-120000-0.png", seen);
-        Assert.All(seen, f => Assert.Contains(f, File.ReadAllText(Path.Combine(dir.Path, "stdin.txt"))));
+        Assert.All(seen, f => Assert.Contains(f, Stdin(dir)));
         Assert.Empty(Directory.GetFiles(workspace, "screenshot-*"));
     }
 }

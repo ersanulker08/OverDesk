@@ -4,6 +4,8 @@ using Overdesk.AI;
 namespace Overdesk.Tests;
 
 /// <summary>Gemini CLI through a fake `gemini` script, and the login-shell probe through a fake $SHELL.</summary>
+// Swaps the SHELL variable; the TaskRunner tests read it, so the two never run side by side.
+[Collection("login shell")]
 public class CliToolsTests
 {
     private static string Script(TempFolder dir, string name, string body)

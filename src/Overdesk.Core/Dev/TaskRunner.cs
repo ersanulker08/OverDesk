@@ -1,11 +1,10 @@
 using System.Diagnostics;
 using System.Text;
-using Avalonia.Threading;
 
-namespace Overdesk.App.Services;
+namespace Overdesk.Core.Dev;
 
 /// <summary>A shell command OverDesk started (a dev server, a build, a git pull...), with its live output.</summary>
-internal sealed class RunningTask
+public sealed class RunningTask
 {
     private readonly StringBuilder _output = new();
     private readonly object _lock = new();
@@ -36,14 +35,19 @@ internal sealed class RunningTask
 }
 
 /// <summary>Starts shell commands in a folder, captures their output and stops them (with their child processes).</summary>
-internal sealed class TaskRunner
+public sealed class TaskRunner
 {
+    private readonly Action<Action> _post;
+
+    /// <param name="post">Runs event handlers where the caller wants them (the UI thread); by default they run on the reporting thread.</param>
+    public TaskRunner(Action<Action>? post = null) => _post = post ?? (action => action());
+
     public List<RunningTask> Tasks { get; } = new();
 
-    /// <summary>Raised on the UI thread when a task starts, ends or is removed.</summary>
+    /// <summary>Raised through the post callback when a task starts, ends or is removed.</summary>
     public event Action? Changed;
 
-    /// <summary>Raised on the UI thread when a task prints (throttled, with a trailing call so the last lines always show).</summary>
+    /// <summary>Raised through the post callback when a task prints (throttled, with a trailing call so the last lines always show).</summary>
     public event Action? OutputChanged;
 
     private readonly object _notifyLock = new();
@@ -53,15 +57,7 @@ internal sealed class TaskRunner
     public RunningTask Start(string name, string command, string folder, string? projectId = null)
     {
         var task = new RunningTask { Name = name, Command = command, Folder = folder, ProjectId = projectId };
-        var info = OperatingSystem.IsWindows()
-            ? CmdStartInfo(command)
-            // A login shell so the user's PATH (node, cargo, dotnet, homebrew...) is there, like in their terminal.
-            : new ProcessStartInfo(Environment.GetEnvironmentVariable("SHELL") is { Length: > 0 } sh ? sh : "/bin/zsh") { ArgumentList = { "-l", "-c", command } };
-        info.WorkingDirectory = Directory.Exists(folder) ? folder : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        info.RedirectStandardOutput = true;
-        info.RedirectStandardError = true;
-        info.UseShellExecute = false;
-        info.CreateNoWindow = true;
+        var info = StartInfo(command, folder);
         info.Environment["FORCE_COLOR"] = "0";
         info.Environment["NO_COLOR"] = "1";
 
@@ -100,10 +96,22 @@ internal sealed class TaskRunner
     }
 
     /// <summary>
-    /// cmd.exe with the command line verbatim. ArgumentList would escape inner quotes as \" (which cmd does not
-    /// understand); with /s, cmd removes just the outer pair of quotes added here.
+    /// Windows: cmd.exe with the command line verbatim. ArgumentList would escape inner quotes as \" (which cmd does not
+    /// understand); with /s, cmd removes just the outer pair of quotes added here. Elsewhere a login shell, so the user's
+    /// PATH (node, cargo, dotnet, homebrew...) is there, like in their terminal.
     /// </summary>
-    private static ProcessStartInfo CmdStartInfo(string command) => new("cmd.exe") { Arguments = $"/d /s /c \"{command}\"" };
+    private static ProcessStartInfo StartInfo(string command, string folder)
+    {
+        var info = OperatingSystem.IsWindows()
+            ? new ProcessStartInfo("cmd.exe") { Arguments = $"/d /s /c \"{command}\"" }
+            : new ProcessStartInfo(Environment.GetEnvironmentVariable("SHELL") is { Length: > 0 } sh ? sh : "/bin/zsh") { ArgumentList = { "-l", "-c", command } };
+        info.WorkingDirectory = Directory.Exists(folder) ? folder : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        info.RedirectStandardOutput = true;
+        info.RedirectStandardError = true;
+        info.UseShellExecute = false;
+        info.CreateNoWindow = true;
+        return info;
+    }
 
     public void Stop(RunningTask task)
     {
@@ -127,14 +135,7 @@ internal sealed class TaskRunner
     /// <summary>Run a command to completion and return its output (for git, docker...). Null when it could not run.</summary>
     public static async Task<string?> CaptureAsync(string command, string folder, CancellationToken cancellation = default)
     {
-        var info = OperatingSystem.IsWindows()
-            ? CmdStartInfo(command)
-            : new ProcessStartInfo(Environment.GetEnvironmentVariable("SHELL") is { Length: > 0 } sh ? sh : "/bin/zsh") { ArgumentList = { "-l", "-c", command } };
-        info.WorkingDirectory = Directory.Exists(folder) ? folder : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        info.RedirectStandardOutput = true;
-        info.RedirectStandardError = true;
-        info.UseShellExecute = false;
-        info.CreateNoWindow = true;
+        var info = StartInfo(command, folder);
         try
         {
             using var p = Process.Start(info);
@@ -182,7 +183,7 @@ internal sealed class TaskRunner
         }
     }
 
-    private void NotifyChanged() => Dispatcher.UIThread.Post(() =>
+    private void NotifyChanged() => _post(() =>
     {
         Changed?.Invoke();
         OutputChanged?.Invoke();
@@ -197,7 +198,7 @@ internal sealed class TaskRunner
             wait = TimeSpan.FromMilliseconds(250) - (DateTime.UtcNow - _lastNotify);
             _outputPending = true;
         }
-        Dispatcher.UIThread.Post(() => DispatcherTimer.RunOnce(FireOutput, wait > TimeSpan.Zero ? wait : TimeSpan.Zero));
+        _ = Task.Delay(wait > TimeSpan.Zero ? wait : TimeSpan.Zero).ContinueWith(_ => _post(FireOutput), TaskScheduler.Default);
     }
 
     private void FireOutput()

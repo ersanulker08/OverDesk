@@ -65,7 +65,7 @@ internal sealed class ConverterView : UserControl, IFileDropTarget
         _empty.Children.Add(new TextBlock { Text = "Drop files to convert", FontSize = 17, FontWeight = FontWeight.SemiBold, HorizontalAlignment = HorizontalAlignment.Center });
         _empty.Children.Add(new TextBlock
         {
-            Text = "Images (PNG, JPG, WebP, HEIC, PSD, RAW, TGA…), data (JSON, YAML, TOML, CSV, Excel, XML, plist, .env…), Markdown, Word, PDF, audio, video, ZIP / TAR archives, fonts (TTF, OTF, WOFF) and 3D models (OBJ, STL, PLY → glTF).\nAnything else can be zipped. Results go next to the originals.",
+            Text = "Images (PNG, JPG, WebP, HEIC, PSD, RAW, TGA…), data (JSON, YAML, TOML, CSV, Excel, XML, plist, .env…), Markdown, Word, PDF, audio, video, ZIP / TAR archives, fonts (TTF, OTF, WOFF, WOFF2) and 3D models (OBJ, STL, PLY → glTF).\nAnything else can be zipped. Results go next to the originals.",
             FontSize = 12, Opacity = 0.65, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 300,
         });
         var browse = new Button { Content = "Choose files…", HorizontalAlignment = HorizontalAlignment.Center, Padding = new Thickness(14, 7), Margin = new Thickness(0, 6, 0, 0) };

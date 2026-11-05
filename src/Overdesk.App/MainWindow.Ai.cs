@@ -4,6 +4,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using Overdesk.App.Services;
+using Overdesk.Core.Dev;
 using Overdesk.Core.Plugins;
 using Overdesk.Core.Tabs;
 

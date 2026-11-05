@@ -87,7 +87,7 @@ All of them ship with OverDesk, give the AI their abilities, and are good exampl
 
 - `tools/converter`: images (PNG, JPG, WebP, GIF, BMP, ICO, TGA; HEIC, AVIF, PSD, RAW, SVG, TIFF and PDF pages on macOS), data
   (JSON, YAML, TOML, XML, plist, INI, .env, .properties, CSV, TSV, JSON Lines, Excel; tables to Markdown, HTML or SQL), Markdown and
-  documents, subtitles, audio and video (ffmpeg), archives (ZIP, TAR, TAR.GZ, GZ), fonts (TTF/OTF ↔ WOFF) and 3D models (OBJ, STL,
+  documents, subtitles, audio and video (ffmpeg), archives (ZIP, TAR, TAR.GZ, GZ), fonts (TTF/OTF ↔ WOFF, WOFF2 → TTF/OTF/WOFF) and 3D models (OBJ, STL,
   PLY → glTF, GLB). Any file can be zipped.
 - `tools/devkit`: about fifty developer utilities in groups (format, encode, hash, generate, text, time, web, numbers, code).
 - `tools/texture`: PBR maps from one texture (normal, height, AO, roughness, metallic, curvature, ORM / HDRP mask) for Unity, Unreal,

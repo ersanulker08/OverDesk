@@ -19,7 +19,7 @@ jobs:
           dotnet-version: 10.0.x
       # Each OS builds its own flavor: macOS -> net10.0 + Platform.MacOS, Windows -> net10.0-windows + Platform.Windows.
       - name: Build OverDesk
-        run: dotnet build src/Overdesk.App -c Release
+        run: dotnet build src/Overdesk.App -c Release -warnaserror
       - name: Build the sample plugin
         run: dotnet build samples/HelloTool -c Release
       - name: Build the bundled tools
@@ -29,7 +29,7 @@ jobs:
             if [ -f "$tool/overdesk.plugin.json" ]; then dotnet build "$tool" -c Release; fi
           done
       - name: Run the tests
-        run: dotnet test tests/Overdesk.Tests -c Release
+        run: dotnet test tests/Overdesk.Tests -c Release -warnaserror
       # Start the real app without a display (Debug + OVERDESK_HEADLESS) and render every screen: catches startup crashes.
       - name: Smoke test (render all screens)
         timeout-minutes: 8
@@ -49,7 +49,6 @@ jobs:
       # the screens show whether the hosted window is drawn inside the stage or the desktop shows through.
       - name: Embedding test (real programs)
         if: runner.os == 'Windows'
-        continue-on-error: true
         timeout-minutes: 6
         shell: bash
         env:

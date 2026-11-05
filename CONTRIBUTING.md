@@ -18,7 +18,7 @@ Thanks for helping! A few things keep the project easy to work on.
   degrade quietly on the other.
 - **Both flavors must build.** From a Mac you can check the Windows one with
   `dotnet build src/Overdesk.App -p:OS=Windows_NT -p:EnableWindowsTargeting=true`. CI builds both.
-- **No warnings.** The solution builds with 0 warnings; please keep it that way.
+- **No warnings.** The solution builds with 0 warnings and CI builds with `-warnaserror`; please keep it that way.
 - **Match the look.** Colors, spacing and icons come from `src/Overdesk.App/Theme`. Use the accent brushes as
   `DynamicResource` so theme switching keeps working.
 - **Secrets never go in settings.** API keys use `ISecretStore` (system keychain / Credential Manager).

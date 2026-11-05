@@ -108,7 +108,7 @@ The same command works on macOS and Windows. Each OS builds its own flavor autom
 
 Both are self-contained, so no .NET install is needed to run them.
 Pushing a version tag (`git tag v0.2.0 && git push origin v0.2.0`) builds both (Apple Silicon + Intel, x64 + ARM64)
-in CI and attaches them to a draft GitHub release.
+in CI and attaches them to a draft GitHub release (the version in the files comes from the tag). Publish the draft by hand after trying the installers.
 
 ### macOS permissions
 
@@ -129,10 +129,14 @@ src/
   Overdesk.Core/              Tabs, settings, plugin manifest + registry, platform interfaces (no OS code)
   Overdesk.AI/                Chat providers behind IChatProvider (Ollama, LM Studio, OpenAI, Claude, Gemini, Claude Code CLI,
                               Gemini CLI), the tool layer, project file tools and the local MCP server
-tests/Overdesk.Tests/         Unit tests (file tools, MCP server, approvals, works)
   Overdesk.Platform.MacOS/    Accessibility window gluing, WKWebView, keychain, media, system stats
   Overdesk.Platform.Windows/  Win32 reparenting, WebView2, Credential Manager, media, system stats
+tests/Overdesk.Tests/         Unit tests (file tools, MCP server, approvals, works, providers, backup, plugins, bundled tools)
+tools/                        Bundled tool plugins (Converter, DevKit, Texture Maps, App Icons, Sprite Sheet)
 samples/HelloTool/            A minimal in-process tool plugin
+installer/                    Inno Setup script for the Windows installer
+docs/                         Plugin and AI documentation
+.github/workflows/            CI (build, tests, smoke test) and release packaging
 scripts/                      Packaging for macOS and Windows
 ```
 

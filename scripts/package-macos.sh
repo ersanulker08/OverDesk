@@ -22,6 +22,7 @@ cp -R "$PUBLISH/." "$APP/Contents/MacOS/"
 for tool in "$ROOT"/tools/*/; do
   name="$(basename "$tool")"
   [ -f "$tool/overdesk.plugin.json" ] || continue # tools/shared holds code linked into the tools
+  rm -rf "$tool/bin"
   dotnet build "$tool" -c Release
   mkdir -p "$APP/Contents/MacOS/tools/$name"
   cp "$tool/overdesk.plugin.json" "$APP/Contents/MacOS/tools/$name/"

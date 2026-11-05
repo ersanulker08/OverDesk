@@ -396,7 +396,7 @@ public partial class SettingsView : UserControl
         var shift = OperatingSystem.IsMacOS() ? "⇧" : "Shift+";
         var list = new (string Keys, string What)[]
         {
-            ($"{mod}T", "Add a program"), ($"{mod}W", "Close the tab"),
+            ($"{mod}T", "Add a program"), ($"{mod}W", "Close the tab"), ($"{mod}{shift}T", "Reopen a closed tab"),
             ($"{mod}1 – 9", "Jump to a tab or open site"), ("Ctrl+Tab", "Next tab or open site"),
             ("Ctrl+Shift+Tab", "Previous tab or open site"), (OperatingSystem.IsMacOS() ? "⌘⌥1 – 9" : "Ctrl+Alt+1 – 9", "Switch workspace"),
             ($"{mod}R", "Reload the site"), ($"{mod}L", "Address bar"),

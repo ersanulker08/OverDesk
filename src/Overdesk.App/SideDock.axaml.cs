@@ -102,6 +102,8 @@ public partial class SideDock : UserControl
     public event Action<string, string>? Toast;
 
     /// <summary>Change the scratchpad from outside (the AI); the text box saves it like a typed edit.</summary>
+    internal void FlushNotes() => _settings.Notes = Notes.Text ?? "";
+
     internal void SetNotes(string text)
     {
         _settings.Notes = text;

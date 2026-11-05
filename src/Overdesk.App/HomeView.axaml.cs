@@ -194,7 +194,7 @@ public partial class HomeView : UserControl
         Tiles.Children.Add(Animate(AddTile(), index));
     }
 
-    private static bool Exists(string path) => File.Exists(path) || Directory.Exists(path);
+    private static bool Exists(string path) => path.StartsWith("shell:", StringComparison.OrdinalIgnoreCase) || File.Exists(path) || Directory.Exists(path);
 
     private Button ProgramTile(string path, bool isPinned)
     {

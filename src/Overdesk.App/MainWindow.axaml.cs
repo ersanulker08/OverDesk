@@ -373,6 +373,9 @@ public partial class MainWindow : Window
         if (_opened) return;
         _opened = true;
 
+        if (_store.RestoreError is { } restoreError) ShowToast($"Restoring the backup failed: {restoreError}", "IconSliders");
+        else if (_store.ReadFailed) ShowToast("Settings could not be read, so changes will not be saved this session", "IconSliders");
+
         PrepareForHosting();
         RegisterBuiltInTools();
         RegisterWorksTool();
@@ -396,6 +399,7 @@ public partial class MainWindow : Window
     {
         _layoutTimer.Stop();
         _works.Flush();
+        Dock.FlushNotes();
         SaveSettings();
         foreach (var cts in _tabStarts.Values.Concat(_toolStarts.Values)) cts.Cancel();
         _embedding.Dispose();
@@ -571,10 +575,22 @@ public partial class MainWindow : Window
     private void ShowHome()
     {
         _activeWeb = null;
+        Home.ShowWorksTab(false);
         _tabs.ShowHome();
         UpdateTabContent();
         BuildWebPills();
         SaveSettingsSoon();
+    }
+
+    private void ReopenClosedTab()
+    {
+        if (_tabs.PopClosed() is not { } closed)
+        {
+            ShowToast("No closed tab to reopen", "IconRefresh");
+            return;
+        }
+        OpenProgram(closed.ProgramPath);
+        if (_tabs.Active is { } tab) _tabs.Move(tab, Math.Min(closed.Index, _tabs.Tabs.Count - 1));
     }
 
     private void TogglePin(string path)
@@ -1031,6 +1047,7 @@ public partial class MainWindow : Window
 
         items.Add(new PaletteItem("Go home", "Action", ShowHome, "IconHome", Shortcut: OperatingSystem.IsMacOS() ? "⌘⇧H" : "Ctrl+Shift+H"));
         items.Add(new PaletteItem("Add a program…", "Action", () => _ = AddProgramsAsync(), "IconPlus", Shortcut: $"{mod}T"));
+        items.Add(new PaletteItem("Reopen closed tab", "Action", ReopenClosedTab, "IconRefresh", Shortcut: OperatingSystem.IsMacOS() ? "⌘⇧T" : "Ctrl+Shift+T"));
         items.Add(new PaletteItem("Search programs on this computer", "Action", FocusHomeSearch, "IconSearch", Shortcut: $"{mod}K"));
         items.Add(new PaletteItem("Open settings", "Action", OpenSettings, "IconSliders", Shortcut: $"{mod},"));
         AddWorkPaletteItems(items);
@@ -1341,6 +1358,10 @@ public partial class MainWindow : Window
                 break;
             case Key.H when e.KeyModifiers.HasFlag(KeyModifiers.Shift):
                 ShowHome();
+                e.Handled = true;
+                break;
+            case Key.T when e.KeyModifiers.HasFlag(KeyModifiers.Shift):
+                ReopenClosedTab();
                 e.Handled = true;
                 break;
             case Key.T:

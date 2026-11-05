@@ -18,6 +18,7 @@ public partial class TaskLogView : UserControl
     public TaskLogView()
     {
         InitializeComponent();
+        Focusable = true;
         Backdrop.PointerPressed += (_, _) => Hide();
         CloseButton.Click += (_, _) => Hide();
         StopButton.Click += (_, _) => { if (_task is not null) _runner?.Stop(_task); };
@@ -46,10 +47,11 @@ public partial class TaskLogView : UserControl
 
     internal void Show(RunningTask task, TaskRunner runner)
     {
-        if (_runner is not null) _runner.Changed -= Refresh;
+        Unsubscribe();
         _task = task;
         _runner = runner;
         runner.Changed += Refresh;
+        runner.OutputChanged += Refresh;
         if (!IsVisible)
         {
             IsVisible = true;
@@ -61,12 +63,20 @@ public partial class TaskLogView : UserControl
             });
         }
         Refresh();
+        Focus();
     }
 
     public void Hide()
     {
-        if (_runner is not null) _runner.Changed -= Refresh;
+        Unsubscribe();
         IsVisible = false;
+    }
+
+    private void Unsubscribe()
+    {
+        if (_runner is null) return;
+        _runner.Changed -= Refresh;
+        _runner.OutputChanged -= Refresh;
     }
 
     private void Refresh()
@@ -78,7 +88,8 @@ public partial class TaskLogView : UserControl
         StatusDot.BoxShadow = task.IsRunning ? new BoxShadows(new BoxShadow { Blur = 8, Color = Color.Parse("#AA2FD98B") }) : default;
         StopButton.IsVisible = task.IsRunning;
         var atBottom = Scroller.Offset.Y >= Scroller.Extent.Height - Scroller.Viewport.Height - 30;
-        Output.Text = task.Output;
+        // Replacing the text would drop the user's selection, so hold the update while one exists.
+        if (Output.SelectionStart == Output.SelectionEnd) Output.Text = task.Output;
         if (atBottom) Dispatcher.UIThread.Post(() => Scroller.ScrollToEnd(), DispatcherPriority.Background);
     }
 

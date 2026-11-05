@@ -29,6 +29,7 @@ public partial class SideDock
 
     // Focus timer state (lives for the session only).
     private TimeSpan _focusLeft;
+    private DateTime _focusEnds;
     private bool _focusRunning;
     private bool _onBreak;
 
@@ -63,6 +64,11 @@ public partial class SideDock
         RenderProjects();
         RenderSnippets();
         _ = PollGitAsync();
+        if (!_focusRunning)
+        {
+            _focusLeft = TimeSpan.FromMinutes(_onBreak ? _settings.BreakMinutes : _settings.FocusMinutes);
+            RenderFocus();
+        }
     }
 
     internal void ApplyCardVisibility()
@@ -78,6 +84,11 @@ public partial class SideDock
         PortsCard.IsVisible = !hidden.Contains("ports");
         ClipCard.IsVisible = !hidden.Contains("clipboard");
         NotesCard.IsVisible = !hidden.Contains("notes");
+        RailMedia.IsVisible = MediaCard.IsVisible;
+        RailSystem.IsVisible = SystemCard.IsVisible;
+        RailPorts.IsVisible = PortsCard.IsVisible;
+        RailClips.IsVisible = ClipCard.IsVisible;
+        RailNotes.IsVisible = NotesCard.IsVisible;
     }
 
     /// <summary>The cards the user can switch on and off (id, label), in dock order.</summary>
@@ -123,12 +134,16 @@ public partial class SideDock
 
     private void FocusTick()
     {
-        _focusLeft -= TimeSpan.FromSeconds(1);
+        var now = DateTime.UtcNow;
+        _focusLeft = _focusEnds - now;
         if (_focusLeft <= TimeSpan.Zero)
         {
             var finished = _onBreak ? "Break is over, back to it!" : $"{_settings.FocusMinutes} minutes of focus done. Take a break.";
             _onBreak = !_onBreak;
-            _focusLeft = TimeSpan.FromMinutes(_onBreak ? _settings.BreakMinutes : _settings.FocusMinutes);
+            var length = TimeSpan.FromMinutes(_onBreak ? _settings.BreakMinutes : _settings.FocusMinutes);
+            // Keep the schedule exact after a stall, but never start a phase that is already over (sleep).
+            _focusEnds = _focusEnds + length > now ? _focusEnds + length : now + length;
+            _focusLeft = _focusEnds - now;
             _actions?.Toast(finished, "IconTimer");
             _desktop?.Notify("OverDesk", finished);
             FocusCard.Flash();
@@ -142,6 +157,7 @@ public partial class SideDock
         if (minutes is > 0 and <= 240) _settings.FocusMinutes = minutes.Value;
         ResetFocus();
         _focusRunning = true;
+        _focusEnds = DateTime.UtcNow + _focusLeft;
         _focusTick.Start();
         RenderFocus();
     }
@@ -174,6 +190,7 @@ public partial class SideDock
     {
         ResetFocus();
         _focusLeft = TimeSpan.FromMinutes(_settings.FocusMinutes * 0.6);
+        _focusEnds = DateTime.UtcNow + _focusLeft;
         _focusRunning = true;
         RenderFocus();
     }
@@ -200,7 +217,17 @@ public partial class SideDock
             _focusPlay.Click += (_, _) =>
             {
                 _focusRunning = !_focusRunning;
-                if (_focusRunning) _focusTick.Start(); else _focusTick.Stop();
+                if (_focusRunning)
+                {
+                    _focusEnds = DateTime.UtcNow + _focusLeft;
+                    _focusTick.Start();
+                }
+                else
+                {
+                    _focusLeft = _focusEnds - DateTime.UtcNow;
+                    if (_focusLeft < TimeSpan.Zero) _focusLeft = TimeSpan.Zero;
+                    _focusTick.Stop();
+                }
                 RenderFocus();
             };
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(-6, -4, 0, -6) };
@@ -364,15 +391,17 @@ public partial class SideDock
     {
         if (_actions?.CurrentProjectFolder() is not { } folder || !Directory.Exists(folder))
         {
-            GitBody.Children.Clear();
-            GitBody.Children.Add(Faint("Add a project to see its branch and changes here."));
+            SetGitCard(Faint("Add a project to see its branch and changes here."));
             return;
         }
-        var status = await TaskRunner.CaptureAsync("git status --porcelain=v2 --branch", folder);
-        GitBody.Children.Clear();
+        // Both captures finish before the card is touched, so overlapping polls cannot interleave their rows.
+        var statusTask = TaskRunner.CaptureAsync("git status --porcelain=v2 --branch", folder);
+        var remoteTask = TaskRunner.CaptureAsync("git remote get-url origin", folder);
+        var status = await statusTask;
+        var remote = await remoteTask;
         if (status is null)
         {
-            GitBody.Children.Add(Faint($"{Path.GetFileName(folder)} is not a git repository."));
+            SetGitCard(Faint($"{Path.GetFileName(folder)} is not a git repository."));
             return;
         }
 
@@ -396,8 +425,6 @@ public partial class SideDock
         head.Children.Add(new TextBlock { Text = branch, Classes = { "mono" }, FontWeight = FontWeight.SemiBold, FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center });
         if (ahead > 0) head.Children.Add(new Border { Classes = { "chip" }, Child = new TextBlock { Text = $"↑{ahead}" } });
         if (behind > 0) head.Children.Add(new Border { Classes = { "chip" }, Child = new TextBlock { Text = $"↓{behind}" } });
-        GitBody.Children.Add(head);
-        GitBody.Children.Add(Faint(changed + untracked == 0 ? "Working tree clean" : $"{changed} changed · {untracked} new"));
 
         var buttons = new WrapPanel();
         void Add(string text, string icon, Action click)
@@ -412,9 +439,15 @@ public partial class SideDock
         Add("Pull", "IconChevronDown", () => _actions.RunCommand("git pull", folder));
         Add("Push", "IconDrop", () => _actions.RunCommand("git push", folder));
         Add("Commit msg", "IconSparkle", () => _ = ((MainWindow)TopLevel.GetTopLevel(this)!).CommitMessageWithAiAsync(folder));
-        if (await TaskRunner.CaptureAsync("git remote get-url origin", folder) is { } remote && RemoteWebUrl(remote.Trim()) is { } web)
+        if (remote is not null && RemoteWebUrl(remote.Trim()) is { } web)
             Add("GitHub", "IconGlobe", () => _actions.OpenWeb(web, Path.GetFileName(folder), "repo:" + web));
-        GitBody.Children.Add(buttons);
+        SetGitCard(head, Faint(changed + untracked == 0 ? "Working tree clean" : $"{changed} changed · {untracked} new"), buttons);
+    }
+
+    private void SetGitCard(params Control[] rows)
+    {
+        GitBody.Children.Clear();
+        GitBody.Children.AddRange(rows);
     }
 
     /// <summary>git@github.com:me/repo.git or https://github.com/me/repo.git → https://github.com/me/repo</summary>

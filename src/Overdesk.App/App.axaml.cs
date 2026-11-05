@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using Overdesk.App.Controls;
 using Overdesk.App.Services;
 using Overdesk.App.Theme;
@@ -32,13 +33,19 @@ public partial class App : Application
             var catalog = PlatformFactory.CreateCatalog();
             IconCache.Catalog = catalog;
             var icon = CreateAppIcon();
-            using (var png = new MemoryStream())
-            {
-                RenderLogo(512).Save(png, new PngBitmapEncoderOptions());
-                PlatformFactory.CreateDesktop().SetAppIcon(png.ToArray());
-            }
+            var desktopServices = PlatformFactory.CreateDesktop();
+            SetDockIcon(desktopServices);
 
             var main = new MainWindow(store, catalog) { Icon = icon };
+            // "Everything follows the accent, live" includes the Dock/taskbar icon; one render per change, a beat after the last.
+            var recolor = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+            recolor.Tick += (_, _) =>
+            {
+                recolor.Stop();
+                main.Icon = CreateAppIcon();
+                SetDockIcon(desktopServices);
+            };
+            AccentThemes.Changed += () => { recolor.Stop(); recolor.Start(); };
             desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
             var snapshotDir = Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT");
 
@@ -68,6 +75,13 @@ public partial class App : Application
 
     /// <summary>The window/dock icon is the logo itself, rendered on a dark rounded tile.</summary>
     private static WindowIcon CreateAppIcon() => new(RenderLogo(256));
+
+    private static void SetDockIcon(Overdesk.Core.Platform.IDesktopServices desktop)
+    {
+        using var png = new MemoryStream();
+        RenderLogo(512).Save(png, new PngBitmapEncoderOptions());
+        desktop.SetAppIcon(png.ToArray());
+    }
 
     internal static Bitmap RenderLogo(int pixels)
     {

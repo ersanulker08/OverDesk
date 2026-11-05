@@ -4,6 +4,7 @@ using Overdesk.Core.Dev;
 namespace Overdesk.Tests;
 
 /// <summary>TaskRunner against real shells: a login shell on macOS/Linux, cmd.exe with the command line verbatim on Windows.</summary>
+[Collection("login shell")]
 public class TaskRunnerTests
 {
     private static async Task WaitUntil(Func<bool> condition, int seconds = 15)

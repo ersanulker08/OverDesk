@@ -29,6 +29,7 @@ public interface IEmbeddedWindow : IDisposable
     /// <summary>
     /// A still image of the hosted window as it looks now, even while other windows cover it. Used to "mirror" the
     /// program inside Overdesk while Overdesk itself is in front. Null where not needed or not permitted.
+    /// The one member that may run off the UI thread (frames are large), even while the window is being closed.
     /// </summary>
     IWindowFrame? CaptureFrame();
 
@@ -37,6 +38,10 @@ public interface IEmbeddedWindow : IDisposable
     /// <see cref="HostBounds.ScreenX"/>), so a click on the mirror reaches the real program.
     /// </summary>
     Task FocusAndClickAsync(double screenX, double screenY, bool rightButton);
+
+    /// <summary>Same, with the click count of a double-click, so the program sees it as one.</summary>
+    Task FocusAndClickAsync(double screenX, double screenY, bool rightButton, int clickCount)
+        => FocusAndClickAsync(screenX, screenY, rightButton);
 
     /// <summary>Ask the program to close; kill it if it does not.</summary>
     void Close();

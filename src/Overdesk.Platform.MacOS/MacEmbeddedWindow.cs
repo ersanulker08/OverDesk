@@ -11,21 +11,27 @@ namespace Overdesk.Platform.MacOS;
 internal sealed class MacEmbeddedWindow : IEmbeddedWindow
 {
     private const double Tolerance = 1.5;
+    private static readonly TimeSpan MinimizeAnimation = TimeSpan.FromMilliseconds(350);
 
     private readonly Process _process;
     private readonly AccessibilityWindow _ax;
+    private readonly int _pid;
     private readonly bool _startedByUs;
+    private readonly bool _fullScreenButtonDisabled;
     private (double X, double Y, double Width, double Height)? _original;
     private (double X, double Y, double Width, double Height)? _applied;
+    private bool _shown = true;
     private bool _disposed;
 
     public MacEmbeddedWindow(Process process, AccessibilityWindow ax, bool startedByUs)
     {
         _process = process;
         _ax = ax;
+        _pid = process.Id;
         _startedByUs = startedByUs;
         _original = startedByUs ? null : ax.GetFrame();
-        ax.DisableFullScreenButton();
+        _fullScreenButtonDisabled = ax.DisableFullScreenButton();
+        MacWindowEmbedder.Hosted.Add(_pid);
         _process.EnableRaisingEvents = true;
         _process.Exited += (_, _) => Exited?.Invoke(this, EventArgs.Empty);
     }
@@ -45,7 +51,7 @@ internal sealed class MacEmbeddedWindow : IEmbeddedWindow
 
     public void SetBounds(HostBounds b)
     {
-        if (!IsAlive) return;
+        if (!IsAlive || !_shown) return; // SetVisible(true) is followed by the latest bounds
         var scale = b.Scale <= 0 ? 1 : b.Scale;
         // Screen* is already in points on macOS; the size is in pixels.
         double x = b.ScreenX, y = b.ScreenY, w = Math.Max(b.Width, 1) / scale, h = Math.Max(b.Height, 1) / scale;
@@ -60,6 +66,9 @@ internal sealed class MacEmbeddedWindow : IEmbeddedWindow
 
         // A window left in full screen lives in another Space where we cannot reach it: bring it back first.
         if (_ax.IsFullScreen()) _ax.SetFullScreen(false);
+
+        // Its yellow button: a minimized window still reports its old frame, so the check below would pass.
+        if (_ax.IsMinimized()) Restore();
 
         // Reading is cheaper than writing and avoids nudging apps that redraw on every resize.
         if (_ax.GetFrame() is { } f && Near(f.X, x) && Near(f.Y, y) && Near(f.Width, w) && Near(f.Height, h)) return;
@@ -101,8 +110,22 @@ internal sealed class MacEmbeddedWindow : IEmbeddedWindow
     public void SetVisible(bool visible)
     {
         if (!IsAlive) return;
-        _ax.SetHidden(!visible);
-        if (visible) _ax.Raise();
+        _shown = visible;
+        if (visible)
+        {
+            _ax.SetHidden(false);
+            if (_ax.IsMinimized()) _ax.SetMinimized(false);
+            _ax.Raise();
+        }
+        // Hiding works on the whole app: with other windows open, only ours may go.
+        else if (_ax.HasOtherWindows()) _ax.SetMinimized(true);
+        else _ax.SetHidden(true);
+    }
+
+    private void Restore()
+    {
+        _ax.SetMinimized(false);
+        _ax.Raise();
     }
 
     public void Focus()
@@ -110,20 +133,27 @@ internal sealed class MacEmbeddedWindow : IEmbeddedWindow
         if (IsAlive) _ax.BringToFront();
     }
 
-    public IWindowFrame? CaptureFrame() => IsAlive ? WindowCapture.Capture(_ax.WindowId()) : null;
+    public IWindowFrame? CaptureFrame() => WindowCapture.Capture(_ax.WindowId);
 
-    public async Task FocusAndClickAsync(double screenX, double screenY, bool rightButton)
+    public Task FocusAndClickAsync(double screenX, double screenY, bool rightButton)
+        => FocusAndClickAsync(screenX, screenY, rightButton, 1);
+
+    public async Task FocusAndClickAsync(double screenX, double screenY, bool rightButton, int clickCount)
     {
         if (!IsAlive) return;
+        var wasMinimized = _ax.IsMinimized();
+        if (wasMinimized) Restore();
         _ax.BringToFront();
+        if (wasMinimized) await Task.Delay(MinimizeAnimation);
         // Replay the click only once the program is really in front, or it would land on Overdesk again.
         for (var i = 0; i < 20; i++)
         {
             await Task.Delay(25);
-            if (RunningApps.FrontmostPid() == _process.Id)
+            if (_disposed) return;
+            if (RunningApps.FrontmostPid() == _pid)
             {
                 await Task.Delay(30);
-                WindowCapture.Click(screenX, screenY, rightButton);
+                WindowCapture.Click(screenX, screenY, rightButton, clickCount);
                 return;
             }
         }
@@ -132,6 +162,9 @@ internal sealed class MacEmbeddedWindow : IEmbeddedWindow
     public void Close()
     {
         if (_disposed || !IsAlive) return;
+        // Whatever happens next the program may stay around (a cancelled "save changes?"), so it must be reachable.
+        _ax.SetHidden(false);
+        if (_fullScreenButtonDisabled) _ax.EnableFullScreenButton();
         if (_startedByUs)
         {
             // Quit the normal way so the app can ask to save; force it only if it refuses to go.
@@ -143,8 +176,7 @@ internal sealed class MacEmbeddedWindow : IEmbeddedWindow
         }
 
         // The app was already running before Overdesk adopted it: leave it running and give its window back.
-        _ax.SetHidden(false);
-        if (_original is { } o) _ax.SetFrame(o.X, o.Y, o.Width, o.Height);
+        if (_original is { } o && _ax.HoldsFirstWindow) _ax.SetFrame(o.X, o.Y, o.Width, o.Height);
     }
 
     public void Dispose()
@@ -152,6 +184,7 @@ internal sealed class MacEmbeddedWindow : IEmbeddedWindow
         if (_disposed) return;
         Close();
         _disposed = true;
+        MacWindowEmbedder.Hosted.Remove(_pid);
         _ax.Dispose();
         _process.Dispose();
     }

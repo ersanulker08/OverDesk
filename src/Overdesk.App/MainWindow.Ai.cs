@@ -185,10 +185,10 @@ public partial class MainWindow
     private async Task<byte[]?> CaptureStagePngAsync()
     {
         if (_tabs.Active is not { Status: TabStatus.Running, IsInternal: false } tab) return null;
-        var key = TabKey(tab);
+        if (_embedding.Window(TabKey(tab)) is not { } window) return null;
         return await Task.Run(() =>
         {
-            using var frame = _embedding.CaptureFrame(key);
+            using var frame = window.CaptureFrame();
             if (frame is null) return null;
             using var full = new WriteableBitmap(new PixelSize(frame.Width, frame.Height), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
             using (var fb = full.Lock()) frame.CopyTo(fb.Address, fb.RowBytes);

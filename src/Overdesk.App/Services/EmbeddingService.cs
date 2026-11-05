@@ -69,11 +69,11 @@ internal sealed class EmbeddingService : IDisposable
     public UserWindowChange? TakeUserChange(string key)
         => _entries.TryGetValue(key, out var e) && e.Visible == true ? e.Window.TakeUserChange() : null;
 
-    public IWindowFrame? CaptureFrame(string key)
-        => _entries.TryGetValue(key, out var e) ? e.Window.CaptureFrame() : null;
+    /// <summary>Look the window up here on the UI thread; only its CaptureFrame may then run on a worker.</summary>
+    public IEmbeddedWindow? Window(string key) => _entries.TryGetValue(key, out var e) ? e.Window : null;
 
-    public Task FocusAndClickAsync(string key, double x, double y, bool right)
-        => _entries.TryGetValue(key, out var e) ? e.Window.FocusAndClickAsync(x, y, right) : Task.CompletedTask;
+    public Task FocusAndClickAsync(string key, double x, double y, bool right, int clickCount)
+        => _entries.TryGetValue(key, out var e) ? e.Window.FocusAndClickAsync(x, y, right, clickCount) : Task.CompletedTask;
 
     public void Focus(string key)
     {

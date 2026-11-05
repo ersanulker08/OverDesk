@@ -46,6 +46,10 @@ public partial class MainWindow
         _mirrorTimer.Start();
         Activated += (_, _) => UpdateMirror();
         Deactivated += (_, _) => UpdateMirror();
+        PropertyChanged += (_, e) =>
+        {
+            if (e.Property == WindowStateProperty) UpdateMirror();
+        };
         foreach (var surface in new[] { _mainMirror, _splitMirror })
         {
             var s = surface;
@@ -91,6 +95,7 @@ public partial class MainWindow
                 if (surface.Image.IsVisible || surface.Key is not null) UpdateMirror();
                 continue;
             }
+            if (WindowState == WindowState.Minimized || !IsVisible) continue; // nobody can see the result
             var due = IsActive ? MirrorLiveInterval : MirrorCacheInterval;
             if (DateTime.UtcNow - surface.LastCapture >= due) _ = CaptureMirrorAsync(surface);
         }
@@ -98,7 +103,7 @@ public partial class MainWindow
 
     private async Task CaptureMirrorAsync(MirrorSurface surface)
     {
-        if (surface.Capturing || MirrorTarget(surface) is not { } key) return;
+        if (surface.Capturing || MirrorTarget(surface) is not { } key || _embedding.Window(key) is not { } window) return;
         surface.Capturing = true;
         surface.LastCapture = DateTime.UtcNow;
         try
@@ -106,7 +111,7 @@ public partial class MainWindow
             // Capture and convert off the UI thread; only the final copy into the bitmap happens here.
             var pixels = await Task.Run(() =>
             {
-                using var frame = _embedding.CaptureFrame(key);
+                using var frame = window.CaptureFrame();
                 if (frame is null) return ((byte[], int, int)?)null;
                 var size = frame.Width * frame.Height * 4;
                 if (surface.Pixels.Length != size) surface.Pixels = new byte[size];
@@ -145,10 +150,11 @@ public partial class MainWindow
     private void OnMirrorPressed(MirrorSurface surface, PointerPressedEventArgs e)
     {
         e.Handled = true;
-        if (surface.Key is not { } key || DateTime.UtcNow - _lastForward < TimeSpan.FromMilliseconds(500)) return;
+        // The throttle stops a click being replayed twice, but the second press of a double-click must get through.
+        if (surface.Key is not { } key || (e.ClickCount < 2 && DateTime.UtcNow - _lastForward < TimeSpan.FromMilliseconds(500))) return;
         _lastForward = DateTime.UtcNow;
         var point = e.GetCurrentPoint(this);
         var screen = this.PointToScreen(point.Position);
-        _ = _embedding.FocusAndClickAsync(key, screen.X, screen.Y, point.Properties.IsRightButtonPressed);
+        _ = _embedding.FocusAndClickAsync(key, screen.X, screen.Y, point.Properties.IsRightButtonPressed, e.ClickCount);
     }
 }

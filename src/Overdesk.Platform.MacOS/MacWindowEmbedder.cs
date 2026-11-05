@@ -9,6 +9,9 @@ public sealed class MacWindowEmbedder : IWindowEmbedder
 {
     private static readonly TimeSpan WindowTimeout = TimeSpan.FromSeconds(20);
 
+    /// <summary>Pids with a live hosted window. UI thread only, like everything that launches or closes them.</summary>
+    internal static readonly HashSet<int> Hosted = new();
+
     public string PlatformName => "macOS";
     public IReadOnlyList<string> ProgramPatterns => new[] { "*.app" };
 
@@ -75,8 +78,16 @@ public sealed class MacWindowEmbedder : IWindowEmbedder
 
         Process process;
         bool startedByUs;
-        if (trimmed.EndsWith(".app", StringComparison.OrdinalIgnoreCase))
+        var isBundle = trimmed.EndsWith(".app", StringComparison.OrdinalIgnoreCase);
+        if (isBundle)
+        {
             (process, startedByUs) = await LaunchBundleAsync(trimmed, cancellation);
+            if (Hosted.Contains(process.Id))
+            {
+                process.Dispose();
+                throw new EmbeddingException("This program is already open in another tab or workspace.");
+            }
+        }
         else
         {
             process = StartExecutable(trimmed);
@@ -84,6 +95,7 @@ public sealed class MacWindowEmbedder : IWindowEmbedder
         }
 
         var ax = new AccessibilityWindow(process.Id);
+        var timedOut = false;
         try
         {
             var started = DateTime.UtcNow;
@@ -105,13 +117,15 @@ public sealed class MacWindowEmbedder : IWindowEmbedder
                 }
                 await Task.Delay(150, cancellation);
             }
+            timedOut = true;
             throw new EmbeddingException("The program did not show a main window in time. If it opened a dialog first, finish it and press Try again.");
         }
         catch
         {
             ax.Dispose();
-            // Only quit what we started ourselves: an app that was already running is left alone.
-            if (startedByUs)
+            // Only quit what we started ourselves: an app that was already running is left alone. So is a bundle that
+            // timed out: it may be waiting on a dialog in front of the user, and Try again adopts the running instance.
+            if (startedByUs && !(timedOut && isBundle))
             {
                 try { if (!process.HasExited && !RunningApps.Terminate(process.Id)) process.Kill(); }
                 catch (InvalidOperationException) { }
@@ -134,7 +148,7 @@ public sealed class MacWindowEmbedder : IWindowEmbedder
 
     private static async Task<(Process Process, bool StartedByUs)> LaunchBundleAsync(string bundle, CancellationToken cancellation)
     {
-        var bundleId = ReadPlistValue(bundle, "CFBundleIdentifier")
+        var bundleId = BundleIdentifier(bundle)
                        ?? throw new EmbeddingException("This is not a valid application bundle (no CFBundleIdentifier).");
 
         // Adopt an instance that is already running instead of starting a second one.
@@ -170,21 +184,17 @@ public sealed class MacWindowEmbedder : IWindowEmbedder
             throw new EmbeddingException($"macOS could not open the application (exit code {open.ExitCode}).");
     }
 
-    private static string? ReadPlistValue(string bundle, string key)
+    private static string? BundleIdentifier(string bundle)
     {
-        var plist = Path.Combine(bundle, "Contents", "Info.plist");
-        if (!File.Exists(plist)) return null;
-        var info = new ProcessStartInfo("/usr/libexec/PlistBuddy")
+        var pool = ObjC.objc_autoreleasePoolPush();
+        try
         {
-            ArgumentList = { "-c", $"Print :{key}", plist },
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        using var p = Process.Start(info);
-        if (p is null) return null;
-        var value = p.StandardOutput.ReadToEnd().Trim();
-        p.WaitForExit();
-        return p.ExitCode == 0 && value.Length > 0 ? value : null;
+            var nsBundle = ObjC.Call(ObjC.Class("NSBundle"), "bundleWithPath:", ObjC.NSString(bundle));
+            return nsBundle == IntPtr.Zero ? null : ObjC.ReadNSString(ObjC.Call(nsBundle, "bundleIdentifier"));
+        }
+        finally
+        {
+            ObjC.objc_autoreleasePoolPop(pool);
+        }
     }
 }

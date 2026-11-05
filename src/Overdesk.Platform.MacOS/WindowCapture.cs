@@ -12,6 +12,8 @@ internal static class WindowCapture
 {
     private const string CoreGraphics = "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics";
     private const uint ListOptionIncludingWindow = 1 << 3;
+    private const uint EventMouseMoved = 5;
+    private const uint MouseEventClickState = 1;
     private const uint ImageBoundsIgnoreFraming = 1 << 0;
     private const uint ImageBestResolution = 1 << 3;
     private const uint BitmapPremultipliedFirstLittle = 2 | (2 << 12); // kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little = BGRA
@@ -102,18 +104,27 @@ internal static class WindowCapture
         }
     }
 
-    /// <summary>A real mouse click at a global screen point (points, top-left origin).</summary>
-    public static void Click(double x, double y, bool right)
+    /// <summary>A real mouse click (or double-click) at a global screen point (points, top-left origin).</summary>
+    public static void Click(double x, double y, bool right, int clickCount)
     {
         var point = new CGPoint { X = x, Y = y };
+        Post(EventMouseMoved, point, 0, 0);
         var (down, up, button) = right ? (3u, 4u, 1u) : (1u, 2u, 0u);
-        foreach (var type in new[] { down, up })
+        for (var click = 1; click <= Math.Max(clickCount, 1); click++)
         {
-            var evt = CGEventCreateMouseEvent(IntPtr.Zero, type, point, button);
-            if (evt == IntPtr.Zero) continue;
-            CGEventPost(0, evt); // kCGHIDEventTap
-            Native.CFRelease(evt);
+            Post(down, point, button, click);
+            Post(up, point, button, click);
         }
+    }
+
+    private static void Post(uint type, CGPoint point, uint button, int clickState)
+    {
+        var evt = CGEventCreateMouseEvent(IntPtr.Zero, type, point, button);
+        if (evt == IntPtr.Zero) return;
+        // Left at 0, WebKit and Blink see the press and release but never fire the page's click event.
+        if (clickState > 0) CGEventSetIntegerValueField(evt, MouseEventClickState, clickState);
+        CGEventPost(0, evt); // kCGHIDEventTap
+        Native.CFRelease(evt);
     }
 
     [DllImport(CoreGraphics)] [return: MarshalAs(UnmanagedType.U1)] private static extern bool CGPreflightScreenCaptureAccess();
@@ -128,5 +139,6 @@ internal static class WindowCapture
     [DllImport(CoreGraphics)] private static extern void CGContextDrawImage(IntPtr context, CGRect rect, IntPtr image);
     [DllImport(CoreGraphics)] private static extern void CGContextRelease(IntPtr context);
     [DllImport(CoreGraphics)] private static extern IntPtr CGEventCreateMouseEvent(IntPtr source, uint type, CGPoint point, uint button);
+    [DllImport(CoreGraphics)] private static extern void CGEventSetIntegerValueField(IntPtr evt, uint field, long value);
     [DllImport(CoreGraphics)] private static extern void CGEventPost(uint tap, IntPtr evt);
 }

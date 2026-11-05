@@ -46,6 +46,12 @@ public interface IWebView : IDisposable
 
     /// <summary>A line for the user about a file download this view started, ended or lost; only where the platform handles downloads itself.</summary>
     event Action<string>? DownloadStatus { add { } remove { } }
+
+    /// <summary>
+    /// The page could not be loaded (url, reason) or the engine could not start; the host shows it. Only where the
+    /// platform does not show its own error page in the view (WebKit on macOS does).
+    /// </summary>
+    event Action<string, string>? LoadFailed { add { } remove { } }
 }
 
 public interface IWebViewFactory

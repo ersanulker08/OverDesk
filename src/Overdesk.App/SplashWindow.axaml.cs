@@ -8,7 +8,8 @@ namespace Overdesk.App;
 
 /// <summary>
 /// Opening screen: the logo ring draws itself, the window tile pops in, the wordmark settles and a loading bar
-/// fills. Driven by one frame-clock timeline so every element stays in sync. Click or Space/Enter/Esc skips.
+/// fills. Driven by one frame-clock timeline so every element stays in sync. Click or Space/Enter/Esc skips the
+/// animation; the splash still waits for <see cref="MarkLoaded"/> (the main window is ready) before it completes.
 /// </summary>
 public partial class SplashWindow : Window
 {
@@ -27,6 +28,7 @@ public partial class SplashWindow : Window
     private TimeSpan? _start;
     private double _closingAt = -1;
     private bool _completed;
+    private bool _loaded;
 
     public SplashWindow()
     {
@@ -67,6 +69,9 @@ public partial class SplashWindow : Window
 
     public void FadeAway() => _closingAt = Elapsed;
 
+    /// <summary>The main window is built: the splash may complete once its animation has played.</summary>
+    public void MarkLoaded() => _loaded = true;
+
     private void Skip()
     {
         if (_completed) return;
@@ -93,11 +98,13 @@ public partial class SplashWindow : Window
         Wordmark.LetterSpacing = 22 - 13 * word;
         Tagline.Opacity = Ease.OutCubic(Range(t, 1.4, 1.95));
 
-        var bar = Ease.InOutCubic(Range(t, 0.25, Duration - 0.1));
+        // The bar holds just short of the end while the main window is still being built.
+        var bar = Math.Min(Ease.InOutCubic(Range(t, 0.25, Duration - 0.1)), _loaded ? 1 : 0.9);
         Bar.Width = 260 * bar;
-        Status.Text = Steps.Last(s => t >= s.At).Text;
+        var step = Steps.Last(s => t >= s.At);
+        Status.Text = step == Steps[^1] && !_loaded ? Steps[^2].Text : step.Text;
 
-        if (!_completed && t >= Duration)
+        if (!_completed && _loaded && t >= Duration)
         {
             _completed = true;
             Completed?.Invoke();

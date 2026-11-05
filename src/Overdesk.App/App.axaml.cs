@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using Overdesk.App.Controls;
 using Overdesk.App.Services;
 using Overdesk.App.Theme;
@@ -38,18 +39,24 @@ public partial class App : Application
                 PlatformFactory.CreateDesktop().SetAppIcon(png.ToArray());
             }
 
-            var main = new MainWindow(store, catalog) { Icon = icon };
             desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
             var snapshotDir = Environment.GetEnvironmentVariable("OVERDESK_SNAPSHOT");
 
             if (settings.ShowSplash)
             {
+                // The splash goes up first and plays while the main window is built behind it; it ends when both are done.
                 var splash = new SplashWindow { Icon = icon, Topmost = true };
                 desktop.MainWindow = splash;
+                MainWindow? main = null;
+                splash.Opened += (_, _) => Dispatcher.UIThread.Post(() =>
+                {
+                    main = new MainWindow(store, catalog) { Icon = icon };
+                    splash.MarkLoaded();
+                }, DispatcherPriority.Background);
                 splash.Completed += () =>
                 {
                     desktop.MainWindow = main;
-                    main.Show();
+                    main!.Show();
                     main.PlayEntrance();
                     splash.FadeAway();
                     if (snapshotDir is { Length: > 0 }) _ = DevSnapshot.RunMainAsync(main, snapshotDir);
@@ -58,6 +65,7 @@ public partial class App : Application
             }
             else
             {
+                var main = new MainWindow(store, catalog) { Icon = icon };
                 desktop.MainWindow = main;
                 if (snapshotDir is { Length: > 0 }) main.Opened += (_, _) => _ = DevSnapshot.RunMainAsync(main, snapshotDir);
             }

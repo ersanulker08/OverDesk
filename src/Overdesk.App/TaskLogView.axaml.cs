@@ -5,6 +5,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Overdesk.App.Controls;
 using Overdesk.App.Services;
+using Overdesk.Core.Dev;
 using Overdesk.App.Theme;
 
 namespace Overdesk.App;

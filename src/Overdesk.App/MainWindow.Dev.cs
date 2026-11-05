@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Overdesk.App.Services;
+using Overdesk.Core.Dev;
 using Overdesk.Core.Settings;
 using Overdesk.Core.Tabs;
 
@@ -29,7 +30,7 @@ internal interface IDockActions
 public partial class MainWindow : IDockActions
 {
     private static readonly string[] Editors = { "Visual Studio Code", "Cursor", "Zed", "Windsurf", "Rider", "Sublime Text", "Code" };
-    private readonly TaskRunner _runner = new();
+    private readonly TaskRunner _runner = new(action => Dispatcher.UIThread.Post(action));
 
     internal TaskRunner Runner => _runner;
 

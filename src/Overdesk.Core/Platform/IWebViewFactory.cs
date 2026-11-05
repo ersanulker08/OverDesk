@@ -43,6 +43,9 @@ public interface IWebView : IDisposable
 
     /// <summary>The page asked to close its own window (window.close()), e.g. at the end of a sign-in popup.</summary>
     event Action? CloseRequested;
+
+    /// <summary>A line for the user about a file download this view started, ended or lost; only where the platform handles downloads itself.</summary>
+    event Action<string>? DownloadStatus { add { } remove { } }
 }
 
 public interface IWebViewFactory

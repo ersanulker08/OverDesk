@@ -270,6 +270,20 @@
                                     </Grid>
                                 </Border>
                                 <Panel x:Name="WebHosts" Grid.Row="3" Margin="1,0,1,1"/>
+                                <!-- The browser engine could not start (Windows: WebView2 runtime missing or mid-update) -->
+                                <Border x:Name="WebFailed" Grid.Row="3" IsVisible="False" Classes="card" Width="440" Padding="30,26"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <StackPanel Spacing="12">
+                                        <Path Classes="icon accent" Data="{StaticResource IconGlobe}" Height="26" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="The web view could not start" FontSize="17" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                        <TextBlock x:Name="WebFailedText" Classes="muted" FontSize="12.5" TextWrapping="Wrap" TextAlignment="Center"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" Margin="0,6,0,0">
+                                            <Button x:Name="WebFailedInstall" Classes="accent" Content="Get WebView2" Padding="14,7"/>
+                                            <Button x:Name="WebFailedRetry" Classes="ghost" Content="Try again" Padding="14,7"/>
+                                            <Button x:Name="WebFailedBrowser" Classes="ghost" Content="Open in your browser" Padding="14,7"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
                             </Grid>
                         </Border>
                     </Grid>
@@ -403,6 +417,7 @@
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <Path x:Name="ToastIcon" Classes="icon accent" Height="14"/>
                 <TextBlock x:Name="ToastText" FontSize="12.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                <Button x:Name="ToastAction" Classes="accent" IsVisible="False" Padding="10,2" FontSize="12" Margin="4,-2,-4,-2"/>
             </StackPanel>
         </Border>
 

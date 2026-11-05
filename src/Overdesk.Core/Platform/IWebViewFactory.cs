@@ -46,6 +46,9 @@ public interface IWebView : IDisposable
 
     /// <summary>A line for the user about a file download this view started, ended or lost; only where the platform handles downloads itself.</summary>
     event Action<string>? DownloadStatus { add { } remove { } }
+
+    /// <summary>The engine could not start (why); the view will never show a page. Only where starting can fail (WebView2).</summary>
+    event Action<string>? Failed { add { } remove { } }
 }
 
 public interface IWebViewFactory

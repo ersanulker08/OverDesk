@@ -39,12 +39,16 @@ public sealed class WebViewHost : NativeControlHost
     /// <summary>A line for the user about a download (forwarded from the view).</summary>
     public event Action<string>? DownloadStatus;
 
+    /// <summary>The engine could not start (forwarded from the view).</summary>
+    public event Action<string>? Failed;
+
     private void Attach(IWebView view)
     {
         View = view;
         view.PopupRequested += popup => PopupRequested?.Invoke(popup);
         view.CloseRequested += () => CloseRequested?.Invoke();
         view.DownloadStatus += text => DownloadStatus?.Invoke(text);
+        view.Failed += reason => Failed?.Invoke(reason);
     }
 
     protected override IPlatformHandle CreateNativeControlCore(IPlatformHandle parent)

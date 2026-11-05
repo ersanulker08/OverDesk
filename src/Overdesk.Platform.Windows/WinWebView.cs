@@ -59,6 +59,7 @@ internal sealed class WinWebView : IWebView
 
     public event Action<IWebView>? PopupRequested;
     public event Action? CloseRequested;
+    public event Action<string>? Failed;
 
     /// <summary>The engine once it is ready (null when WebView2 is missing).</summary>
     internal Task<CoreWebView2?> Ready => _ready.Task;
@@ -92,8 +93,8 @@ internal sealed class WinWebView : IWebView
         {
             _controller = null;
             IsLoading = false;
-            SetWindowTextW(_hwnd, "The web view could not start: " + ex.Message); // the host window is a Static control
             _ready.TrySetResult(null);
+            Failed?.Invoke(ex.Message);
         }
     }
 
@@ -180,7 +181,6 @@ internal sealed class WinWebView : IWebView
     private static extern IntPtr CreateWindowEx(int exStyle, string className, string windowName, int style, int x, int y,
         int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
     [DllImport("user32.dll")] private static extern bool DestroyWindow(IntPtr hwnd);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool SetWindowTextW(IntPtr hwnd, string text);
     [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern IntPtr SetParent(IntPtr child, IntPtr parent);
     [DllImport("user32.dll")] private static extern bool MoveWindow(IntPtr hwnd, int x, int y, int width, int height, bool repaint);

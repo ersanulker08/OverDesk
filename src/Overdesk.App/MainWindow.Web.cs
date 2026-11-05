@@ -30,8 +30,12 @@ public partial class MainWindow
     /// <summary>Popup windows (sign-in) per web tab, newest last; shown in place of the page.</summary>
     private readonly Dictionary<Guid, List<WebViewHost>> _popups = new();
 
+    /// <summary>Web tabs whose engine could not start, with the reason.</summary>
+    private readonly Dictionary<Guid, string> _webFailures = new();
+
     private void InitializeWeb()
     {
+        FaviconCache.Directory = Path.Combine(_store.Directory, "favicons");
         WebBar.IsVisible = _settings.ShowWebStrip;
         ScrollSidewaysWithWheel(WebScroller);
         WebRow.SizeChanged += (_, e) => WebScroller.MaxWidth = Math.Max(0, e.NewSize.Width - AddSiteButton.Width - AddSiteButton.Margin.Left);
@@ -45,6 +49,20 @@ public partial class MainWindow
         };
         WebCloseTab.Click += (_, _) => { if (_activeWeb is { } web) CloseWeb(web); };
         PopupClose.Click += (_, _) => { if (_activeWeb is { } web) ClosePopup(web, null); };
+        WebFailedInstall.Click += (_, _) => _ = Launcher.LaunchUriAsync(new Uri("https://developer.microsoft.com/microsoft-edge/webview2/"));
+        WebFailedBrowser.Click += (_, _) => { if (_activeWeb is { } web) _ = Launcher.LaunchUriAsync(new Uri(web.Url)); };
+        WebFailedRetry.Click += (_, _) =>
+        {
+            if (_activeWeb is not { } web) return;
+            // A fresh view: the runtime may have finished installing or updating meanwhile.
+            if (_webHosts.Remove(web.Id, out var host))
+            {
+                WebHosts.Children.Remove(host);
+                host.DisposeView();
+            }
+            _webFailures.Remove(web.Id);
+            ShowWeb(web);
+        };
         WebAddress.KeyDown += (_, e) =>
         {
             if (e.Key != Key.Enter || _activeWeb is null) return;
@@ -310,6 +328,11 @@ public partial class MainWindow
         var host = new WebViewHost(_webFactory, tab.Url) { IsVisible = false };
         host.PopupRequested += popup => ShowPopup(tab, popup);
         host.DownloadStatus += ShowDownloadStatus;
+        host.Failed += reason => Dispatcher.UIThread.Post(() =>
+        {
+            _webFailures[tab.Id] = reason;
+            if (_activeWeb == tab) UpdateWebContent();
+        });
         _webHosts[tab.Id] = host;
         WebHosts.Children.Add(host);
     }
@@ -367,6 +390,7 @@ public partial class MainWindow
             host.DisposeView();
         }
         _webTabs.Remove(tab);
+        _webFailures.Remove(tab.Id);
         if (_activeWeb == tab)
         {
             _activeWeb = null;
@@ -388,11 +412,17 @@ public partial class MainWindow
         WebHosts.IsVisible = !OverlayOpen;
         // The newest popup of the shown site covers the page until it closes.
         var popup = web is null ? null : CurrentPopup(web);
-        foreach (var (id, host) in _webHosts) host.IsVisible = web is not null && id == web.Id && popup is null;
+        var failure = web is not null && _webFailures.TryGetValue(web.Id, out var reason) ? reason : null;
+        foreach (var (id, host) in _webHosts) host.IsVisible = web is not null && id == web.Id && popup is null && failure is null;
         foreach (var p in _popups.Values.SelectMany(l => l)) p.IsVisible = p == popup;
         PopupBanner.IsVisible = popup is not null;
+        WebFailed.IsVisible = failure is not null;
+        if (failure is not null)
+            WebFailedText.Text = OperatingSystem.IsWindows()
+                ? $"Websites inside OverDesk need the Microsoft Edge WebView2 runtime. Install it (or let a running update finish), then try again.\n{failure}"
+                : failure;
         // These act on the page under the popup, not on the popup.
-        WebBack.IsEnabled = WebForward.IsEnabled = WebReload.IsEnabled = WebAddress.IsEnabled = popup is null;
+        WebBack.IsEnabled = WebForward.IsEnabled = WebReload.IsEnabled = WebAddress.IsEnabled = popup is null && failure is null;
         if (web is not null) PollActiveWeb();
     }
 

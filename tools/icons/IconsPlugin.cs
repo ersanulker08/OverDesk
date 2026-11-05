@@ -71,6 +71,8 @@ public sealed class IconsPlugin : IToolPlugin, IAiToolSource
 /// <summary>The App Icons panel: drop artwork, pick shape / padding / background, see it at real sizes, generate.</summary>
 internal sealed class IconsView : UserControl, IFileDropTarget
 {
+    private const int PreviewSource = 512;
+
     private static readonly (string Label, SKColor? Color)[] Backgrounds =
     {
         ("None", null), ("White", SKColors.White), ("Black", SKColors.Black), ("Dark", new SKColor(0x1E, 0x1E, 0x2E)),
@@ -92,6 +94,11 @@ internal sealed class IconsView : UserControl, IFileDropTarget
     private readonly HashSet<IconTarget> _chosen = new(Enum.GetValues<IconTarget>());
     private string? _path;
     private SKBitmap? _source;
+    private SKBitmap? _small;
+    private readonly List<WriteableBitmap> _previewBitmaps = new();
+    private readonly DispatcherTimer _previewTimer = new() { Interval = TimeSpan.FromMilliseconds(50) };
+    private string? _outputFolder;
+    private readonly Button _outputButton = new() { Padding = new Thickness(10, 4), FontSize = 12 };
     private IconShape _shape = IconShape.AsIs;
     private SKColor? _background;
     private string? _lastFolder;
@@ -120,7 +127,10 @@ internal sealed class IconsView : UserControl, IFileDropTarget
         Grid.SetColumn(change, 1);
         header.Children.Add(change);
 
-        _padding.PropertyChanged += (_, e) => { if (e.Property == Slider.ValueProperty) ShowPreviews(); };
+        _previewTimer.Tick += (_, _) => { _previewTimer.Stop(); ShowPreviews(); };
+        _padding.PropertyChanged += (_, e) => { if (e.Property == Slider.ValueProperty) { _previewTimer.Stop(); _previewTimer.Start(); } };
+        _outputButton.Classes.Add("ghost");
+        _outputButton.Click += (_, _) => _ = ChooseOutputAsync();
         _hex.TextChanged += (_, _) =>
         {
             if (SKColor.TryParse(_hex.Text ?? "", out var color)) { _background = color; Render(); }
@@ -147,6 +157,10 @@ internal sealed class IconsView : UserControl, IFileDropTarget
         _work.Children.Add(backgroundRow);
         _work.Children.Add(Eyebrow("PLATFORMS"));
         _work.Children.Add(_targets);
+        var outputRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        outputRow.Children.Add(new TextBlock { Text = "Save to", FontSize = 12, Width = 62, VerticalAlignment = VerticalAlignment.Center });
+        outputRow.Children.Add(_outputButton);
+        _work.Children.Add(outputRow);
         _work.Children.Add(_generate);
         _work.Children.Add(_result);
         _work.Children.Add(_reveal);
@@ -175,13 +189,36 @@ internal sealed class IconsView : UserControl, IFileDropTarget
         if (files.FirstOrDefault()?.TryGetLocalPath() is { } path) await LoadAsync(path);
     }
 
+    private async Task ChooseOutputAsync()
+    {
+        if (_outputFolder is not null)
+        {
+            _outputFolder = null;
+            Render();
+            return;
+        }
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
+        var folders = await storage.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Where the icon folder goes" });
+        _outputFolder = folders.FirstOrDefault()?.TryGetLocalPath();
+        Render();
+    }
+
     private async Task LoadAsync(string path)
     {
         try
         {
-            var bitmap = await Task.Run(() => ImageIO.Load(path));
+            var (bitmap, small) = await Task.Run(() =>
+            {
+                var full = ImageIO.Load(path);
+                var longest = Math.Max(full.Width, full.Height);
+                if (longest <= PreviewSource) return (full, full);
+                var scale = PreviewSource / (double)longest;
+                return (full, ImageIO.Resize(full, Math.Max(1, (int)Math.Round(full.Width * scale)), Math.Max(1, (int)Math.Round(full.Height * scale))));
+            });
+            if (_small is not null && !ReferenceEquals(_small, _source)) _small.Dispose();
             _source?.Dispose();
             _source = bitmap;
+            _small = small;
             _path = path;
             _info.Text = $"{bitmap.Width} × {bitmap.Height}" + (Math.Min(bitmap.Width, bitmap.Height) < 1024 ? " · smaller than 1024 px: big icons will be soft" : "")
                 + (bitmap.Width != bitmap.Height ? " · not square: it is centered" : "");
@@ -221,6 +258,7 @@ internal sealed class IconsView : UserControl, IFileDropTarget
         }
         _generate.IsEnabled = _chosen.Count > 0 && !_busy;
         _generate.Content = _busy ? "Generating…" : "Generate icons";
+        _outputButton.Content = _outputFolder is null ? "Next to the artwork" : $"{Path.GetFileName(_outputFolder)} (click to reset)";
         ShowPreviews();
     }
 
@@ -228,17 +266,20 @@ internal sealed class IconsView : UserControl, IFileDropTarget
     private void ShowPreviews()
     {
         _previews.Children.Clear();
-        if (_source is null) return;
+        foreach (var old in _previewBitmaps) old.Dispose();
+        _previewBitmaps.Clear();
+        if (_small is null) return;
         var options = Options();
         foreach (var size in new[] { 128, 64, 32, 16 })
         {
-            using var rendered = IconSets.Render(_source, size * 2, options);
+            using var rendered = IconSets.Render(_small, size * 2, options);
             var bitmap = new WriteableBitmap(new PixelSize(size * 2, size * 2), new Vector(96, 96), PixelFormat.Rgba8888, AlphaFormat.Unpremul);
             using (var buffer = bitmap.Lock())
             {
                 var pixels = ImageIO.Pixels(rendered);
                 for (var y = 0; y < size * 2; y++) Marshal.Copy(pixels, y * size * 8, buffer.Address + y * buffer.RowBytes, size * 8);
             }
+            _previewBitmaps.Add(bitmap);
             var column = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Bottom };
             column.Children.Add(new Image { Source = bitmap, Width = size, Height = size, Stretch = Stretch.Uniform });
             column.Children.Add(new TextBlock { Text = $"{size}", FontSize = 10, Opacity = 0.5, HorizontalAlignment = HorizontalAlignment.Center });
@@ -253,7 +294,7 @@ internal sealed class IconsView : UserControl, IFileDropTarget
         Render();
         try
         {
-            var folder = DefaultFolder(path);
+            var folder = _outputFolder is { } chosen ? FreePath(chosen, Path.GetFileNameWithoutExtension(path) + " icons", "") : DefaultFolder(path);
             var targets = _chosen.ToArray();
             var options = Options();
             var written = await Task.Run(() => IconSets.Generate(source, folder, targets, options));

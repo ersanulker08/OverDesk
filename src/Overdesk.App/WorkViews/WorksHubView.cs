@@ -16,6 +16,8 @@ internal sealed class WorksHubView : UserControl
     private readonly TextBox _search = new() { Classes = { "search" }, PlaceholderText = "Search your works…", Margin = new Thickness(12, 0, 8, 0) };
     private readonly WrapPanel _cards = new() { Margin = new Thickness(4, 0, 0, 0) };
     private readonly TextBlock _noMatch = new() { Text = "Nothing matches your search.", Classes = { "faint" }, Margin = new Thickness(8, 8), IsVisible = false };
+    private readonly Avalonia.Threading.DispatcherTimer _refresh = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    private readonly StackPanel _trash = new() { Margin = new Thickness(4, 26, 0, 0), Spacing = 4 };
     private WorkService? _svc;
     private bool _gallery;
 
@@ -25,6 +27,11 @@ internal sealed class WorksHubView : UserControl
         {
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
             Content = _column,
+        };
+        _refresh.Tick += (_, _) =>
+        {
+            _refresh.Stop();
+            if (IsVisible && !_gallery) Rebuild(keepSearch: true);
         };
         _search.TextChanged += (_, _) =>
         {
@@ -37,8 +44,10 @@ internal sealed class WorksHubView : UserControl
         _svc = svc;
         svc.Library.Changed += (work, _) =>
         {
-            // Edits made while this page is hidden are shown when it comes back; list changes refresh at once.
-            if (work is null && IsVisible) Avalonia.Threading.Dispatcher.UIThread.Post(() => Rebuild(keepSearch: true));
+            // Edits made while this page is hidden are shown when it comes back; visible ones refresh after a short pause.
+            if (!IsVisible || _gallery) return;
+            _refresh.Stop();
+            _refresh.Start();
         };
         Rebuild();
     }
@@ -102,6 +111,40 @@ internal sealed class WorksHubView : UserControl
         _column.Children.Add(_cards);
         _column.Children.Add(_noMatch);
         RefreshCards();
+        BuildTrash(svc);
+    }
+
+    private void BuildTrash(WorkService svc)
+    {
+        _trash.Children.Clear();
+        if (svc.Library.LoadErrors.Count > 0)
+            _column.Children.Add(new TextBlock
+            {
+                Text = $"{svc.Library.LoadErrors.Count} work file{(svc.Library.LoadErrors.Count == 1 ? "" : "s")} could not be read and {(svc.Library.LoadErrors.Count == 1 ? "was" : "were")} skipped: {svc.Library.Folder}",
+                Classes = { "faint" }, FontSize = 11.5, Margin = new Thickness(4, 20, 0, 0), TextWrapping = TextWrapping.Wrap,
+            });
+        var trashed = svc.Library.ListTrash();
+        if (trashed.Count == 0) return;
+        _trash.Children.Add(new TextBlock { Text = "RECENTLY DELETED", Classes = { "eyebrow" }, Margin = new Thickness(0, 0, 0, 4) });
+        foreach (var item in trashed.Take(8))
+        {
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto") };
+            row.Children.Add(new TextBlock
+            {
+                Text = string.IsNullOrWhiteSpace(item.Title) ? "Untitled" : item.Title, Classes = { "muted" }, FontSize = 12.5,
+                VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+            var when = new TextBlock { Text = WorkService.Ago(item.Deleted), Classes = { "faint" }, FontSize = 11.5, Margin = new Thickness(12, 0), VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(when, 1);
+            row.Children.Add(when);
+            var restore = new Button { Content = "Restore", Classes = { "ghost" }, Padding = new Thickness(10, 3) };
+            var file = item.File;
+            restore.Click += (_, _) => svc.Library.Restore(file);
+            Grid.SetColumn(restore, 2);
+            row.Children.Add(restore);
+            _trash.Children.Add(row);
+        }
+        _column.Children.Add(_trash);
     }
 
     private void RefreshCards()

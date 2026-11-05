@@ -240,7 +240,7 @@ public class WorkLibraryTests
     public void DeleteRemovesFileAndPendingSave()
     {
         using var temp = new TempFolder();
-        var library = new WorkLibrary(temp.Path);
+        var library = new WorkLibrary(System.IO.Path.Combine(temp.Path, "works"));
         var work = library.Create(WorkTemplates.All[0]);
         library.Touch(work);
 
@@ -248,7 +248,7 @@ public class WorkLibraryTests
         library.FlushDirty();
 
         Assert.False(library.HasDirty);
-        Assert.Empty(Directory.GetFiles(temp.Path, "*.json"));
+        Assert.Empty(Directory.GetFiles(library.Folder, "*.json"));
     }
 
     [Fact]

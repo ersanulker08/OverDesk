@@ -205,8 +205,8 @@ internal static class WorkCards
                 Spacing = 10, Width = 230,
                 Children =
                 {
-                    new TextBlock { Text = $"Delete “{(string.IsNullOrWhiteSpace(work.Title) ? "Untitled" : work.Title)}” forever?", TextWrapping = TextWrapping.Wrap, FontWeight = FontWeight.SemiBold },
-                    new TextBlock { Text = "This cannot be undone.", Classes = { "muted" }, FontSize = 12 },
+                    new TextBlock { Text = $"Delete “{(string.IsNullOrWhiteSpace(work.Title) ? "Untitled" : work.Title)}”?", TextWrapping = TextWrapping.Wrap, FontWeight = FontWeight.SemiBold },
+                    new TextBlock { Text = "You can restore it from Recently deleted in the works hub.", Classes = { "muted" }, FontSize = 12 },
                     new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { yes, no } },
                 },
             },
@@ -231,8 +231,6 @@ internal static class WorkCards
     {
         if (string.IsNullOrWhiteSpace(query)) return true;
         var q = query.Trim();
-        return work.Title.Contains(q, StringComparison.OrdinalIgnoreCase)
-               || work.Summary.Contains(q, StringComparison.OrdinalIgnoreCase)
-               || WorkTemplates.Find(work.Template).Name.Contains(q, StringComparison.OrdinalIgnoreCase);
+        return work.ContainsText(q) || WorkTemplates.Find(work.Template).Name.Contains(q, StringComparison.OrdinalIgnoreCase);
     }
 }

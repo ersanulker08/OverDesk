@@ -1,12 +1,15 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Overdesk.App.Controls;
 using Overdesk.App.Services;
 using Overdesk.App.Theme;
@@ -48,6 +51,12 @@ internal sealed class WorkEditorView : UserControl
     private double _size = 15;
     private bool _building;
     private bool _confirmDelete;
+    private IDisposable? _deleteDisarm;
+    private readonly BlockHistory _history = new();
+    private readonly List<Action> _sync = new();
+    private readonly DispatcherTimer _lookTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
+    private bool _rebuildAfterLook;
+    private string _signature = "";
 
     public WorkEditorView(WorkService svc, Work work, bool compact)
     {
@@ -156,6 +165,13 @@ internal sealed class WorkEditorView : UserControl
             if (_work.Blocks.Count > 0) FocusBlock(_work.Blocks[0].Id, atEnd: false);
         };
 
+        _lookTimer.Tick += (_, _) =>
+        {
+            _lookTimer.Stop();
+            CommitLook();
+        };
+        AddHandler(KeyDownEvent, OnUndoKey, RoutingStrategies.Tunnel);
+
         Content = _root;
         ApplyLook();
         Reload();
@@ -174,6 +190,7 @@ internal sealed class WorkEditorView : UserControl
         base.OnAttachedToVisualTree(e);
         _svc.Library.Changed += OnLibraryChanged;
         _svc.Saved += OnSaved;
+        _svc.SaveFailed += OnSaveFailed;
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -181,10 +198,47 @@ internal sealed class WorkEditorView : UserControl
         base.OnDetachedFromVisualTree(e);
         _svc.Library.Changed -= OnLibraryChanged;
         _svc.Saved -= OnSaved;
+        _svc.SaveFailed -= OnSaveFailed;
+        if (_lookTimer.IsEnabled)
+        {
+            _lookTimer.Stop();
+            CommitLook();
+        }
         _svc.Flush();
     }
 
     private void OnSaved() => Dispatcher.UIThread.Post(() => _saved.Text = "Saved");
+
+    private void OnSaveFailed(string reason) => Dispatcher.UIThread.Post(() => _saved.Text = "Could not save: " + reason);
+
+    private void CommitLook()
+    {
+        Edited();
+        ApplyLook();
+        if (_rebuildAfterLook) RebuildRows(null);
+        _rebuildAfterLook = false;
+    }
+
+    private string Signature()
+        => string.Join(',', _work.Blocks.Select(b => $"{b.Id}:{b.Kind}:{b.Level}"))
+           + $"|{_work.Color}|{_work.Icon}|{_work.TitleFont}|{_work.BodyFont}|{_work.FontSize}|{_work.LineSpacing}|{_work.PageWidth}";
+
+    /// <summary>Another view edited the same work: refresh the boxes in place unless rows or look changed.</summary>
+    private void SyncFromModel()
+    {
+        if (Signature() != _signature)
+        {
+            ApplyLook();
+            Reload();
+            return;
+        }
+        _building = true;
+        if (_titleBox.Text != _work.Title) _titleBox.Text = _work.Title;
+        foreach (var sync in _sync) sync();
+        _building = false;
+        UpdateMeta();
+        if (_drawer.IsVisible) BuildDrawer();
+    }
 
     private void OnLibraryChanged(Work? work, object? sender)
     {
@@ -194,7 +248,7 @@ internal sealed class WorkEditorView : UserControl
             if (_svc.Library.Find(_work.Id) is null) Dispatcher.UIThread.Post(() => Deleted?.Invoke());
             return;
         }
-        if (work == _work) Dispatcher.UIThread.Post(() => { ApplyLook(); Reload(); });
+        if (work == _work) Dispatcher.UIThread.Post(SyncFromModel);
     }
 
     // ------------------------------------------------------------------ look
@@ -208,6 +262,11 @@ internal sealed class WorkEditorView : UserControl
         _bodyFont = _svc.BodyFont(_work);
         _size = _svc.FontSize(_work);
         _titleBox.FontFamily = _svc.TitleFont(_work);
+        ApplyWidth();
+    }
+
+    private void ApplyWidth()
+    {
         _page.MaxWidth = _compact ? double.PositiveInfinity : Math.Clamp(_work.PageWidth, 380, 1400);
         _headerHost.MaxWidth = _page.MaxWidth;
         _headerHost.HorizontalAlignment = _page.HorizontalAlignment = HorizontalAlignment.Stretch; // Stretch + MaxWidth centers the column
@@ -266,7 +325,9 @@ internal sealed class WorkEditorView : UserControl
     {
         _rows.Children.Clear();
         _editors.Clear();
+        _sync.Clear();
         foreach (var block in _work.Blocks.ToList()) _rows.Children.Add(BuildRow(block));
+        _signature = Signature();
         UpdateMeta();
         if (focusId is not null) FocusBlock(focusId, atEnd);
     }
@@ -327,31 +388,109 @@ internal sealed class WorkEditorView : UserControl
             set(box.Text ?? "");
             Edited();
         };
-        box.KeyDown += (_, e) => OnRowKey(block, box, e, multiline);
+        box.AddHandler(KeyDownEvent, (_, e) => OnRowKey(block, box, e, multiline), RoutingStrategies.Tunnel);
+        Func<string> get = register ? () => block.Text : () => block.Value;
+        _sync.Add(() =>
+        {
+            var current = get();
+            if ((box.Text ?? "") != current) box.Text = current;
+        });
         if (register) _editors[block.Id] = box;
         return box;
+    }
+
+    private void Structural() => _history.Push(_work.Blocks);
+
+    private void OnUndoKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Z || e.KeyModifiers is not (KeyModifiers.Meta or KeyModifiers.Control)) return;
+        if (e.Source is TextBox { CanUndo: true } || _history.Pop() is not { } blocks) return;
+        e.Handled = true;
+        _work.Blocks.Clear();
+        _work.Blocks.AddRange(blocks);
+        Edited();
+        RebuildRows(null);
+    }
+
+    private static bool OnEdgeLine(TextBox box, bool first)
+    {
+        if (box.GetVisualDescendants().OfType<TextPresenter>().FirstOrDefault()?.TextLayout is { } layout && layout.TextLines.Count > 0)
+        {
+            var line = layout.GetLineIndexFromCharacterIndex(box.CaretIndex, false);
+            return first ? line <= 0 : line >= layout.TextLines.Count - 1;
+        }
+        return first ? box.CaretIndex == 0 : box.CaretIndex == (box.Text?.Length ?? 0);
+    }
+
+    private void MoveFocus(int index, int step)
+    {
+        for (var i = index + step; i >= 0 && i < _work.Blocks.Count; i += step)
+        {
+            var id = _work.Blocks[i].Id;
+            if (!_editors.ContainsKey(id)) continue;
+            FocusBlock(id, atEnd: step < 0);
+            return;
+        }
     }
 
     private void OnRowKey(WorkBlock block, TextBox box, KeyEventArgs e, bool multiline)
     {
         var index = _work.Blocks.IndexOf(block);
         if (index < 0) return;
-        if (e.Key == Key.Enter && !multiline && e.KeyModifiers == KeyModifiers.None && block.Kind is not (BlockKind.Field or BlockKind.Toggle or BlockKind.Number))
+        var mods = e.KeyModifiers;
+        var command = (mods & (KeyModifiers.Meta | KeyModifiers.Control)) != 0;
+        var textRow = block.Kind is not (BlockKind.Field or BlockKind.Toggle or BlockKind.Number);
+        var text = box.Text ?? "";
+
+        if (e.Key == Key.Enter && textRow)
         {
-            e.Handled = true;
-            var next = new WorkBlock { Kind = block.Kind is BlockKind.Todo or BlockKind.Bullet ? block.Kind : BlockKind.Text };
-            _work.Blocks.Insert(index + 1, next);
-            Edited();
-            RebuildRows(next.Id, atEnd: false);
+            // Paragraphs and quotes keep plain Enter for new lines: Shift/Cmd/Ctrl+Enter, or Enter on a blank last line, adds a row.
+            var trailingBlank = multiline && mods == KeyModifiers.None && box.CaretIndex == text.Length && text.EndsWith('\n');
+            if (!multiline || mods != KeyModifiers.None || trailingBlank)
+            {
+                e.Handled = true;
+                Structural();
+                if (trailingBlank) block.Text = text[..^1];
+                var next = new WorkBlock { Kind = block.Kind is BlockKind.Todo or BlockKind.Bullet ? block.Kind : BlockKind.Text };
+                _work.Blocks.Insert(index + 1, next);
+                Edited();
+                RebuildRows(next.Id, atEnd: false);
+                return;
+            }
         }
-        else if (e.Key == Key.Back && string.IsNullOrEmpty(box.Text) && box.CaretIndex == 0 && _work.Blocks.Count > 1
-                 && block.Kind is BlockKind.Todo or BlockKind.Bullet or BlockKind.Text or BlockKind.Quote or BlockKind.Heading)
+        if (e.Key == Key.Back && string.IsNullOrEmpty(box.Text) && box.CaretIndex == 0 && _work.Blocks.Count > 1
+            && block.Kind is BlockKind.Todo or BlockKind.Bullet or BlockKind.Text or BlockKind.Quote or BlockKind.Heading)
         {
             e.Handled = true;
+            Structural();
             _work.Blocks.RemoveAt(index);
             Edited();
             RebuildRows(_work.Blocks[Math.Max(index - 1, 0)].Id);
         }
+        else if (e.Key is Key.Up or Key.Down && (mods & KeyModifiers.Alt) != 0 && !command)
+        {
+            e.Handled = true;
+            Move(block, e.Key == Key.Up ? -1 : 1);
+        }
+        else if (e.Key is Key.Up or Key.Down && mods == KeyModifiers.None && OnEdgeLine(box, e.Key == Key.Up))
+        {
+            e.Handled = true;
+            MoveFocus(index, e.Key == Key.Up ? -1 : 1);
+        }
+        else if (e.Key == Key.D && command && (mods & KeyModifiers.Shift) != 0)
+        {
+            e.Handled = true;
+            Duplicate(block);
+        }
+    }
+
+    private void Duplicate(WorkBlock block)
+    {
+        Structural();
+        var copy = block.Clone();
+        _work.Blocks.Insert(_work.Blocks.IndexOf(block) + 1, copy);
+        Edited();
+        RebuildRows(copy.Id);
     }
 
     private Control BuildHeading(WorkBlock block)
@@ -400,8 +539,14 @@ internal sealed class WorkEditorView : UserControl
         var box = Edit(block, block.Text, t => block.Text = t, false, placeholder: "To-do");
         void Style() => box.Opacity = block.Checked ? 0.42 : 1;
         Style();
+        _sync.Add(() =>
+        {
+            check.IsChecked = block.Checked;
+            Style();
+        });
         check.IsCheckedChanged += (_, _) =>
         {
+            if (_building) return;
             block.Checked = check.IsChecked == true;
             Style();
             Edited();
@@ -418,8 +563,10 @@ internal sealed class WorkEditorView : UserControl
         label.FontFamily = _bodyFont;
         grid.Children.Add(label);
         var toggle = new ToggleSwitch { IsChecked = block.Checked, OnContent = "true", OffContent = "false", MinWidth = 0, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        _sync.Add(() => toggle.IsChecked = block.Checked);
         toggle.IsCheckedChanged += (_, _) =>
         {
+            if (_building) return;
             block.Checked = toggle.IsChecked == true;
             Edited();
         };
@@ -451,6 +598,7 @@ internal sealed class WorkEditorView : UserControl
             Increment = 1, Width = 140, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
             FontFamily = _bodyFont,
         };
+        _sync.Add(() => number.Value = (decimal)block.Number);
         number.ValueChanged += (_, e) =>
         {
             if (_building) return;
@@ -480,6 +628,7 @@ internal sealed class WorkEditorView : UserControl
             button.Click += (_, _) =>
             {
                 var block = NewBlock(k);
+                Structural();
                 _work.Blocks.Add(block);
                 Edited();
                 RebuildRows(block.Id, atEnd: false);
@@ -521,6 +670,7 @@ internal sealed class WorkEditorView : UserControl
                 var item = new MenuItem { Header = name };
                 item.Click += (_, _) =>
                 {
+                    Structural();
                     block.Level = l;
                     Edited();
                     RebuildRows(block.Id);
@@ -531,15 +681,10 @@ internal sealed class WorkEditorView : UserControl
         }
 
         items.Add(new Separator());
-        items.Add(Entry("Duplicate", "IconCopy", () =>
-        {
-            var copy = block.Clone();
-            _work.Blocks.Insert(index + 1, copy);
-            Edited();
-            RebuildRows(copy.Id);
-        }));
+        items.Add(Entry("Duplicate", "IconCopy", () => Duplicate(block)));
         var delete = Entry("Delete row", "IconTrash", () =>
         {
+            Structural();
             _work.Blocks.Remove(block);
             Edited();
             RebuildRows(null);
@@ -554,6 +699,7 @@ internal sealed class WorkEditorView : UserControl
         var index = _work.Blocks.IndexOf(block);
         var target = index + delta;
         if (index < 0 || target < 0 || target >= _work.Blocks.Count) return;
+        Structural();
         _work.Blocks.RemoveAt(index);
         _work.Blocks.Insert(target, block);
         Edited();
@@ -562,9 +708,8 @@ internal sealed class WorkEditorView : UserControl
 
     private void Convert(WorkBlock block, BlockKind kind)
     {
-        // Keep the text when moving between text-like rows; a Field keeps its label as text.
-        block.Kind = kind;
-        if (kind == BlockKind.Heading && block.Level is < 1 or > 3) block.Level = 2;
+        Structural();
+        block.ConvertTo(kind);
         Edited();
         RebuildRows(block.Id);
     }
@@ -641,7 +786,7 @@ internal sealed class WorkEditorView : UserControl
             Entry("Delete…", "IconTrash", () =>
             {
                 if (!_drawer.IsVisible) ToggleDrawer();
-                _confirmDelete = true;
+                ArmDelete();
                 BuildDrawer();
             }),
         };
@@ -718,8 +863,27 @@ internal sealed class WorkEditorView : UserControl
     private void ToggleDrawer()
     {
         _drawer.IsVisible = !_drawer.IsVisible;
+        if (!_drawer.IsVisible) DisarmDelete();
         _settingsButton.Classes.Set("selected", _drawer.IsVisible);
         if (_drawer.IsVisible) BuildDrawer();
+    }
+
+    private void ArmDelete()
+    {
+        _deleteDisarm?.Dispose();
+        _confirmDelete = true;
+        _deleteDisarm = DispatcherTimer.RunOnce(() =>
+        {
+            _confirmDelete = false;
+            if (_drawer.IsVisible) BuildDrawer();
+        }, TimeSpan.FromSeconds(5));
+    }
+
+    private void DisarmDelete()
+    {
+        _deleteDisarm?.Dispose();
+        _deleteDisarm = null;
+        _confirmDelete = false;
     }
 
     private void BuildDrawer()
@@ -777,10 +941,10 @@ internal sealed class WorkEditorView : UserControl
         panel.Children.Add(FontPicker(_work.BodyFont, _svc.Settings.WorkBodyFont, name => _work.BodyFont = name));
 
         panel.Children.Add(Eyebrow("TEXT"));
-        panel.Children.Add(SliderRow("Size", 11, 32, _svc.FontSize(_work), v => _work.FontSize = Math.Round(v), "0", () => _work.FontSize = 0));
-        panel.Children.Add(SliderRow("Line spacing", 1.0, 2.4, _work.LineSpacing, v => _work.LineSpacing = Math.Round(v, 2), "0.0#", null));
+        panel.Children.Add(SliderRow("Size", 11, 32, _svc.FontSize(_work), v => _work.FontSize = Math.Round(v), "0", () => _work.FontSize = 0, rebuildRows: true));
+        panel.Children.Add(SliderRow("Line spacing", 1.0, 2.4, _work.LineSpacing, v => _work.LineSpacing = Math.Round(v, 2), "0.0#", null, rebuildRows: true));
         if (!_compact)
-            panel.Children.Add(SliderRow("Page width", 420, 1200, _work.PageWidth, v => _work.PageWidth = Math.Round(v), "0", null));
+            panel.Children.Add(SliderRow("Page width", 420, 1200, _work.PageWidth, v => _work.PageWidth = Math.Round(v), "0", null, rebuildRows: false));
 
         panel.Children.Add(Eyebrow("THIS WORK"));
         var pin = new ToggleSwitch { Content = "Pin to the top", IsChecked = _work.Pinned };
@@ -796,7 +960,7 @@ internal sealed class WorkEditorView : UserControl
 
         var delete = new Button
         {
-            Content = _confirmDelete ? "Click again to delete forever" : "Delete this work",
+            Content = _confirmDelete ? "Click again to delete" : "Delete this work",
             Classes = { "ghost" }, HorizontalAlignment = HorizontalAlignment.Stretch,
             Foreground = Res.Brush("DangerBrush"),
         };
@@ -804,11 +968,17 @@ internal sealed class WorkEditorView : UserControl
         {
             if (!_confirmDelete)
             {
-                _confirmDelete = true;
+                ArmDelete();
                 BuildDrawer();
                 return;
             }
-            _svc.Library.Delete(_work);
+            DisarmDelete();
+            _lookTimer.Stop();
+            if (_svc.Library.Delete(_work) is null)
+            {
+                _saved.Text = "Could not delete: the backup copy could not be written";
+                return;
+            }
             Deleted?.Invoke();
         };
         panel.Children.Add(delete);
@@ -841,25 +1011,44 @@ internal sealed class WorkEditorView : UserControl
         return picker;
     }
 
-    private Control SliderRow(string label, double min, double max, double value, Action<double> set, string format, Action? reset)
+    private Control SliderRow(string label, double min, double max, double value, Action<double> set, string format, Action? reset, bool rebuildRows)
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), RowDefinitions = new RowDefinitions("Auto,Auto") };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), RowDefinitions = new RowDefinitions("Auto,Auto") };
         grid.Children.Add(Label(label));
-        var number = new TextBlock { FontSize = 12, Classes = { "muted" }, Text = value.ToString(format, System.Globalization.CultureInfo.InvariantCulture) };
+        var number = new TextBlock { FontSize = 12, Classes = { "muted" }, Text = value.ToString(format, System.Globalization.CultureInfo.InvariantCulture), VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(number, 1);
         grid.Children.Add(number);
         var slider = new Slider { Minimum = min, Maximum = max, Value = Math.Clamp(value, min, max) };
         Grid.SetRow(slider, 1);
-        Grid.SetColumnSpan(slider, 2);
+        Grid.SetColumnSpan(slider, 3);
         grid.Children.Add(slider);
+        Button? back = null;
+        if (reset is not null)
+        {
+            back = new Button { Content = "Default", Classes = { "ghost" }, Padding = new Thickness(8, 1), Margin = new Thickness(8, 0, 0, 0), FontSize = 11, IsVisible = _work.FontSize != 0 };
+            back.Click += (_, _) =>
+            {
+                reset();
+                _lookTimer.Stop();
+                Edited();
+                ApplyLook();
+                RebuildRows(null);
+                BuildDrawer();
+            };
+            Grid.SetColumn(back, 2);
+            grid.Children.Add(back);
+        }
         slider.PropertyChanged += (_, e) =>
         {
             if (e.Property != RangeBase.ValueProperty || _building) return;
             set(slider.Value);
             number.Text = slider.Value.ToString(format, System.Globalization.CultureInfo.InvariantCulture);
-            Edited();
-            ApplyLook();
-            RebuildRows(null);
+            if (back is not null) back.IsVisible = true;
+            if (!rebuildRows) ApplyWidth();
+            _rebuildAfterLook |= rebuildRows;
+            _saved.Text = "Saving…";
+            _lookTimer.Stop();
+            _lookTimer.Start();
         };
         return grid;
     }

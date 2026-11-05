@@ -17,6 +17,8 @@ internal sealed class WorksPanelView : UserControl
     private readonly Border _host = new();
     private readonly TextBox _search = new() { Classes = { "search" }, PlaceholderText = "Search…", Margin = new Thickness(8, 0) };
     private readonly StackPanel _list = new() { Spacing = 2 };
+    private readonly DispatcherTimer _refresh = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    private bool _refreshList;
     private Work? _editing;
     private bool _gallery;
 
@@ -25,10 +27,20 @@ internal sealed class WorksPanelView : UserControl
         _svc = svc;
         Content = _host;
         _search.TextChanged += (_, _) => FillList();
+        _refresh.Tick += (_, _) =>
+        {
+            _refresh.Stop();
+            if (_editing is not null || _gallery) return;
+            if (_refreshList) Show();
+            else FillList();
+        };
         svc.Library.Changed += (work, _) =>
         {
-            if (work is null && _editing is null && !_gallery) Dispatcher.UIThread.Post(Show);
-            else if (work is not null && _editing is null && !_gallery) Dispatcher.UIThread.Post(FillList);
+            if (_editing is not null || _gallery) return;
+            if (work is null) _refreshList = true;
+            else if (!_refresh.IsEnabled) _refreshList = false;
+            _refresh.Stop();
+            _refresh.Start();
         };
         svc.Library.Changed += (work, _) =>
         {
@@ -53,6 +65,7 @@ internal sealed class WorksPanelView : UserControl
 
     private void Show()
     {
+        _refreshList = false;
         if (_editing is { } work)
         {
             var editor = new WorkEditorView(_svc, work, compact: true);

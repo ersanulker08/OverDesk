@@ -1,12 +1,17 @@
+using System.Buffers.Binary;
 using System.Diagnostics;
+using System.Net;
 using System.Runtime.InteropServices;
 using Overdesk.Core.Platform;
 
 namespace Overdesk.Platform.Windows;
 
-/// <summary>CPU through GetSystemTimes, memory through GlobalMemoryStatusEx, listening ports through netstat.</summary>
+/// <summary>CPU through GetSystemTimes, memory through GlobalMemoryStatusEx, listening ports through GetExtendedTcpTable.</summary>
 public sealed class Win32SystemMonitor : ISystemMonitor
 {
+    private const int AfInet = 2, AfInet6 = 23, TcpTableOwnerPidListener = 3;
+    private const uint ErrorInsufficientBuffer = 122;
+
     private (ulong Idle, ulong Kernel, ulong User)? _last;
     private readonly WinAccelerators _accelerators = new();
 
@@ -55,31 +60,37 @@ public sealed class Win32SystemMonitor : ISystemMonitor
         };
     }
 
-    public async Task<IReadOnlyList<ListeningPort>> GetListeningPortsAsync(CancellationToken cancellation)
+    public Task<IReadOnlyList<ListeningPort>> GetListeningPortsAsync(CancellationToken cancellation)
     {
-        var info = new ProcessStartInfo("netstat", "-ano -p TCP")
-        {
-            RedirectStandardOutput = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        using var process = Process.Start(info);
-        if (process is null) return Array.Empty<ListeningPort>();
-        var output = await process.StandardOutput.ReadToEndAsync(cancellation);
-        await process.WaitForExitAsync(cancellation);
-
-        // "  TCP    0.0.0.0:3000    0.0.0.0:0    LISTENING    1234"
         var ports = new Dictionary<int, ListeningPort>();
-        foreach (var line in output.Split('\n'))
+        ReadListeners(AfInet, ports);
+        ReadListeners(AfInet6, ports); // dual-stack servers (Node's listen(3000)) only show up here
+        return Task.FromResult<IReadOnlyList<ListeningPort>>(ports.Values.OrderBy(p => p.Port).ToList());
+    }
+
+    private static void ReadListeners(int family, Dictionary<int, ListeningPort> ports)
+    {
+        byte[]? table = null;
+        var size = 0;
+        uint result;
+        while ((result = GetExtendedTcpTable(table, ref size, false, family, TcpTableOwnerPidListener, 0)) != 0)
         {
-            var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 5 || parts[0] != "TCP" || parts[3] != "LISTENING") continue;
-            var colon = parts[1].LastIndexOf(':');
-            if (colon < 0 || !int.TryParse(parts[1][(colon + 1)..], out var port) || ports.ContainsKey(port)) continue;
-            int.TryParse(parts[4], out var pid);
-            ports[port] = new ListeningPort(port, parts[1][..colon], pid, ProcessName(pid));
+            if (result != ErrorInsufficientBuffer) return;
+            table = new byte[size]; // the table can grow between the calls, so this repeats until it fits
         }
-        return ports.Values.OrderBy(p => p.Port).ToList();
+        if (table is null) return;
+
+        // MIB_TCPROW_OWNER_PID and MIB_TCP6ROW_OWNER_PID, which follow a 4-byte row count.
+        var (rowSize, addressAt, addressSize, portAt, pidAt) = family == AfInet6 ? (56, 0, 16, 20, 52) : (24, 4, 4, 8, 20);
+        var count = BinaryPrimitives.ReadInt32LittleEndian(table);
+        for (var i = 0; i < count; i++)
+        {
+            var row = table.AsSpan(4 + i * rowSize, rowSize);
+            var port = BinaryPrimitives.ReadUInt16BigEndian(row[portAt..]);
+            if (ports.ContainsKey(port)) continue;
+            var pid = BinaryPrimitives.ReadInt32LittleEndian(row[pidAt..]);
+            ports[port] = new ListeningPort(port, new IPAddress(row.Slice(addressAt, addressSize)).ToString(), pid, ProcessName(pid));
+        }
     }
 
     private static string ProcessName(int pid)
@@ -115,4 +126,6 @@ public sealed class Win32SystemMonitor : ISystemMonitor
     [DllImport("kernel32.dll")]
     private static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS status);
 
+    [DllImport("iphlpapi.dll")]
+    private static extern uint GetExtendedTcpTable(byte[]? table, ref int size, bool sorted, int family, int tableClass, uint reserved);
 }

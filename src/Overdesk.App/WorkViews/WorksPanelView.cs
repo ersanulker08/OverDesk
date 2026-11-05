@@ -42,6 +42,10 @@ internal sealed class WorksPanelView : UserControl
             _refresh.Stop();
             _refresh.Start();
         };
+        svc.DefaultsChanged += () =>
+        {
+            if (_editing is null) Show(); // the header and the rows carry the default title font
+        };
         svc.Library.Changed += (work, _) =>
         {
             // The open work was deleted elsewhere.
@@ -63,12 +67,13 @@ internal sealed class WorksPanelView : UserControl
         Show();
     }
 
-    private void Show()
+    private void Show(bool focusTitle = false)
     {
         _refreshList = false;
         if (_editing is { } work)
         {
             var editor = new WorkEditorView(_svc, work, compact: true);
+            if (focusTitle) editor.FocusTitle();
             editor.BackRequested += () =>
             {
                 _editing = null;
@@ -181,7 +186,7 @@ internal sealed class WorksPanelView : UserControl
                 {
                     _editing = _svc.Library.Create(t);
                     _gallery = false;
-                    Show();
+                    Show(focusTitle: true);
                 };
                 stack.Children.Add(button);
             }

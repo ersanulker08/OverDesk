@@ -530,9 +530,8 @@ public partial class MainWindow
             {
                 if (FindWork(a, out var work) is { } error) return error;
                 _works.Flush();
-                if (_works.Library.Delete(work!) is not { } trash)
+                if (_works.Delete(work!) is not { } trash)
                     return AiToolResult.Error("Could not keep a backup copy, so the work was not deleted.");
-                ShowToast($"AI deleted “{work!.Title}” (a copy is in works-trash)", "IconTrash");
                 return new AiToolResult($"Deleted “{work!.Title}”. A backup is in {trash}.");
             }),
         };

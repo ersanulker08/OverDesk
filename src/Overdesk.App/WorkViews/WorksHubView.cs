@@ -49,6 +49,10 @@ internal sealed class WorksHubView : UserControl
             _refresh.Stop();
             _refresh.Start();
         };
+        svc.DefaultsChanged += () =>
+        {
+            if (!_gallery) Rebuild(keepSearch: true);
+        };
         Rebuild();
     }
 
@@ -155,7 +159,7 @@ internal sealed class WorksHubView : UserControl
         var works = svc.Library.Works.Where(w => WorkCards.Matches(w, _search.Text)).ToList();
         if (string.IsNullOrWhiteSpace(_search.Text)) _cards.Children.Add(WorkCards.NewCard(ShowGallery));
         foreach (var work in works)
-            _cards.Children.Add(WorkCards.WorkCard(svc, work, svc.OpenInTab, (w, anchor) => WorkCards.ShowMenu(svc, w, anchor)));
+            _cards.Children.Add(WorkCards.WorkCard(svc, work, w => svc.OpenInTab(w), (w, anchor) => WorkCards.ShowMenu(svc, w, anchor)));
         _noMatch.IsVisible = works.Count == 0 && svc.Library.Works.Count > 0;
     }
 
@@ -211,7 +215,7 @@ internal sealed class WorksHubView : UserControl
                 {
                     var work = svc.Library.Create(t);
                     _gallery = false;
-                    svc.OpenInTab(work);
+                    svc.OpenInTab(work, focusTitle: true);
                 }));
             _column.Children.Add(wrap);
         }

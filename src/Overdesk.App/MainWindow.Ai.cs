@@ -132,8 +132,8 @@ public partial class MainWindow
 
     private void Announce(string title, string text)
     {
-        if (!IsActive) _desktop.Notify("OverDesk · " + title, text);
-        else if (!AiPanelVisible) ShowToast($"{title}: {text}", "IconSparkle");
+        if (!IsActive && _desktop.Notify("OverDesk · " + title, text)) return;
+        if (!IsActive || !AiPanelVisible) ShowToast($"{title}: {text}", "IconSparkle");
     }
 
     /// <summary>A conversation kept as a work: headings for who spoke, the answers as text rows, opened in a tab.</summary>

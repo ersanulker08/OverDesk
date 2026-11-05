@@ -15,11 +15,15 @@ public partial class MainWindow
     private WorksPanelView? _worksPanel;
     private WorkEditorView? _workEditor;
 
+    /// <summary>One editor per open work tab, kept while other tabs are shown so scroll, caret and drawer survive.</summary>
+    private readonly Dictionary<string, WorkEditorView> _workEditors = new();
+
     private void InitializeWorks()
     {
         _works = new WorkService(Path.Combine(_store.Directory, "works"), _settings);
         _works.TabRequested += OpenWorkTab;
         _works.PanelRequested += OpenWorkInPanel;
+        _works.Deleted += OnWorkDeleted;
         _works.AiRequested += AskAiAboutWork;
         _works.AiCreateRequested += () =>
         {
@@ -40,13 +44,29 @@ public partial class MainWindow
         });
     }
 
-    private void OpenWorkTab(Work work)
+    private void OpenWorkTab(Work work) => OpenWorkTab(work, focusTitle: false);
+
+    private void OpenWorkTab(Work work, bool focusTitle)
     {
         if (OverlayOpen) return;
         var path = HostedTab.WorkPath(work.Id);
         var tab = _tabs.Tabs.FirstOrDefault(t => t.ProgramPath == path) ?? _tabs.Add(path, activate: false, title: work.Title);
         tab.Title = TabTitle(work);
         _tabs.Activate(tab);
+        if (focusTitle && _workEditor?.Work == work) _workEditor.FocusTitle();
+    }
+
+    /// <summary>Deleting is undone from the toast: the trash copy comes back and opens again.</summary>
+    private void OnWorkDeleted(Work work, string trashFile)
+        => ShowToast($"Deleted “{TabTitle(work)}”", "IconTrash", "Undo", () =>
+        {
+            if (_works.Library.Restore(trashFile) is { } restored) OpenWorkTab(restored);
+            else ShowToast("Could not bring the work back; look in Recently deleted", "IconAlert");
+        });
+
+    private void ForgetWorkEditor(HostedTab tab)
+    {
+        if (tab is { IsWork: true } && tab.WorkId is { } id) _workEditors.Remove(id);
     }
 
     /// <summary>
@@ -116,8 +136,13 @@ public partial class MainWindow
         {
             if (_workEditor?.Work != work || !WorkPage.IsVisible)
             {
-                _workEditor = new WorkEditorView(_works, work, compact: false);
-                _workEditor.Deleted += () => { if (_tabs.Tabs.FirstOrDefault(t => t.WorkId == work.Id) is { } t) CloseTab(t); };
+                if (!_workEditors.TryGetValue(work.Id, out var editor) || editor.Work != work)
+                {
+                    editor = new WorkEditorView(_works, work, compact: false);
+                    editor.Deleted += () => { if (_tabs.Tabs.FirstOrDefault(t => t.WorkId == work.Id) is { } t) CloseTab(t); };
+                    _workEditors[work.Id] = editor;
+                }
+                _workEditor = editor;
                 WorkPage.Child = _workEditor;
             }
             WorkPage.IsVisible = true;
@@ -160,6 +185,14 @@ public partial class MainWindow
     }
 
     internal void DevOpenWorkInPanel(int index) => OpenWorkInPanel(_works.Library.Works[index]);
+
+    internal void DevOpenWork(string id) => OpenWorkTab(_works.Library.Find(id)!);
+
+    internal WorkEditorView? DevWorkEditor() => WorkPage.IsVisible ? _workEditor : null;
+
+    internal void DevDeleteWork(int index) => _works.Delete(_works.Library.Works[index]);
+
+    internal string DevToastText() => ToastHost.IsVisible ? $"{ToastText.Text} [{ToastAction.Content}]" : "none";
 
     internal void DevOpenWorksList()
     {

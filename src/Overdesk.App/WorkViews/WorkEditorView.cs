@@ -56,6 +56,7 @@ internal sealed class WorkEditorView : UserControl
     private readonly List<Action> _sync = new();
     private readonly DispatcherTimer _lookTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private bool _rebuildAfterLook;
+    private bool _shownBefore;
     private string _signature = "";
 
     public WorkEditorView(WorkService svc, Work work, bool compact)
@@ -182,6 +183,7 @@ internal sealed class WorkEditorView : UserControl
     public event Action? Deleted;
 
     public Work Work => _work;
+    public bool DrawerOpen => _drawer.IsVisible;
 
     // ------------------------------------------------------------------ lifecycle
 
@@ -191,6 +193,10 @@ internal sealed class WorkEditorView : UserControl
         _svc.Library.Changed += OnLibraryChanged;
         _svc.Saved += OnSaved;
         _svc.SaveFailed += OnSaveFailed;
+        _svc.DefaultsChanged += OnDefaultsChanged;
+        // The editor is kept while its tab is away; edits made elsewhere meanwhile are taken over now.
+        if (_shownBefore) SyncFromModel();
+        _shownBefore = true;
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -199,6 +205,7 @@ internal sealed class WorkEditorView : UserControl
         _svc.Library.Changed -= OnLibraryChanged;
         _svc.Saved -= OnSaved;
         _svc.SaveFailed -= OnSaveFailed;
+        _svc.DefaultsChanged -= OnDefaultsChanged;
         if (_lookTimer.IsEnabled)
         {
             _lookTimer.Stop();
@@ -208,6 +215,20 @@ internal sealed class WorkEditorView : UserControl
     }
 
     private void OnSaved() => Dispatcher.UIThread.Post(() => _saved.Text = "Saved");
+
+    private void OnDefaultsChanged()
+    {
+        if (Signature() == _signature) return; // this work has its own fonts and size
+        ApplyLook();
+        RebuildRows(null);
+    }
+
+    /// <summary>Put the keyboard in the title box with its text selected (a work that was just made).</summary>
+    public void FocusTitle() => Dispatcher.UIThread.Post(() =>
+    {
+        _titleBox.Focus();
+        _titleBox.SelectAll();
+    }, DispatcherPriority.Loaded);
 
     private void OnSaveFailed(string reason) => Dispatcher.UIThread.Post(() => _saved.Text = "Could not save: " + reason);
 
@@ -221,7 +242,7 @@ internal sealed class WorkEditorView : UserControl
 
     private string Signature()
         => string.Join(',', _work.Blocks.Select(b => $"{b.Id}:{b.Kind}:{b.Level}"))
-           + $"|{_work.Color}|{_work.Icon}|{_work.TitleFont}|{_work.BodyFont}|{_work.FontSize}|{_work.LineSpacing}|{_work.PageWidth}";
+           + $"|{_work.Color}|{_work.Icon}|{_svc.TitleFontName(_work)}|{_svc.BodyFontName(_work)}|{_svc.FontSize(_work)}|{_work.LineSpacing}|{_work.PageWidth}";
 
     /// <summary>Another view edited the same work: refresh the boxes in place unless rows or look changed.</summary>
     private void SyncFromModel()
@@ -974,7 +995,7 @@ internal sealed class WorkEditorView : UserControl
             }
             DisarmDelete();
             _lookTimer.Stop();
-            if (_svc.Library.Delete(_work) is null)
+            if (_svc.Delete(_work) is null)
             {
                 _saved.Text = "Could not delete: the backup copy could not be written";
                 return;

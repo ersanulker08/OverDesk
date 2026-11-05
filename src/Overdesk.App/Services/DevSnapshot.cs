@@ -284,9 +284,19 @@ internal static class DevSnapshot
         main.DevOpenWork(2, drawer: true);
         await Task.Delay(1000);
         Save(main, Path.Combine(dir, "w-tab-settings.png"));
+        var before = main.DevWorkEditor();
         main.DevOpenWork(4, drawer: false);
         await Task.Delay(1000);
         Save(main, Path.Combine(dir, "w-tab-todo.png"));
+        // Back to the work whose drawer was opened: the same editor must come back with the drawer still open.
+        main.DevOpenWork(before!.Work.Id); // the list is sorted by last edit, so index 2 may be another work by now
+        await Task.Delay(600);
+        Console.WriteLine($"WORK EDITOR cached={ReferenceEquals(before, main.DevWorkEditor())} drawer={main.DevWorkEditor()?.DrawerOpen}");
+        Save(main, Path.Combine(dir, "w-tab-back.png"));
+        main.DevDeleteWork(4);
+        await Task.Delay(500);
+        Console.WriteLine($"WORK DELETED toast={main.DevToastText()}");
+        Save(main, Path.Combine(dir, "w-undo.png"));
         main.DevOpenWorksList();
         await Task.Delay(900);
         Save(main, Path.Combine(dir, "w-panel-list.png"));

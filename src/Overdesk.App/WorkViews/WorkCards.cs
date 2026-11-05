@@ -214,7 +214,7 @@ internal static class WorkCards
         yes.Click += (_, _) =>
         {
             flyout.Hide();
-            svc.Library.Delete(work);
+            svc.Delete(work);
         };
         no.Click += (_, _) => flyout.Hide();
         flyout.ShowAt(anchor);

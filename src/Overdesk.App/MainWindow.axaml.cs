@@ -35,8 +35,8 @@ public partial class MainWindow : Window
     private readonly ClipboardHistory _clipboard;
     private readonly Overdesk.Core.Platform.ISecretStore _secrets = PlatformFactory.CreateSecrets();
     private readonly Overdesk.Core.Platform.IDesktopServices _desktop = PlatformFactory.CreateDesktop();
-    private CancellationTokenSource? _toastHide;
-    private int _toastFades;
+    private readonly Queue<(string Text, string Icon, string? ActionLabel, Action? Action)> _toasts = new();
+    private bool _toastShowing;
     private bool _dropShown;
     private int _dropFades;
     // Keeps bursts (tab clicks, drag steps, workspace loads) from rewriting settings.json on the UI thread each time.
@@ -150,6 +150,12 @@ public partial class MainWindow : Window
         Settings.Ai = _ai;
         Settings.AddProject = AddProjectAsync;
         Settings.IsGaugeAvailable = id => _stats.Read(id) is not null;
+        _stats.Sampled += OnFirstSample;
+        void OnFirstSample()
+        {
+            _stats.Sampled -= OnFirstSample;
+            Dispatcher.UIThread.Post(Settings.Refresh); // gauge chips stay disabled when the page opened before the first sample
+        }
         Settings.Changed += OnSettingsChanged;
         SettingsButton.Click += (_, _) => OpenSettings();
         HomeButton.Click += (_, _) => ShowHome();
@@ -393,6 +399,8 @@ public partial class MainWindow : Window
         _layoutTimer.Start();
         if (_plugins.Problems.Count is > 0 and var problems)
             ShowToast(problems == 1 ? "1 plugin problem, see Settings → Data" : $"{problems} plugin problems, see Settings → Data", "IconAlert");
+        if (_works.Library.LoadErrors.Count is > 0 and var unreadable)
+            ShowToast(unreadable == 1 ? "1 work file could not be read, see Works" : $"{unreadable} work files could not be read, see Works", "IconAlert");
     }
 
     private void OnClosing(object? sender, WindowClosingEventArgs e)
@@ -490,34 +498,57 @@ public partial class MainWindow : Window
     private static string TabKey(HostedTab tab) => "tab:" + tab.Id;
     private static string ToolKey(PluginManifest tool) => "tool:" + tool.Id;
 
-    /// <summary>A short confirmation pill in the top bar that fades away by itself.</summary>
-    internal async void ShowToast(string text, string iconKey)
+    /// <summary>A short confirmation pill in the top bar that fades away by itself. Toasts queue up, none is lost.</summary>
+    internal void ShowToast(string text, string iconKey) => ShowToast(text, iconKey, null, null);
+
+    /// <summary>A toast with one button ("Undo"); it stays longer and goes as soon as the button is used.</summary>
+    internal void ShowToast(string text, string iconKey, string? actionLabel, Action? action)
     {
-        _toastHide?.Cancel();
-        var cts = _toastHide = new CancellationTokenSource();
-        ToastText.Text = text;
-        ToastIcon.Data = Res.Icon(iconKey);
-        var fade = ++_toastFades; // a fade-out still running must not swallow this toast
-        if (ToastHost.IsVisible) ToastHost.Opacity = 1;
-        else
+        _toasts.Enqueue((text, iconKey, actionLabel, action));
+        if (!_toastShowing) _ = ShowQueuedToastsAsync();
+    }
+
+    private async Task ShowQueuedToastsAsync()
+    {
+        _toastShowing = true;
+        while (_toasts.TryDequeue(out var toast))
         {
-            ToastHost.IsVisible = true;
-            Animator.Run(ToastHost, 0.22, t =>
+            var cts = new CancellationTokenSource();
+            ToastText.Text = toast.Text;
+            ToastIcon.Data = Res.Icon(toast.Icon);
+            ToastAction.IsVisible = toast.Action is not null;
+            ToastAction.Content = toast.ActionLabel;
+            ToastHost.IsHitTestVisible = toast.Action is not null;
+            ToastAction.Click += OnClick;
+            void OnClick(object? s, RoutedEventArgs e)
             {
-                var e = Ease.OutBack(t);
-                ToastHost.Opacity = Math.Clamp(t * 2, 0, 1);
-                ToastHost.RenderTransform = new ScaleTransform(0.85 + 0.15 * e, 0.85 + 0.15 * e);
-            });
+                ToastAction.Click -= OnClick;
+                toast.Action?.Invoke();
+                cts.Cancel();
+            }
+            if (ToastHost.IsVisible) ToastHost.Opacity = 1;
+            else
+            {
+                ToastHost.IsVisible = true;
+                Animator.Run(ToastHost, 0.22, t =>
+                {
+                    var e = Ease.OutBack(t);
+                    ToastHost.Opacity = Math.Clamp(t * 2, 0, 1);
+                    ToastHost.RenderTransform = new ScaleTransform(0.85 + 0.15 * e, 0.85 + 0.15 * e);
+                });
+            }
+            // Shorter while others wait, longer when there is a button to find.
+            var hold = toast.Action is not null ? 6000 : _toasts.Count > 0 ? 1300 : 1800;
+            try { await Task.Delay(hold, cts.Token); }
+            catch (TaskCanceledException) { }
+            ToastAction.Click -= OnClick;
+            if (_toasts.Count > 0) continue; // the next one takes the pill over without a fade
+            var faded = new TaskCompletionSource();
+            Animator.Run(ToastHost, 0.2, t => ToastHost.Opacity = 1 - t, () => faded.TrySetResult());
+            await faded.Task;
+            if (_toasts.Count == 0) ToastHost.IsVisible = false;
         }
-        try { await Task.Delay(1800, cts.Token); }
-        catch (TaskCanceledException) { return; }
-        Animator.Run(ToastHost, 0.2, t =>
-        {
-            if (fade == _toastFades) ToastHost.Opacity = 1 - t;
-        }, () =>
-        {
-            if (fade == _toastFades) ToastHost.IsVisible = false;
-        });
+        _toastShowing = false;
     }
 
     /// <summary>True while an in-window dialog covers the content; hosted windows are hidden meanwhile.</summary>
@@ -616,6 +647,7 @@ public partial class MainWindow : Window
     private void CloseTab(HostedTab tab)
     {
         ReleaseTab(tab);
+        ForgetWorkEditor(tab);
         _tabs.Close(tab);
         UpdateTabContent();
         SaveSettings();
@@ -1215,6 +1247,7 @@ public partial class MainWindow : Window
         StageWaves.IsAnimated = _settings.AnimatedBackground;
         Dock.SetAnimated(_settings.AnimatedBackground);
         Home.RebuildTiles();
+        _works.NotifyDefaultsChanged();
         SaveSettings();
     }
 
@@ -1459,7 +1492,7 @@ public partial class MainWindow : Window
                 button.Content = null;
                 button.Content = WithBusyDot(icon);
             }
-            ToolTip.SetTip(button, tool.Name);
+            ToolTip.SetTip(button, tool.Description is { Length: > 0 } about ? $"{tool.Name}  ·  v{tool.Version}\n{about}" : $"{tool.Name}  ·  v{tool.Version}");
             button.Click += (_, _) => ToggleTool(tool);
             button.PointerReleased += (_, e) =>
             {

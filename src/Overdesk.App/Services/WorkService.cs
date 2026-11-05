@@ -12,10 +12,12 @@ namespace Overdesk.App.Services;
 internal sealed class WorkService
 {
     private readonly DispatcherTimer _saveTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private (string Title, string Body, double Size) _defaults;
 
     public WorkService(string folder, AppSettings settings)
     {
         Settings = settings;
+        _defaults = (settings.WorkTitleFont, settings.WorkBodyFont, settings.WorkFontSize);
         Library = new WorkLibrary(folder);
         Library.Load();
         Library.Changed += (work, _) =>
@@ -34,9 +36,15 @@ internal sealed class WorkService
     public AppSettings Settings { get; }
     public WorkLibrary Library { get; }
 
-    /// <summary>A work should open in its own tab / in the tools panel.</summary>
-    public event Action<Work>? TabRequested;
+    /// <summary>A work should open in its own tab (focusTitle: it was just made, so the title box takes the keyboard) / in the tools panel.</summary>
+    public event Action<Work, bool>? TabRequested;
     public event Action<Work>? PanelRequested;
+
+    /// <summary>The user or the AI deleted a work; a copy went to the trash file.</summary>
+    public event Action<Work, string>? Deleted;
+
+    /// <summary>The default fonts or size in Settings changed; works without their own keep up.</summary>
+    public event Action? DefaultsChanged;
 
     /// <summary>The dirty works were just written to disk.</summary>
     public event Action? Saved;
@@ -54,8 +62,25 @@ internal sealed class WorkService
 
     public void CreateWithAi() => AiCreateRequested?.Invoke();
 
-    public void OpenInTab(Work work) => TabRequested?.Invoke(work);
+    public void OpenInTab(Work work, bool focusTitle = false) => TabRequested?.Invoke(work, focusTitle);
     public void OpenInPanel(Work work) => PanelRequested?.Invoke(work);
+
+    /// <summary>Delete with a trash copy; null when the copy could not be written (the work stays).</summary>
+    public string? Delete(Work work)
+    {
+        if (Library.Delete(work) is not { } trash) return null;
+        Deleted?.Invoke(work, trash);
+        return trash;
+    }
+
+    /// <summary>Called on any settings change; the views only hear about it when the work defaults moved.</summary>
+    public void NotifyDefaultsChanged()
+    {
+        var now = (Settings.WorkTitleFont, Settings.WorkBodyFont, Settings.WorkFontSize);
+        if (now == _defaults) return;
+        _defaults = now;
+        DefaultsChanged?.Invoke();
+    }
 
     public void Flush()
     {

@@ -12,9 +12,10 @@
   <img src="docs/screenshots/home.png" alt="OverDesk home page" width="900">
 </p>
 
-> **Status: early (0.2).** The UI is complete and runs on macOS. On Windows, CI starts the app on every commit and
-> renders every screen (programs, icons and system gauges work), but hosting other programs' windows has not been tried
-> by a person yet. Testers and contributors are very welcome.
+> **Status: early (0.2).** The UI is complete and runs on macOS. On Windows, CI starts the app on every commit, renders
+> every screen and hosts real programs (Notepad, Character Map). A first hands-on test found hosting problems that have
+> since been fixed; still untested on Windows are web tabs (WebView2), Credential Manager, media controls and Store apps.
+> Testers and contributors are very welcome.
 
 ## What it does
 

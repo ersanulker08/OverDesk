@@ -9,7 +9,7 @@ public sealed record ProgramIcon(byte[] Data, bool IsPng, int Width, int Height)
 /// </summary>
 public interface IProgramCatalog
 {
-    /// <summary>Paths of programs installed on this machine (an .app bundle on macOS, an .exe on Windows).</summary>
+    /// <summary>Paths of programs installed on this machine (an .app bundle on macOS; an .exe, a .lnk or a shell:AppsFolder address on Windows).</summary>
     IReadOnlyList<string> FindInstalledPrograms();
 
     /// <summary>The program's icon at roughly <paramref name="size"/> pixels, or null when it cannot be read.</summary>

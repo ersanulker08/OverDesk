@@ -11,6 +11,7 @@ internal static class NativeMethods
     public const long WS_POPUP = 0x80000000L;
     public const long WS_CHILD = 0x40000000L;
     public const long WS_MINIMIZE = 0x20000000L;
+    public const long WS_VISIBLE = 0x10000000L;
     public const long WS_MAXIMIZE = 0x01000000L;
     public const long WS_CAPTION = 0x00C00000L;
     public const long WS_THICKFRAME = 0x00040000L;
@@ -37,7 +38,9 @@ internal static class NativeMethods
     public const int SW_SHOW = 5;
     public const int SW_SHOWNA = 8;
     public const int SW_RESTORE = 9;
+    public const uint WM_NULL = 0x0000;
     public const uint WM_CLOSE = 0x0010;
+    public const uint SMTO_ABORTIFHUNG = 0x0002;
 
     public const int DWMWA_CLOAKED = 14;
     public const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
@@ -62,6 +65,9 @@ internal static class NativeMethods
     [DllImport("user32.dll")] public static extern IntPtr SetFocus(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int cmd);
     [DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] public static extern IntPtr SendMessageTimeoutW(IntPtr hwnd, uint msg, IntPtr w, IntPtr l, uint flags, uint timeoutMs, out IntPtr result);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
     [DllImport("user32.dll")] public static extern int GetWindowTextLengthW(IntPtr hwnd);
@@ -78,6 +84,9 @@ internal static class NativeMethods
     [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr handle);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern bool QueryFullProcessImageNameW(IntPtr process, int flags, StringBuilder name, ref int size);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetApplicationUserModelId(IntPtr process, ref int length, StringBuilder id);
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] public static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
@@ -103,6 +112,20 @@ internal static class NativeMethods
             var sb = new StringBuilder(1024);
             var size = sb.Capacity;
             return QueryFullProcessImageNameW(handle, 0, sb, ref size) ? sb.ToString(0, size) : null;
+        }
+        finally { CloseHandle(handle); }
+    }
+
+    /// <summary>The packaged app a process belongs to, or null for ordinary programs (and when Windows will not tell).</summary>
+    public static string? ProcessAppId(uint pid)
+    {
+        var handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (handle == IntPtr.Zero) return null;
+        try
+        {
+            var sb = new StringBuilder(256);
+            var length = sb.Capacity;
+            return GetApplicationUserModelId(handle, ref length, sb) == 0 ? sb.ToString() : null;
         }
         finally { CloseHandle(handle); }
     }

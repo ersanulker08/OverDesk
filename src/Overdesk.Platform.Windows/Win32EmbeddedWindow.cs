@@ -15,22 +15,28 @@ internal sealed class Win32EmbeddedWindow : IEmbeddedWindow
     /// <summary>Matches the stage's inner corner radius (13 px minus the 1 px frame), in DIPs.</summary>
     private const double CornerRadius = 12;
 
+    /// <summary>Longest the UI thread waits for a program to answer before leaving it to a background thread.</summary>
+    private const uint AnswerTimeoutMs = 100;
+
+    /// <summary>How long a window may stay hidden before it counts as gone; programs also hide for a moment while switching views.</summary>
+    private static readonly TimeSpan HiddenGrace = TimeSpan.FromSeconds(1.5);
+
     private readonly Process _process;
     private readonly IntPtr _hwnd;
     private readonly bool _owned;
-    private readonly bool _killOnClose;
     private readonly long _oldStyle, _oldExStyle;
     private readonly RECT _oldRect;
     private bool _visible = true;
+    private bool _closed;
     private bool _disposed;
+    private DateTime? _hiddenSince;
     private (int W, int H) _regionSize;
 
-    public Win32EmbeddedWindow(Process process, IntPtr hwnd, IntPtr owner, bool owned, bool killOnClose)
+    public Win32EmbeddedWindow(Process process, IntPtr hwnd, IntPtr owner, bool owned)
     {
         _process = process;
         _hwnd = hwnd;
         _owned = owned;
-        _killOnClose = killOnClose;
         _oldStyle = Style(hwnd);
         _oldExStyle = ExStyle(hwnd);
         GetWindowRect(hwnd, out _oldRect);
@@ -51,7 +57,7 @@ internal sealed class Win32EmbeddedWindow : IEmbeddedWindow
 
         if (owner != IntPtr.Zero && SetParent(hwnd, owner) == IntPtr.Zero && GetParent(hwnd) != owner)
         {
-            Restore();
+            Restore(_oldRect, show: true);
             throw new EmbeddingException(
                 "Windows refused to move this program into OverDesk. Programs running as administrator cannot be embedded " +
                 "unless OverDesk runs as administrator too.");
@@ -64,7 +70,26 @@ internal sealed class Win32EmbeddedWindow : IEmbeddedWindow
 
     public bool IsAlive => !_disposed && !_process.HasExited;
 
-    public bool HasWindow => IsAlive && IsWindow(_hwnd);
+    private bool Exists => IsAlive && IsWindow(_hwnd);
+
+    /// <summary>The style bit, not IsWindowVisible: that one also turns false when Overdesk itself is hidden.</summary>
+    private bool HiddenByProgram => _visible && (Style(_hwnd) & WS_VISIBLE) == 0;
+
+    /// <summary>Also false when the program hid its window itself (close to tray): the stage would stay empty for good.</summary>
+    public bool HasWindow
+    {
+        get
+        {
+            if (!Exists) return false;
+            if (!HiddenByProgram)
+            {
+                _hiddenSince = null;
+                return true;
+            }
+            _hiddenSince ??= DateTime.UtcNow;
+            return DateTime.UtcNow - _hiddenSince < HiddenGrace;
+        }
+    }
 
     /// <summary>A child window has no frame of its own to drag or resize.</summary>
     public UserWindowChange? TakeUserChange() => null;
@@ -73,7 +98,7 @@ internal sealed class Win32EmbeddedWindow : IEmbeddedWindow
 
     public void SetBounds(HostBounds b)
     {
-        if (!HasWindow) return;
+        if (!Exists) return;
         var w = Math.Max(b.Width, 1);
         var h = Math.Max(b.Height, 1);
         var flags = SWP_NOZORDER | SWP_NOACTIVATE | (_visible ? SWP_SHOWWINDOW : SWP_HIDEWINDOW);
@@ -92,7 +117,7 @@ internal sealed class Win32EmbeddedWindow : IEmbeddedWindow
     public void SetVisible(bool visible)
     {
         _visible = visible;
-        if (HasWindow) ShowWindow(_hwnd, visible ? SW_SHOWNA : SW_HIDE);
+        if (Exists) ShowWindow(_hwnd, visible ? SW_SHOWNA : SW_HIDE);
     }
 
     public IWindowFrame? CaptureFrame() => null;
@@ -106,7 +131,7 @@ internal sealed class Win32EmbeddedWindow : IEmbeddedWindow
     /// <summary>SetFocus only works for windows of the calling thread, so borrow the program's input queue for a moment.</summary>
     public void Focus()
     {
-        if (!HasWindow) return;
+        if (!Exists) return;
         var theirs = GetWindowThreadProcessId(_hwnd, out _);
         var ours = GetCurrentThreadId();
         var attached = theirs != ours && AttachThreadInput(ours, theirs, true);
@@ -114,40 +139,47 @@ internal sealed class Win32EmbeddedWindow : IEmbeddedWindow
         finally { if (attached) AttachThreadInput(ours, theirs, false); }
     }
 
+    /// <summary>
+    /// Never waits for the program and never kills it: it may be asking the user to save. Calls that touch a window of
+    /// another process wait for that program, so one that does not answer is handled on a background thread. A program
+    /// that answers is released right here, because a child still attached when Overdesk quits is destroyed with it.
+    /// </summary>
     public void Close()
     {
-        if (_disposed) return;
-        try
-        {
-            if (!_owned)
-            {
-                Restore(); // it was open before Overdesk took it: give it back
-                return;
-            }
-            if (_process.HasExited) return;
-            if (!_killOnClose)
-            {
-                // A window we asked a program that already ran to open (another Chrome window): close only that window.
-                PostMessageW(_hwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
-                return;
-            }
-            PostMessageW(_hwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
-            if (!_process.WaitForExit(2000)) _process.Kill(entireProcessTree: true);
-        }
-        catch (InvalidOperationException) { /* already gone */ }
+        if (_closed) return;
+        _closed = true;
+        if (!IsWindow(_hwnd)) return;
+        if (SendMessageTimeoutW(_hwnd, WM_NULL, IntPtr.Zero, IntPtr.Zero, SMTO_ABORTIFHUNG, AnswerTimeoutMs, out _) != IntPtr.Zero) Release();
+        else _ = Task.Run(Release);
     }
 
-    /// <summary>Back to a normal desktop window where it was before.</summary>
-    private void Restore()
+    /// <summary>
+    /// A window that was open before Overdesk took it goes back where it was. One Overdesk opened is told to close as a
+    /// normal desktop window on the spot, so a save prompt has a real owner the user can reach; one the program hid
+    /// itself stays hidden and running in its tray.
+    /// </summary>
+    private void Release()
     {
         if (!IsWindow(_hwnd)) return;
+        var hidden = HiddenByProgram;
+        GetWindowRect(_hwnd, out var stage);
+        Restore(_owned ? stage : _oldRect, show: !hidden);
+        if (!_owned || hidden) return;
+        SetForegroundWindow(_hwnd);
+        PostMessageW(_hwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+    }
+
+    /// <summary>Back to a normal desktop window.</summary>
+    private void Restore(RECT at, bool show)
+    {
+        if (!IsWindow(_hwnd)) return;
+        var visible = Style(_hwnd) & WS_VISIBLE; // setting this bit by hand would mark the window visible without showing it
         SetWindowRgn(_hwnd, IntPtr.Zero, false);
         SetParent(_hwnd, IntPtr.Zero);
-        SetWindowLongPtr(_hwnd, GWL_STYLE, new IntPtr(_oldStyle & ~(WS_MINIMIZE | WS_MAXIMIZE)));
+        SetWindowLongPtr(_hwnd, GWL_STYLE, new IntPtr((_oldStyle & ~(WS_MINIMIZE | WS_MAXIMIZE | WS_VISIBLE)) | visible));
         SetWindowLongPtr(_hwnd, GWL_EXSTYLE, new IntPtr(_oldExStyle));
-        SetWindowPos(_hwnd, IntPtr.Zero, _oldRect.Left, _oldRect.Top,
-            Math.Max(_oldRect.Right - _oldRect.Left, 200), Math.Max(_oldRect.Bottom - _oldRect.Top, 150),
-            SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+        SetWindowPos(_hwnd, IntPtr.Zero, at.Left, at.Top, Math.Max(at.Right - at.Left, 200), Math.Max(at.Bottom - at.Top, 150),
+            SWP_NOZORDER | SWP_FRAMECHANGED | (show ? SWP_SHOWWINDOW : 0));
     }
 
     public void Dispose()

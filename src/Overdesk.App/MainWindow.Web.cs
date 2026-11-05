@@ -309,6 +309,7 @@ public partial class MainWindow
         if (_webHosts.ContainsKey(tab.Id)) return;
         var host = new WebViewHost(_webFactory, tab.Url) { IsVisible = false };
         host.PopupRequested += popup => ShowPopup(tab, popup);
+        host.DownloadStatus += ShowDownloadStatus;
         _webHosts[tab.Id] = host;
         WebHosts.Children.Add(host);
     }
@@ -324,12 +325,16 @@ public partial class MainWindow
         SaveSettingsSoon();
     }
 
+    private void ShowDownloadStatus(string text) => Dispatcher.UIThread.Post(() => ShowToast(text, "IconDownload"));
+
     private void ShowPopup(WebTab tab, Overdesk.Core.Platform.IWebView popup)
     {
         var host = new WebViewHost(popup) { IsVisible = false };
         host.CloseRequested += () => Dispatcher.UIThread.Post(() => ClosePopup(tab, host));
         // A popup can open its own popup (rare, but sign-in providers do it).
         host.PopupRequested += inner => ShowPopup(tab, inner);
+        host.DownloadStatus += ShowDownloadStatus;
+        host.DownloadStatus += ShowDownloadStatus;
         if (!_popups.TryGetValue(tab.Id, out var list)) _popups[tab.Id] = list = new List<WebViewHost>();
         list.Add(host);
         WebHosts.Children.Add(host);

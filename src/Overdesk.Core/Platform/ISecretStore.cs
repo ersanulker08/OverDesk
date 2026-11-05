@@ -7,6 +7,13 @@ public interface ISecretStore
 
     /// <summary>Store a secret; null or empty removes it.</summary>
     void Set(string name, string? value);
+
+    /// <summary>Same as <see cref="Set"/>, but false when the store refused it, so the caller can tell the user.</summary>
+    bool TrySet(string name, string? value)
+    {
+        Set(name, value);
+        return true;
+    }
 }
 
 /// <summary>Fallback where no keychain exists: keeps secrets for this run only.</summary>

@@ -36,11 +36,15 @@ public sealed class WebViewHost : NativeControlHost
     /// <summary>The page closed its own window.</summary>
     public event Action? CloseRequested;
 
+    /// <summary>A line for the user about a download (forwarded from the view).</summary>
+    public event Action<string>? DownloadStatus;
+
     private void Attach(IWebView view)
     {
         View = view;
         view.PopupRequested += popup => PopupRequested?.Invoke(popup);
         view.CloseRequested += () => CloseRequested?.Invoke();
+        view.DownloadStatus += text => DownloadStatus?.Invoke(text);
     }
 
     protected override IPlatformHandle CreateNativeControlCore(IPlatformHandle parent)

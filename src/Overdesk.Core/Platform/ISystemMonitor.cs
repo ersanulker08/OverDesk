@@ -20,6 +20,9 @@ public sealed record SystemLoad(double CpuPercent, double MemoryPercent, long Me
     /// <summary>Null on machines without a battery.</summary>
     public double? BatteryPercent { get; init; }
     public bool? BatteryCharging { get; init; }
+
+    /// <summary>On mains power, which can be true while not charging (macOS holding the battery at its limit).</summary>
+    public bool? BatteryOnPower { get; init; }
 }
 
 /// <summary>A TCP port some local process is listening on (a dev server, a database...).</summary>

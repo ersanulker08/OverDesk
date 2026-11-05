@@ -73,21 +73,35 @@ internal static class ObjC
     }
 
     /// <summary>
-    /// An Objective-C block for completion handlers of the shape ^(id result, NSError *error), calling back into .NET.
-    /// It is a "global" block in unmanaged memory, so the runtime never copies or frees it; the 48 bytes stay allocated
-    /// (WebKit may still look at the block after calling it).
+    /// An Objective-C block of the shape ^(id result, NSError *error) calling back into .NET; it also serves ^(NSInteger),
+    /// where <c>error</c> is then meaningless. Hand it to the method, then call <see cref="ReleaseBlock"/>: the receiver
+    /// keeps its own reference for as long as it needs, and the callback goes away with the last one.
     /// </summary>
     public static unsafe IntPtr CompletionBlock(Action<IntPtr, IntPtr> callback)
     {
-        var block = (BlockLiteral*)Marshal.AllocHGlobal(sizeof(BlockLiteral));
-        block->Isa = GlobalBlockClass.Value;
-        block->Flags = (1 << 28) | (1 << 30); // BLOCK_IS_GLOBAL | BLOCK_HAS_SIGNATURE
-        block->Reserved = 0;
-        block->Invoke = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, IntPtr, void>)&InvokeCompletion;
-        block->Descriptor = Descriptor.Value;
-        block->Context = GCHandle.ToIntPtr(GCHandle.Alloc(callback));
-        return (IntPtr)block;
+        var template = new BlockLiteral
+        {
+            Isa = StackBlockClass.Value,
+            Flags = (1 << 25) | (1 << 30), // BLOCK_HAS_COPY_DISPOSE | BLOCK_HAS_SIGNATURE
+            Invoke = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, IntPtr, void>)&InvokeCompletion,
+            Descriptor = Descriptor.Value,
+            Context = GCHandle.ToIntPtr(GCHandle.Alloc(callback)),
+        };
+        return _Block_copy((IntPtr)(&template));
     }
+
+    /// <summary>Keep a block handed to us past the call it came with.</summary>
+    public static IntPtr CopyBlock(IntPtr block) => _Block_copy(block);
+
+    public static void ReleaseBlock(IntPtr block) => _Block_release(block);
+
+    /// <summary>Call a block with one word-sized argument (an object, an NSInteger, a BOOL); blocks with none ignore it.</summary>
+    public static unsafe void InvokeBlock(IntPtr block, IntPtr argument)
+        => ((delegate* unmanaged<IntPtr, IntPtr, void>)((BlockLiteral*)block)->Invoke)(block, argument);
+
+    private const string LibSystem = "/usr/lib/libSystem.B.dylib";
+    [DllImport(LibSystem)] private static extern IntPtr _Block_copy(IntPtr block);
+    [DllImport(LibSystem)] private static extern void _Block_release(IntPtr block);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct BlockLiteral
@@ -105,30 +119,35 @@ internal static class ObjC
     {
         public nuint Reserved;
         public nuint Size;
+        public IntPtr Copy;
+        public IntPtr Dispose;
         public IntPtr Signature;
     }
 
-    private static readonly Lazy<IntPtr> GlobalBlockClass = new(() => NativeLibrary.GetExport(NativeLibrary.Load("/usr/lib/libSystem.B.dylib"), "_NSConcreteGlobalBlock"));
+    private static readonly Lazy<IntPtr> StackBlockClass = new(() => NativeLibrary.GetExport(NativeLibrary.Load(LibSystem), "_NSConcreteStackBlock"));
 
     private static readonly unsafe Lazy<IntPtr> Descriptor = new(() =>
     {
         var descriptor = (BlockDescriptor*)Marshal.AllocHGlobal(sizeof(BlockDescriptor));
         descriptor->Reserved = 0;
         descriptor->Size = (nuint)sizeof(BlockLiteral);
+        descriptor->Copy = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&CopyHelper;
+        descriptor->Dispose = (IntPtr)(delegate* unmanaged<IntPtr, void>)&DisposeHelper;
         descriptor->Signature = Marshal.StringToHGlobalAnsi("v@?@@");
         return (IntPtr)descriptor;
     });
 
+    // Runs once, when the template becomes the heap block; the handle simply moves over with it.
+    [UnmanagedCallersOnly]
+    private static void CopyHelper(IntPtr destination, IntPtr source) { }
+
+    [UnmanagedCallersOnly]
+    private static unsafe void DisposeHelper(IntPtr block) => GCHandle.FromIntPtr(((BlockLiteral*)block)->Context).Free();
+
     [UnmanagedCallersOnly]
     private static unsafe void InvokeCompletion(IntPtr block, IntPtr result, IntPtr error)
     {
-        var literal = (BlockLiteral*)block;
-        if (literal->Context == IntPtr.Zero) return;
-        var handle = GCHandle.FromIntPtr(literal->Context);
-        literal->Context = IntPtr.Zero; // completion handlers run once
-        var callback = (Action<IntPtr, IntPtr>)handle.Target!;
-        handle.Free();
-        try { callback(result, error); }
+        try { ((Action<IntPtr, IntPtr>)GCHandle.FromIntPtr(((BlockLiteral*)block)->Context).Target!)(result, error); }
         catch (Exception) { /* never let an exception cross into Objective-C */ }
     }
 }

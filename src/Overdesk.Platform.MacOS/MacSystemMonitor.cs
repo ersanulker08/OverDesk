@@ -13,14 +13,15 @@ public sealed class MacSystemMonitor : ISystemMonitor
     private const int CpuStateCount = 4;   // user, system, idle, nice
     private const int VmInfo64Count = 38;  // sizeof(vm_statistics64) / sizeof(natural_t)
 
-    private static readonly Regex GpuUtilization = new("\"Device Utilization %\"\\s*=\\s*(\\d+)", RegexOptions.Compiled);
     private static readonly Regex BatteryLine = new("(\\d+)%;\\s*([a-zA-Z ]+);", RegexOptions.Compiled);
+    private static readonly IntPtr PerformanceStatistics = Cf("PerformanceStatistics");
+    private static readonly IntPtr DeviceUtilization = Cf("Device Utilization %");
 
     private uint[]? _lastTicks;
     private readonly MacTemperatures _temperatures = new();
     private (DateTime At, double? Cpu, double? Gpu) _temps;
     private (DateTime At, double? Value) _gpu;
-    private (DateTime At, double? Percent, bool? Charging) _battery = (DateTime.MinValue, null, null);
+    private (DateTime At, double? Percent, bool? Charging, bool? OnPower) _battery = (DateTime.MinValue, null, null, null);
 
     public SystemLoad? Sample()
     {
@@ -53,7 +54,7 @@ public sealed class MacSystemMonitor : ISystemMonitor
             var used = (internalPages - purgeable + wired + compressed) * pageSize;
             var total = MemSize();
             var (swapUsed, swapTotal) = Swap();
-            var (battery, charging) = Battery();
+            var (battery, charging, onPower) = Battery();
             return new SystemLoad(cpu, total > 0 ? used * 100.0 / total : 0, used, total)
             {
                 GpuPercent = Gpu(),
@@ -63,6 +64,7 @@ public sealed class MacSystemMonitor : ISystemMonitor
                 SwapTotalBytes = swapTotal,
                 BatteryPercent = battery,
                 BatteryCharging = charging,
+                BatteryOnPower = onPower,
             };
         }
         catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
@@ -121,20 +123,39 @@ public sealed class MacSystemMonitor : ISystemMonitor
     private double? Gpu()
     {
         if (DateTime.UtcNow - _gpu.At < TimeSpan.FromSeconds(2)) return _gpu.Value;
-        double? value = null;
-        var output = Run("/usr/sbin/ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator");
-        var match = output is null ? null : GpuUtilization.Match(output);
-        if (match is { Success: true }) value = Math.Clamp(double.Parse(match.Groups[1].Value), 0, 100);
+        var value = ReadGpuUtilization();
         _gpu = (DateTime.UtcNow, value);
         return value;
     }
 
-    /// <summary>Battery level and charging state from pmset; null on desktops.</summary>
-    private (double? Percent, bool? Charging) Battery()
+    private static double? ReadGpuUtilization()
     {
-        if (DateTime.UtcNow - _battery.At < TimeSpan.FromSeconds(30)) return (_battery.Percent, _battery.Charging);
+        if (IOServiceGetMatchingServices(0, IOServiceMatching("IOAccelerator"), out var services) != 0) return null;
+        try
+        {
+            for (var service = IOIteratorNext(services); service != 0; service = IOIteratorNext(services))
+            {
+                var stats = IORegistryEntryCreateCFProperty(service, PerformanceStatistics, IntPtr.Zero, 0);
+                IOObjectRelease(service);
+                if (stats == IntPtr.Zero) continue;
+                try
+                {
+                    var number = CFDictionaryGetValue(stats, DeviceUtilization);
+                    if (number != IntPtr.Zero && CFNumberGetValue(number, NumberDoubleType, out var percent)) return Math.Clamp(percent, 0, 100);
+                }
+                finally { Native.CFRelease(stats); }
+            }
+            return null;
+        }
+        finally { IOObjectRelease(services); }
+    }
+
+    /// <summary>Battery level, charging state and whether mains power is connected, from pmset; null on desktops.</summary>
+    private (double? Percent, bool? Charging, bool? OnPower) Battery()
+    {
+        if (DateTime.UtcNow - _battery.At < TimeSpan.FromSeconds(30)) return (_battery.Percent, _battery.Charging, _battery.OnPower);
         double? percent = null;
-        bool? charging = null;
+        bool? charging = null, onPower = null;
         var output = Run("/usr/bin/pmset", "-g", "batt");
         var match = output is null ? null : BatteryLine.Match(output);
         if (match is { Success: true })
@@ -142,9 +163,11 @@ public sealed class MacSystemMonitor : ISystemMonitor
             percent = double.Parse(match.Groups[1].Value);
             var state = match.Groups[2].Value.Trim();
             charging = state is "charging" or "charged" or "finishing charge";
+            // "AC attached; not charging" while macOS holds the battery at its limit.
+            onPower = output!.Contains("'AC Power'", StringComparison.Ordinal);
         }
-        _battery = (DateTime.UtcNow, percent, charging);
-        return (percent, charging);
+        _battery = (DateTime.UtcNow, percent, charging, onPower);
+        return (percent, charging, onPower);
     }
 
     private static (long? Used, long? Total) Swap()
@@ -177,6 +200,19 @@ public sealed class MacSystemMonitor : ISystemMonitor
         var size = (nint)sizeof(long);
         return sysctlbyname("hw.memsize", ref value, ref size, IntPtr.Zero, 0) == 0 ? value : 0;
     }
+
+    private static IntPtr Cf(string s) => Native.CFStringCreateWithCString(IntPtr.Zero, s, Native.CFStringEncodingUTF8);
+
+    private const string IOKit = "/System/Library/Frameworks/IOKit.framework/IOKit";
+    private const string CoreFoundation = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
+    private const int NumberDoubleType = 13; // kCFNumberDoubleType
+    [DllImport(IOKit)] private static extern IntPtr IOServiceMatching(string name);
+    [DllImport(IOKit)] private static extern int IOServiceGetMatchingServices(uint mainPort, IntPtr matching, out uint iterator);
+    [DllImport(IOKit)] private static extern uint IOIteratorNext(uint iterator);
+    [DllImport(IOKit)] private static extern IntPtr IORegistryEntryCreateCFProperty(uint entry, IntPtr key, IntPtr allocator, uint options);
+    [DllImport(IOKit)] private static extern int IOObjectRelease(uint service);
+    [DllImport(CoreFoundation)] private static extern IntPtr CFDictionaryGetValue(IntPtr dictionary, IntPtr key);
+    [DllImport(CoreFoundation)] [return: MarshalAs(UnmanagedType.U1)] private static extern bool CFNumberGetValue(IntPtr number, int type, out double value);
 
     private const string LibSystem = "/usr/lib/libSystem.dylib";
     [DllImport(LibSystem)] private static extern uint mach_host_self();

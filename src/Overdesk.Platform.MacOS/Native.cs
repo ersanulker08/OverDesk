@@ -21,6 +21,7 @@ internal static class Native
     [DllImport(AppServices)] [return: MarshalAs(UnmanagedType.U1)] public static extern bool AXIsProcessTrusted();
     [DllImport(AppServices)] [return: MarshalAs(UnmanagedType.U1)] public static extern bool AXIsProcessTrustedWithOptions(IntPtr options);
     [DllImport(AppServices)] public static extern IntPtr AXUIElementCreateApplication(int pid);
+    [DllImport(AppServices)] public static extern int AXUIElementSetMessagingTimeout(IntPtr element, float seconds);
 
     /// <summary>Private but long-stable HIServices call: the window-server id behind an AX window element.</summary>
     [DllImport(AppServices)] public static extern int _AXUIElementGetWindow(IntPtr element, out uint windowId);

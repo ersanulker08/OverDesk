@@ -191,7 +191,8 @@ internal sealed class SystemStatsService : IDisposable
             case "swap" when load?.SwapTotalBytes is not null:
                 return new MetricReading("Not in use", 0);
             case "battery" when load?.BatteryPercent is { } battery:
-                return new MetricReading($"{battery:0}%{(load.BatteryCharging == true ? "  ·  charging" : "")}", battery / 100);
+                var power = load.BatteryCharging == true ? "  ·  charging" : load.BatteryOnPower == true ? "  ·  on power" : "";
+                return new MetricReading($"{battery:0}%{power}", battery / 100);
             case "uptime":
                 var up = TimeSpan.FromMilliseconds(Environment.TickCount64);
                 return new MetricReading(up.TotalDays >= 1 ? $"{(int)up.TotalDays}d {up.Hours}h {up.Minutes}m" : $"{up.Hours}h {up.Minutes}m");

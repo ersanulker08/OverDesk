@@ -3,8 +3,20 @@ namespace Overdesk.Platform.MacOS;
 /// <summary>Thin wrapper over the Accessibility objects of one external application and its main window.</summary>
 internal sealed class AccessibilityWindow : IDisposable
 {
+    private const int ErrorCannotComplete = -25204; // kAXErrorCannotComplete: the app did not answer in time
+    private const float MessagingTimeout = 0.25f;
+
+    // Everything here runs on the UI thread at layout-timer speed, so a program that stopped answering is left alone for
+    // a moment instead of costing one timeout per call.
+    private static readonly TimeSpan BusyPause = TimeSpan.FromSeconds(1);
+
+    private static bool _windowIdCallExists = true;
+
     private readonly IntPtr _app;
     private IntPtr _window;
+    private IntPtr _firstWindow;
+    private volatile uint _windowId;
+    private DateTime _busyUntil;
 
     private static readonly IntPtr AttrWindows = Cf("AXWindows");
     private static readonly IntPtr AttrMainWindow = Cf("AXMainWindow");
@@ -27,9 +39,33 @@ internal sealed class AccessibilityWindow : IDisposable
     {
         Pid = pid;
         _app = Native.AXUIElementCreateApplication(pid);
+        Native.AXUIElementSetMessagingTimeout(_app, MessagingTimeout);
     }
 
     public int Pid { get; }
+
+    /// <summary>The window server's id for this window (0 when unknown). The only member safe to read off the UI thread.</summary>
+    public uint WindowId => _windowId;
+
+    /// <summary>True while we still hold the window first acquired, not a sibling picked up after it closed.</summary>
+    public bool HoldsFirstWindow => _window != IntPtr.Zero && Native.CFEqual(_window, _firstWindow);
+
+    private bool Busy => DateTime.UtcNow < _busyUntil;
+
+    private int Read(IntPtr element, IntPtr attribute, out IntPtr value)
+    {
+        value = IntPtr.Zero;
+        return Busy ? ErrorCannotComplete : Noted(Native.AXUIElementCopyAttributeValue(element, attribute, out value));
+    }
+
+    private int Write(IntPtr element, IntPtr attribute, IntPtr value)
+        => Busy ? ErrorCannotComplete : Noted(Native.AXUIElementSetAttributeValue(element, attribute, value));
+
+    private int Noted(int status)
+    {
+        if (status == ErrorCannotComplete) _busyUntil = DateTime.UtcNow + BusyPause;
+        return status;
+    }
 
     private static IntPtr Cf(string s) => Native.CFStringCreateWithCString(IntPtr.Zero, s, Native.CFStringEncodingUTF8);
 
@@ -39,18 +75,23 @@ internal sealed class AccessibilityWindow : IDisposable
     /// </summary>
     public bool TryAcquireWindow()
     {
-        if (_window != IntPtr.Zero) return true;
+        if (_window != IntPtr.Zero)
+        {
+            if (_windowId == 0) ResolveWindowId();
+            return true;
+        }
 
         foreach (var attr in new[] { AttrMainWindow, AttrFocusedWindow })
         {
-            if (Native.AXUIElementCopyAttributeValue(_app, attr, out var w) == 0 && w != IntPtr.Zero)
+            if (Read(_app, attr, out var w) == 0 && w != IntPtr.Zero)
             {
-                if (IsStandard(w)) { _window = w; return true; }
+                Native.AXUIElementSetMessagingTimeout(w, MessagingTimeout);
+                if (IsStandard(w)) { Hold(w); return true; }
                 Native.CFRelease(w);
             }
         }
 
-        if (Native.AXUIElementCopyAttributeValue(_app, AttrWindows, out var array) != 0 || array == IntPtr.Zero)
+        if (Read(_app, AttrWindows, out var array) != 0 || array == IntPtr.Zero)
             return false;
         try
         {
@@ -58,8 +99,9 @@ internal sealed class AccessibilityWindow : IDisposable
             for (nint i = 0; i < count; i++)
             {
                 var w = Native.CFArrayGetValueAtIndex(array, i);
+                Native.AXUIElementSetMessagingTimeout(w, MessagingTimeout);
                 if (!IsStandard(w)) continue;
-                _window = Native.CFRetain(w);
+                Hold(Native.CFRetain(w));
                 return true;
             }
             return false;
@@ -67,26 +109,58 @@ internal sealed class AccessibilityWindow : IDisposable
         finally { Native.CFRelease(array); }
     }
 
-    private static bool IsStandard(IntPtr window)
+    private void Hold(IntPtr window)
     {
-        if (Native.AXUIElementCopyAttributeValue(window, AttrSubrole, out var subrole) != 0 || subrole == IntPtr.Zero)
+        _window = window;
+        if (_firstWindow == IntPtr.Zero) _firstWindow = Native.CFRetain(window);
+        ResolveWindowId();
+    }
+
+    private void ResolveWindowId()
+    {
+        if (!_windowIdCallExists) return;
+        try { if (Native._AXUIElementGetWindow(_window, out var id) == 0) _windowId = id; }
+        catch (EntryPointNotFoundException) { _windowIdCallExists = false; }
+    }
+
+    private bool IsStandard(IntPtr window)
+    {
+        if (Read(window, AttrSubrole, out var subrole) != 0 || subrole == IntPtr.Zero)
             return false;
         try { return Native.CFEqual(subrole, StandardWindow); }
         finally { Native.CFRelease(subrole); }
+    }
+
+    /// <summary>Another normal window of this app besides ours, so hiding the whole app would take that one away too.</summary>
+    public bool HasOtherWindows()
+    {
+        if (!TryAcquireWindow() || Read(_app, AttrWindows, out var array) != 0 || array == IntPtr.Zero) return false;
+        try
+        {
+            var count = Native.CFArrayGetCount(array);
+            for (nint i = 0; i < count; i++)
+            {
+                var w = Native.CFArrayGetValueAtIndex(array, i);
+                if (!Native.CFEqual(w, _window) && IsStandard(w)) return true;
+            }
+            return false;
+        }
+        finally { Native.CFRelease(array); }
     }
 
     /// <summary>Current position and size in screen points, or null when the window is gone.</summary>
     public (double X, double Y, double Width, double Height)? GetFrame()
     {
         if (!TryAcquireWindow()) return null;
-        if (Native.AXUIElementCopyAttributeValue(_window, AttrPosition, out var p) != 0 || p == IntPtr.Zero)
+        var status = Read(_window, AttrPosition, out var p);
+        if (status != 0 || p == IntPtr.Zero)
         {
-            ReleaseWindow();
+            if (status != ErrorCannotComplete) ReleaseWindow();
             return null;
         }
         try
         {
-            if (Native.AXUIElementCopyAttributeValue(_window, AttrSize, out var s) != 0 || s == IntPtr.Zero) return null;
+            if (Read(_window, AttrSize, out var s) != 0 || s == IntPtr.Zero) return null;
             try
             {
                 Native.AXValueGetPoint(p, Native.AXValueCGPoint, out var point);
@@ -101,8 +175,8 @@ internal sealed class AccessibilityWindow : IDisposable
     /// <summary>Position and size in screen points (top-left origin).</summary>
     public bool SetFrame(double x, double y, double width, double height)
     {
-        if (!TryAcquireWindow()) return false;
-        Native.AXUIElementSetAttributeValue(_window, AttrMinimized, False);
+        if (Busy || !TryAcquireWindow()) return false;
+        Write(_window, AttrMinimized, False);
         var point = new CGPoint { X = x, Y = y };
         var size = new CGSize { Width = width, Height = height };
         var p = Native.AXValueCreatePoint(Native.AXValueCGPoint, ref point);
@@ -111,11 +185,12 @@ internal sealed class AccessibilityWindow : IDisposable
         {
             // Move first, then size, then move again: some apps clamp the size against the screen edge
             // using their old position, and the second move settles the final spot.
-            var r1 = Native.AXUIElementSetAttributeValue(_window, AttrPosition, p);
-            var r2 = Native.AXUIElementSetAttributeValue(_window, AttrSize, s);
-            Native.AXUIElementSetAttributeValue(_window, AttrPosition, p);
-            if (r1 != 0 && r2 != 0) { ReleaseWindow(); return false; }
-            return true;
+            var r1 = Write(_window, AttrPosition, p);
+            var r2 = Write(_window, AttrSize, s);
+            Write(_window, AttrPosition, p);
+            if (r1 == 0 || r2 == 0) return true;
+            if (r1 != ErrorCannotComplete) ReleaseWindow();
+            return false;
         }
         finally
         {
@@ -124,37 +199,49 @@ internal sealed class AccessibilityWindow : IDisposable
         }
     }
 
-    /// <summary>The window server's id for this window (0 when unknown).</summary>
-    public uint WindowId()
-    {
-        if (!TryAcquireWindow()) return 0;
-        try { return Native._AXUIElementGetWindow(_window, out var id) == 0 ? id : 0; }
-        catch (EntryPointNotFoundException) { return 0; }
-    }
-
     /// <summary>True when the window is in macOS full screen (its own Space).</summary>
     public bool IsFullScreen()
     {
         if (!TryAcquireWindow()) return false;
-        if (Native.AXUIElementCopyAttributeValue(_window, AttrFullScreen, out var value) != 0 || value == IntPtr.Zero) return false;
+        return ReadFlag(AttrFullScreen);
+    }
+
+    /// <summary>True when the window sits in the Dock (its own yellow button, or we put it there).</summary>
+    public bool IsMinimized() => TryAcquireWindow() && ReadFlag(AttrMinimized);
+
+    public void SetMinimized(bool minimized)
+    {
+        if (TryAcquireWindow()) Native.AXUIElementSetAttributeValue(_window, AttrMinimized, minimized ? True : False);
+    }
+
+    private bool ReadFlag(IntPtr attribute)
+    {
+        if (Read(_window, attribute, out var value) != 0 || value == IntPtr.Zero) return false;
         try { return Native.CFEqual(value, True); }
         finally { Native.CFRelease(value); }
     }
 
     public void SetFullScreen(bool fullScreen)
     {
-        if (TryAcquireWindow()) Native.AXUIElementSetAttributeValue(_window, AttrFullScreen, fullScreen ? True : False);
+        if (TryAcquireWindow()) Write(_window, AttrFullScreen, fullScreen ? True : False);
     }
 
     /// <summary>
     /// Try to grey out the window's green full-screen button. Most apps refuse (the attribute is read-only for
     /// other processes); the caller still undoes full screen when it happens.
     /// </summary>
-    public void DisableFullScreenButton()
+    public bool DisableFullScreenButton() => TryAcquireWindow() && SetFullScreenButtonEnabled(false);
+
+    /// <summary>Undo <see cref="DisableFullScreenButton"/> on the window we hold; never picks up another one.</summary>
+    public void EnableFullScreenButton()
     {
-        if (!TryAcquireWindow()) return;
-        if (Native.AXUIElementCopyAttributeValue(_window, AttrFullScreenButton, out var button) != 0 || button == IntPtr.Zero) return;
-        try { Native.AXUIElementSetAttributeValue(button, AttrEnabled, False); }
+        if (_window != IntPtr.Zero) SetFullScreenButtonEnabled(true);
+    }
+
+    private bool SetFullScreenButtonEnabled(bool enabled)
+    {
+        if (Read(_window, AttrFullScreenButton, out var button) != 0 || button == IntPtr.Zero) return false;
+        try { return Write(button, AttrEnabled, enabled ? True : False) == 0; }
         finally { Native.CFRelease(button); }
     }
 
@@ -178,11 +265,14 @@ internal sealed class AccessibilityWindow : IDisposable
     {
         if (_window != IntPtr.Zero) Native.CFRelease(_window);
         _window = IntPtr.Zero;
+        _windowId = 0;
     }
 
     public void Dispose()
     {
         ReleaseWindow();
+        if (_firstWindow != IntPtr.Zero) Native.CFRelease(_firstWindow);
+        _firstWindow = IntPtr.Zero;
         if (_app != IntPtr.Zero) Native.CFRelease(_app);
     }
 }

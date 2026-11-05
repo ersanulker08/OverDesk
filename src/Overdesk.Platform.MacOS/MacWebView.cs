@@ -20,7 +20,7 @@ public sealed class MacWebViewFactory : IWebViewFactory
     }
 }
 
-internal sealed unsafe class MacWebView : IWebView
+internal sealed unsafe partial class MacWebView : IWebView
 {
     // A current Safari user agent: some sign-in pages refuse "unknown" embedded browsers.
     private const string UserAgent =
@@ -30,6 +30,7 @@ internal sealed unsafe class MacWebView : IWebView
     private static readonly Dictionary<IntPtr, MacWebView> Views = new();
 
     private IntPtr _view;
+    private string? _failedUrl;
 
     public MacWebView(IntPtr view)
     {
@@ -66,11 +67,13 @@ internal sealed unsafe class MacWebView : IWebView
             ObjC.CallBoolArg(layer, "setMasksToBounds:", true);
         }
         ObjC.Call(view, "setUIDelegate:", UIDelegate.Instance);
+        ObjC.Call(view, "setNavigationDelegate:", NavigationDelegate.Instance);
         return view;
     }
 
     public event Action<IWebView>? PopupRequested;
     public event Action? CloseRequested;
+    public event Action<string>? DownloadStatus;
 
     public IntPtr Handle => _view;
     public string HandleDescriptor => "NSView";
@@ -104,6 +107,7 @@ internal sealed unsafe class MacWebView : IWebView
             done.TrySetResult(ObjC.ReadNSString(isString ? result : ObjC.Call(result, "description")));
         });
         ObjC.Call(_view, "evaluateJavaScript:completionHandler:", ObjC.NSString(script), block);
+        ObjC.ReleaseBlock(block);
         return done.Task;
     }
 
@@ -124,7 +128,14 @@ internal sealed unsafe class MacWebView : IWebView
         }
     }
 
-    public void Reload() { if (_view != IntPtr.Zero) ObjC.Call(_view, "reload"); }
+    public void Reload()
+    {
+        if (_view == IntPtr.Zero) return;
+        // Reloading the error page would only show the error page again.
+        if (_failedUrl is { } failed && failed == Url) Navigate(failed);
+        else ObjC.Call(_view, "reload");
+    }
+
     public void GoBack() { if (_view != IntPtr.Zero) ObjC.Call(_view, "goBack"); }
     public void GoForward() { if (_view != IntPtr.Zero) ObjC.Call(_view, "goForward"); }
     public void Resize(int width, int height) { } // the native-control host sets the NSView frame
@@ -140,8 +151,11 @@ internal sealed unsafe class MacWebView : IWebView
         _view = IntPtr.Zero;
     }
 
-    /// <summary>A WKUIDelegate class registered at runtime: real popups (sign-in windows) and window.close().</summary>
-    private static class UIDelegate
+    /// <summary>
+    /// A WKUIDelegate class registered at runtime: real popups (sign-in windows), window.close(), the file chooser of
+    /// upload buttons and JavaScript's alert, confirm and prompt.
+    /// </summary>
+    private static partial class UIDelegate
     {
         public static readonly IntPtr Instance = Create();
 
@@ -156,6 +170,7 @@ internal sealed unsafe class MacWebView : IWebView
                     (IntPtr)create, "@@:@@@@");
                 delegate* unmanaged<IntPtr, IntPtr, IntPtr, void> close = &DidClose;
                 ObjC.class_addMethod(cls, ObjC.Selector("webViewDidClose:"), (IntPtr)close, "v@:@");
+                AddPanels(cls);
                 var protocol = ObjC.objc_getProtocol("WKUIDelegate");
                 if (protocol != IntPtr.Zero) ObjC.class_addProtocol(cls, protocol);
                 ObjC.objc_registerClassPair(cls);

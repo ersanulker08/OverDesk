@@ -220,7 +220,16 @@ public sealed class McpServer : IDisposable
         else
         {
             var args = parameters?["arguments"] as JsonObject ?? new JsonObject();
-            result = await box.RunAsync(name, (JsonObject)args.DeepClone(), _stop.Token);
+            using var stop = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token, box.TurnStop);
+            try
+            {
+                stop.Token.ThrowIfCancellationRequested();
+                result = await box.RunAsync(name, (JsonObject)args.DeepClone(), stop.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                result = AiToolResult.Error("The user stopped the chat.");
+            }
         }
 
         var content = new JsonArray { new JsonObject { ["type"] = "text", ["text"] = result.Text } };

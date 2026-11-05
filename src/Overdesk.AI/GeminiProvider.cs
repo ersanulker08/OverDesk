@@ -38,7 +38,9 @@ public sealed class GeminiProvider : IChatProvider
         if (string.IsNullOrEmpty(Key)) return "Add your Gemini API key in OverDesk settings → AI.";
         try
         {
-            using var response = await _http.SendAsync(Request(HttpMethod.Get, "/models?pageSize=1"), cancellation);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            timeout.CancelAfter(TimeSpan.FromSeconds(6));
+            using var response = await _http.SendAsync(Request(HttpMethod.Get, "/models?pageSize=1"), timeout.Token);
             return response.IsSuccessStatusCode ? null : $"Gemini answered {(int)response.StatusCode} (check the key).";
         }
         catch (Exception) when (!cancellation.IsCancellationRequested)
@@ -61,6 +63,14 @@ public sealed class GeminiProvider : IChatProvider
 
     private const int MaxRounds = 30;
 
+    /// <summary>Gemini refuses a whole request over an object schema with no properties, so such tools send no parameters.</summary>
+    private static JsonNode Declaration(AiTool tool)
+    {
+        var declaration = new JsonObject { ["name"] = tool.Name, ["description"] = tool.Description };
+        if (tool.Schema["properties"] is JsonObject { Count: > 0 }) declaration["parameters"] = tool.Schema.DeepClone();
+        return declaration;
+    }
+
     public async IAsyncEnumerable<ChatChunk> StreamAsync(string model, string? system, IReadOnlyList<ChatMessage> messages, AiContext? context,
         [EnumeratorCancellation] CancellationToken cancellation)
     {
@@ -75,10 +85,7 @@ public sealed class GeminiProvider : IChatProvider
         JsonArray? tools = context is { Tools.Tools.Count: > 0 }
             ? new JsonArray(new JsonObject
             {
-                ["functionDeclarations"] = new JsonArray(context.Tools.Tools.Select(t => (JsonNode)new JsonObject
-                {
-                    ["name"] = t.Name, ["description"] = t.Description, ["parameters"] = t.Schema.DeepClone(),
-                }).ToArray()),
+                ["functionDeclarations"] = new JsonArray(context.Tools.Tools.Select(Declaration).ToArray()),
             })
             : null;
 

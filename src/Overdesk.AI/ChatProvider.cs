@@ -47,6 +47,9 @@ public interface ISessionChatProvider : IChatProvider
     IAsyncEnumerable<ChatChunk> StreamTurnAsync(string model, string? system, ChatMessage message, string? sessionId, AiContext? context, CancellationToken cancellation);
 }
 
+/// <summary>The session to continue no longer exists: start over with the earlier turns folded into the message.</summary>
+public sealed class ChatSessionNotFoundException : Exception;
+
 /// <summary>Where API keys come from (the OS keychain in the app).</summary>
 public interface IApiKeySource
 {

@@ -142,15 +142,10 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
         info.ArgumentList.Add("--disallowedTools");
         foreach (var tool in edits ? AlwaysBlocked : AlwaysBlocked.Concat(EditTools)) info.ArgumentList.Add(tool);
 
-        // Screenshots go next to the chat as files Claude Code can look at.
+        // Screenshots go next to the chat as files Claude Code can look at, for as long as this run lasts.
         var prompt = message.Text;
-        var images = message.Images ?? Array.Empty<byte[]>();
-        for (var i = 0; i < images.Count; i++)
-        {
-            var file = Path.Combine(_workspace, $"screenshot-{DateTime.Now:HHmmss}-{i}.png");
-            await File.WriteAllBytesAsync(file, images[i], cancellation);
-            prompt += $"\n\n(Attached screenshot: {file} — read it to see it.)";
-        }
+        using var images = await ImageFiles.WriteAsync(_workspace, message.Images, cancellation);
+        foreach (var file in images.Paths) prompt += $"\n\n(Attached screenshot: {file} — read it to see it.)";
 
         using var process = Process.Start(info) ?? throw new InvalidOperationException("Could not start Claude Code.");
         using var kill = cancellation.Register(() => { try { process.Kill(entireProcessTree: true); } catch (Exception) { } });
@@ -161,6 +156,8 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
         var clock = Stopwatch.StartNew();
         var sawDelta = false;
         var wroteText = false;
+        var sawResult = false;
+        var toolLines = new Dictionary<string, string>();
         string? session = null;
         while (await process.StandardOutput.ReadLineAsync(cancellation) is { } line)
         {
@@ -187,7 +184,10 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
                     var blocks = node!["message"]?["content"]?.AsArray() ?? new JsonArray();
                     foreach (var block in blocks)
                         if (block?["type"]?.GetValue<string>() == "tool_use" && Describe(block, folder) is { } activity)
+                        {
+                            if (block["id"]?.GetValue<string>() is { } id) toolLines[id] = activity;
                             yield return new ChatChunk("", SessionId: session, Activity: activity);
+                        }
                     if (sawDelta) break;
                     // Older Claude Code versions send whole messages only.
                     var text = string.Concat(blocks.Where(b => b?["type"]?.GetValue<string>() == "text").Select(b => b!["text"]!.GetValue<string>()));
@@ -197,9 +197,18 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
                         yield return new ChatChunk(text, SessionId: session);
                     }
                     break;
+                case "user":
+                    // A tool that was refused or failed: the line shown for it must not stay a success.
+                    foreach (var block in node!["message"]?["content"] as JsonArray ?? new JsonArray())
+                        if (block?["type"]?.GetValue<string>() == "tool_result" && block["is_error"]?.GetValue<bool>() == true
+                            && toolLines.TryGetValue(block["tool_use_id"]?.GetValue<string>() ?? "", out var failed))
+                            yield return new ChatChunk("", SessionId: session, Activity: $"⚠ {failed}: {ResultLine(block["content"])}");
+                    break;
                 case "result":
+                    sawResult = true;
                     if (node!["is_error"]?.GetValue<bool>() == true)
                     {
+                        if (sessionId is { Length: > 0 } && line.Contains(NoSession, StringComparison.OrdinalIgnoreCase)) throw new ChatSessionNotFoundException();
                         var reason = node["result"]?.ToString() ?? "the request failed.";
                         // The plan's usage limit: say what it means and what to do instead.
                         throw new InvalidOperationException(reason.Contains("limit", StringComparison.OrdinalIgnoreCase)
@@ -213,14 +222,27 @@ public sealed class ClaudeCodeProvider : ISessionChatProvider
             }
         }
         await process.WaitForExitAsync(cancellation);
-        if (process.ExitCode != 0 && session is null)
-        {
-            var error = (await errors).Trim();
-            if (promptFile && error.Contains("append-system-prompt-file", StringComparison.Ordinal)) throw new PromptFileUnsupportedException();
-            throw new InvalidOperationException(error.Contains("login", StringComparison.OrdinalIgnoreCase) || error.Contains("auth", StringComparison.OrdinalIgnoreCase)
-                ? "Claude Code is not signed in. Open a terminal and run: claude  (then /login)."
-                : "Claude Code stopped: " + (error.Length > 300 ? error[..300] + "…" : error));
-        }
+        if (sawResult || (process.ExitCode == 0 && wroteText)) yield break;
+
+        var error = (await errors).Trim();
+        if (sessionId is { Length: > 0 } && error.Contains(NoSession, StringComparison.OrdinalIgnoreCase)) throw new ChatSessionNotFoundException();
+        if (promptFile && error.Contains("append-system-prompt-file", StringComparison.Ordinal)) throw new PromptFileUnsupportedException();
+        if (error.Contains("login", StringComparison.OrdinalIgnoreCase) || error.Contains("auth", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Claude Code is not signed in. Open a terminal and run: claude  (then /login).");
+        throw new InvalidOperationException(error.Length > 0
+            ? "Claude Code stopped: " + (error.Length > 300 ? error[..300] + "…" : error)
+            : process.ExitCode == 0 ? "Claude Code ended without an answer." : $"Claude Code stopped (exit code {process.ExitCode}).");
+    }
+
+    /// <summary>What Claude Code says when --resume names a session it no longer has.</summary>
+    private const string NoSession = "No conversation found";
+
+    /// <summary>The first line of a tool result, whose content is plain text or a list of text blocks.</summary>
+    private static string ResultLine(JsonNode? content)
+    {
+        var text = content is JsonArray parts ? string.Join('\n', parts.Select(p => p?["text"]?.GetValue<string>() ?? "")) : content?.ToString() ?? "";
+        var line = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? "failed";
+        return line.Length > 140 ? line[..139] + "…" : line;
     }
 
     /// <summary>A chat line for one of Claude Code's own tools. OverDesk's MCP tools report themselves, so they are skipped.</summary>

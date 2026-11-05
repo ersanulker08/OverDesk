@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace Overdesk.AI;
 
@@ -16,12 +17,19 @@ public sealed class OpenAiCompatibleProvider : IChatProvider
     private readonly HttpClient _http = new() { Timeout = Timeout.InfiniteTimeSpan };
     private readonly IApiKeySource? _keys;
     private readonly string? _keyName;
+    private readonly Func<string> _baseUrl;
 
     public OpenAiCompatibleProvider(string id, string name, string baseUrl, bool isLocal, IApiKeySource? keys = null, string? keyName = null)
+        : this(id, name, () => baseUrl, isLocal, keys, keyName)
+    {
+    }
+
+    /// <param name="baseUrl">Read on every request, so a changed setting applies at once.</param>
+    public OpenAiCompatibleProvider(string id, string name, Func<string> baseUrl, bool isLocal, IApiKeySource? keys = null, string? keyName = null)
     {
         Id = id;
         Name = name;
-        BaseUrl = baseUrl.TrimEnd('/');
+        _baseUrl = baseUrl;
         IsLocal = isLocal;
         _keys = keys;
         _keyName = keyName;
@@ -29,7 +37,7 @@ public sealed class OpenAiCompatibleProvider : IChatProvider
 
     public string Id { get; }
     public string Name { get; }
-    public string BaseUrl { get; }
+    public string BaseUrl => _baseUrl().TrimEnd('/');
     public bool IsLocal { get; }
 
     private string? Key => _keyName is null ? null : _keys?.Get(_keyName);
@@ -62,12 +70,14 @@ public sealed class OpenAiCompatibleProvider : IChatProvider
         using var response = await _http.SendAsync(Request(HttpMethod.Get, "/models"), cancellation);
         response.EnsureSuccessStatusCode();
         var json = await response.Content.ReadFromJsonAsync<JsonObject>(cancellation);
-        var ids = (json?["data"]?.AsArray() ?? new JsonArray()).Select(m => m!["id"]!.GetValue<string>());
-        // OpenAI lists every model it has (audio, embeddings...): keep the chat ones.
-        if (!IsLocal) ids = ids.Where(id => id.StartsWith("gpt", StringComparison.Ordinal) || id.StartsWith("o", StringComparison.Ordinal))
-                               .Where(id => !id.Contains("audio") && !id.Contains("realtime") && !id.Contains("transcribe") && !id.Contains("tts"));
-        return ids.OrderBy(i => i).Select(id => new AiModel(id, id)).ToList();
+        var models = (json?["data"]?.AsArray() ?? new JsonArray())
+            .Select(m => (Id: m!["id"]!.GetValue<string>(), Created: m["created"]?.GetValue<long>() ?? 0));
+        if (!IsLocal) models = models.Where(m => ChatModel.IsMatch(m.Id));
+        return models.OrderByDescending(m => m.Created).ThenBy(m => m.Id, StringComparer.Ordinal).Select(m => new AiModel(m.Id, m.Id)).ToList();
     }
+
+    /// <summary>OpenAI lists everything it has: this keeps what /chat/completions can answer with.</summary>
+    private static readonly Regex ChatModel = new(@"^(?!.*(audio|realtime|transcribe|tts|image|moderation|embedding|search|computer-use|instruct|codex))(gpt|o\d)");
 
     private const int MaxRounds = 30;
 

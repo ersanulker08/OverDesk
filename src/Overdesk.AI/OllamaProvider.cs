@@ -9,15 +9,17 @@ namespace Overdesk.AI;
 /// <summary>Local models through Ollama's HTTP API (default http://localhost:11434). Streams NDJSON.</summary>
 public sealed class OllamaProvider : IChatProvider
 {
-    private readonly HttpClient _http;
+    private readonly HttpClient _http = new() { Timeout = Timeout.InfiniteTimeSpan };
+    private readonly Func<string> _baseUrl;
 
-    public OllamaProvider(string baseUrl = "http://localhost:11434")
+    public OllamaProvider(string baseUrl = "http://localhost:11434") : this(() => baseUrl)
     {
-        BaseUrl = baseUrl.TrimEnd('/');
-        _http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
     }
 
-    public string BaseUrl { get; }
+    /// <param name="baseUrl">Read on every request, so a changed setting applies at once.</param>
+    public OllamaProvider(Func<string> baseUrl) => _baseUrl = baseUrl;
+
+    public string BaseUrl => _baseUrl().TrimEnd('/');
     public string Id => "ollama";
     public string Name => "Ollama";
     public bool IsLocal => true;

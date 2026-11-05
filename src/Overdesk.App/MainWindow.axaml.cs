@@ -404,7 +404,7 @@ public partial class MainWindow : Window
         foreach (var cts in _tabStarts.Values.Concat(_toolStarts.Values)) cts.Cancel();
         _embedding.Dispose();
         _nowPlaying.Dispose();
-        _ai.Stop(); // an answer still running would keep its CLI process editing files with no window to show it
+        _ai.Shutdown(); // an answer still running would keep its CLI process editing files with no window to show it
         _runner.StopAll();
         _stats.Dispose();
     }

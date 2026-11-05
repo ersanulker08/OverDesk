@@ -305,7 +305,7 @@ public class ToolsTests
         var written = IconSets.Generate(art, dir.Path, Enum.GetValues<IconTarget>(), new IconOptions { Shape = IconShape.RoundedSquare, Padding = 0.1f });
         string F(string relative) => Path.Combine(dir.Path, relative);
         foreach (var file in new[] { "macOS/AppIcon.icns", "Windows/app.ico", "iOS/AppIcon.appiconset/Contents.json", "Android/res/mipmap-xxxhdpi/ic_launcher_round.png", "Web/site.webmanifest", "Web/favicon.ico" })
-            Assert.Contains(F(file), written.Select(Path.GetFullPath));
+            Assert.Contains(Path.GetFullPath(F(file)), written.Select(Path.GetFullPath));
 
         var icns = File.ReadAllBytes(F("macOS/AppIcon.icns"));
         Assert.Equal("icns", System.Text.Encoding.ASCII.GetString(icns, 0, 4));

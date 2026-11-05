@@ -331,9 +331,9 @@ public class PluginRegistryTests
     {
         using var folder = new TempFolder();
         folder.Write("a-good/overdesk.plugin.json", Good);
-        var invalid = folder.Write("b-invalid/overdesk.plugin.json", "{ not json");
-        var incomplete = folder.Write("c-incomplete/overdesk.plugin.json", """{ "id": "c", "name": "C", "run": "inProcess", "assembly": "c.dll" }""");
-        var duplicate = folder.Write("d-duplicate/overdesk.plugin.json", Good);
+        var invalid = Path.GetFullPath(folder.Write("b-invalid/overdesk.plugin.json", "{ not json"));
+        var incomplete = Path.GetFullPath(folder.Write("c-incomplete/overdesk.plugin.json", """{ "id": "c", "name": "C", "run": "inProcess", "assembly": "c.dll" }"""));
+        var duplicate = Path.GetFullPath(folder.Write("d-duplicate/overdesk.plugin.json", Good));
 
         var registry = Discover(folder);
 

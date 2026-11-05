@@ -9,7 +9,8 @@ public class CliToolsTests
     private static string Script(TempFolder dir, string name, string body)
     {
         var path = dir.Write(name, "#!/bin/bash\n" + body + "\n");
-        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         return path;
     }
 

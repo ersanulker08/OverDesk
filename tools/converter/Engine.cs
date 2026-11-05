@@ -431,6 +431,7 @@ internal static class Cli
     /// <summary>Run to the end; a non-zero exit becomes an exception carrying the last error lines.</summary>
     public static async Task Run(string exe, IEnumerable<string> args, CancellationToken cancellation, Action<string>? onErrorLine = null)
     {
+        cancellation.ThrowIfCancellationRequested();
         var info = new ProcessStartInfo(exe) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         foreach (var a in args) info.ArgumentList.Add(a);
         using var process = new Process { StartInfo = info };
@@ -450,7 +451,15 @@ internal static class Cli
         process.BeginErrorReadLine();
         process.BeginOutputReadLine();
         using var kill = cancellation.Register(() => { try { process.Kill(entireProcessTree: true); } catch (Exception) { } });
-        await process.WaitForExitAsync(cancellation);
+        try
+        {
+            await process.WaitForExitAsync(cancellation);
+        }
+        catch (OperationCanceledException)
+        {
+            process.WaitForExit(2000); // a dying child could otherwise write its output after the caller cleaned up
+            throw;
+        }
         if (process.ExitCode != 0)
         {
             string detail;

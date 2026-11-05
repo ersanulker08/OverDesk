@@ -262,7 +262,8 @@ public partial class SettingsView
             var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("170,*,Auto") };
             var label = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             label.Children.Add(new TextBlock { Text = name, FontWeight = FontWeight.SemiBold, FontSize = 12.5 });
-            label.Children.Add(new TextBlock { Text = has ? "✓ saved in keychain" : hint, Classes = { "faint" }, FontSize = 10.5, Foreground = has ? Res.Brush("SuccessBrush") : Res.Brush("FaintBrush") });
+            var status = new TextBlock { Text = has ? "✓ saved in keychain" : hint, Classes = { "faint" }, FontSize = 10.5, Foreground = has ? Res.Brush("SuccessBrush") : Res.Brush("FaintBrush") };
+            label.Children.Add(status);
             grid.Children.Add(label);
             var box = new TextBox { PasswordChar = '•', PlaceholderText = has ? "•••••••• (stored)" : "Paste the API key", Margin = new Thickness(10, 0) };
             Grid.SetColumn(box, 1);
@@ -272,7 +273,11 @@ public partial class SettingsView
             save.Click += (_, _) =>
             {
                 if (string.IsNullOrWhiteSpace(box.Text)) return;
-                Ai?.SetKey(id, box.Text.Trim());
+                if (Ai?.SetKey(id, box.Text.Trim()) == false)
+                {
+                    ShowKeyFailure(status, "Could not save it to the keychain");
+                    return;
+                }
                 Ai?.ForgetModels(id == "anthropic" ? "claude" : id);
                 BuildKeys();
             };
@@ -282,7 +287,11 @@ public partial class SettingsView
                 var remove = new Button { Classes = { "ghost" }, Content = "Remove", Padding = new Thickness(12, 6) };
                 remove.Click += (_, _) =>
                 {
-                    Ai?.SetKey(id, null);
+                    if (Ai?.SetKey(id, null) == false)
+                    {
+                        ShowKeyFailure(status, "Could not remove it from the keychain");
+                        return;
+                    }
                     BuildKeys();
                 };
                 buttons.Children.Add(remove);
@@ -291,6 +300,12 @@ public partial class SettingsView
             grid.Children.Add(buttons);
             KeyRows.Children.Add(grid);
         }
+    }
+
+    private static void ShowKeyFailure(TextBlock status, string text)
+    {
+        status.Text = text;
+        status.Foreground = Res.Brush("DangerBrush");
     }
 
     private void BuildPrompts()

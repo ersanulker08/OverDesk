@@ -129,7 +129,7 @@ internal sealed class AiService
         => provider is ISessionChatProvider or GeminiCliProvider ? AiSourceKind.App : provider.IsLocal ? AiSourceKind.Local : AiSourceKind.Cloud;
 
     public string? GetKey(string provider) => _secrets.Get("ai." + provider);
-    public void SetKey(string provider, string? key) => _secrets.Set("ai." + provider, key);
+    public bool SetKey(string provider, string? key) => _secrets.TrySet("ai." + provider, key);
 
     /// <summary>
     /// First run: start with the best thing that works without setup. Claude Code (the user's own Claude account)

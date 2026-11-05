@@ -20,16 +20,37 @@ public sealed class MacMediaController : IMediaController
         new("com.apple.Music", "Music", PositionIsSeconds: true),
     };
 
+    // Every query is an osascript process, so only a playing track is followed at the caller's pace.
+    private static readonly TimeSpan IdleInterval = TimeSpan.FromSeconds(5);
+
+    // Not "until the player restarts": the user can allow it in System Settings at any moment.
+    private static readonly TimeSpan DeniedRetry = TimeSpan.FromMinutes(1);
+
+    private const string AutomationDenied = "-1743"; // errAEEventNotPermitted
+
     private readonly Dictionary<string, (string Key, byte[]? Art)> _artwork = new();
+    private readonly Dictionary<string, DateTime> _deniedUntil = new();
     private Player? _current;
+    private NowPlaying? _last;
+    private DateTime _nextQuery;
 
     public async Task<NowPlaying?> GetAsync(CancellationToken cancellation)
     {
+        if (DateTime.UtcNow < _nextQuery) return _last;
+        _last = await QueryPlayersAsync(cancellation);
+        _nextQuery = _last is { IsPlaying: true } ? DateTime.MinValue : DateTime.UtcNow + IdleInterval;
+        return _last;
+    }
+
+    private async Task<NowPlaying?> QueryPlayersAsync(CancellationToken cancellation)
+    {
         NowPlaying? paused = null;
         Player? pausedPlayer = null;
-        foreach (var player in Players)
+        // The one we know about first: while it plays, the others need no process at all.
+        foreach (var player in Players.OrderBy(p => p == _current ? 0 : 1))
         {
             if (RunningApps.Pids(player.BundleId).Count == 0) continue;
+            if (_deniedUntil.TryGetValue(player.BundleId, out var until) && DateTime.UtcNow < until) continue;
             var info = await QueryAsync(player, cancellation);
             if (info is null) continue;
             if (info.IsPlaying)
@@ -67,10 +88,11 @@ public sealed class MacMediaController : IMediaController
     private static bool IsSpotify(Player? p) => p?.BundleId == "com.spotify.client";
     private static string Bool(bool value) => value ? "true" : "false";
 
-    private Task Command(string command)
+    private async Task Command(string command)
     {
-        if (_current is not { } player || RunningApps.Pids(player.BundleId).Count == 0) return Task.CompletedTask;
-        return RunAsync($"tell application id \"{player.BundleId}\" to {command}", CancellationToken.None);
+        if (_current is not { } player || RunningApps.Pids(player.BundleId).Count == 0) return;
+        await RunAsync($"tell application id \"{player.BundleId}\" to {command}", CancellationToken.None);
+        _nextQuery = DateTime.MinValue; // the caller refreshes right after and must see the result
     }
 
     private async Task<NowPlaying?> QueryAsync(Player player, CancellationToken cancellation)
@@ -87,7 +109,7 @@ public sealed class MacMediaController : IMediaController
                 return s & linefeed & (name of t) & linefeed & (artist of t) & linefeed & (album of t) & linefeed & ((duration of t) as string) & linefeed & ((player position) as string) & linefeed & {{modes}}
             end tell
             """;
-        var output = await RunAsync(script, cancellation);
+        var output = await RunAsync(script, cancellation, () => _deniedUntil[player.BundleId] = DateTime.UtcNow + DeniedRetry);
         if (output is null) return null;
         var lines = output.Split('\n');
         if (lines.Length < 6 || lines[0] == "stopped") return null;
@@ -175,7 +197,7 @@ public sealed class MacMediaController : IMediaController
     }
 
     /// <summary>Run AppleScript; returns its trimmed output, or null when it failed (not allowed, no track...).</summary>
-    private static async Task<string?> RunAsync(string script, CancellationToken cancellation)
+    private static async Task<string?> RunAsync(string script, CancellationToken cancellation, Action? denied = null)
     {
         var info = new ProcessStartInfo("/usr/bin/osascript")
         {
@@ -188,8 +210,11 @@ public sealed class MacMediaController : IMediaController
         if (process is null) return null;
         await process.StandardInput.WriteAsync(script);
         process.StandardInput.Close();
+        var errors = process.StandardError.ReadToEndAsync(cancellation);
         var output = await process.StandardOutput.ReadToEndAsync(cancellation);
         await process.WaitForExitAsync(cancellation);
-        return process.ExitCode == 0 ? output.TrimEnd('\n', '\r') : null;
+        if (process.ExitCode == 0) return output.TrimEnd('\n', '\r');
+        if ((await errors).Contains(AutomationDenied)) denied?.Invoke();
+        return null;
     }
 }

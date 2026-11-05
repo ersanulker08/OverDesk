@@ -32,6 +32,9 @@ internal sealed class NowPlayingService : IDisposable
     public NowPlaying? Current { get; private set; }
     public Bitmap? Artwork { get; private set; }
 
+    /// <summary>A running player the OS refuses to let OverDesk control (macOS Automation permission); null when none.</summary>
+    public string? BlockedPlayer { get; private set; }
+
     /// <summary>Best estimate of the playback position right now.</summary>
     public TimeSpan Position
     {
@@ -114,10 +117,12 @@ internal sealed class NowPlayingService : IDisposable
             catch (Exception) { art = null; }
         }
 
+        var blocked = _media.BlockedPlayer;
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            var changed = !Equivalent(Current, next) || artChanged;
+            var changed = !Equivalent(Current, next) || artChanged || blocked != BlockedPlayer;
             Current = next;
+            BlockedPlayer = blocked;
             if (artChanged)
             {
                 _artworkBytes = next?.Artwork;

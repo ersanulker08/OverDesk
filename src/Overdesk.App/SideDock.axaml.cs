@@ -75,6 +75,7 @@ public partial class SideDock : UserControl
             if (_media?.Current is { Shuffle: { } on }) _ = _media.SetShuffleAsync(!on);
         };
         RepeatButton.Click += (_, _) => _ = _media?.CycleRepeatAsync();
+        MediaPermission.Click += (_, _) => OpenUrl("x-apple.systempreferences:com.apple.preference.security?Privacy_Automation");
         Back10.Click += (_, _) => SeekBy(-10);
         Fwd10.Click += (_, _) => SeekBy(10);
         BigSeek.Seeked += f =>
@@ -203,9 +204,13 @@ public partial class SideDock : UserControl
         CompactPlay.IsVisible = current is not null;
         CompactSeek.IsVisible = current is not null && current.Duration > TimeSpan.Zero && !_mediaOpen;
         MediaHint.IsVisible = current is null;
-        MediaHint.Text = OperatingSystem.IsMacOS()
-            ? "Works with Apple Music and Spotify. macOS asks once to let OverDesk read and control them."
-            : "Works with Spotify, browsers, Media Player and other apps that show media controls.";
+        var blocked = _media?.BlockedPlayer;
+        MediaPermission.IsVisible = current is null && blocked is not null;
+        MediaHint.Text = blocked is not null
+            ? $"Allow OverDesk to control {blocked} in System Settings → Privacy & Security → Automation."
+            : OperatingSystem.IsMacOS()
+                ? "Works with Apple Music and Spotify. macOS asks once to let OverDesk read and control them."
+                : "Works with Spotify, browsers, Media Player and other apps that show media controls.";
 
         SmallArt.Source = art;
         BigArt.Source = art;

@@ -35,6 +35,9 @@ public interface IMediaController
     Task SeekAsync(TimeSpan position);
     Task SetShuffleAsync(bool shuffle);
     Task SetRepeatAsync(RepeatMode mode);
+
+    /// <summary>A running player the OS does not let this app read or control (its name); null when none is refused.</summary>
+    string? BlockedPlayer => null;
 }
 
 /// <summary>Used where no media integration exists.</summary>

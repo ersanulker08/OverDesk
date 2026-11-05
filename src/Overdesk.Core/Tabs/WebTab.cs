@@ -17,8 +17,8 @@ public sealed class WebTab : ObservableObject
 
     public Guid Id { get; } = Guid.NewGuid();
 
-    /// <summary>Which known service (GitHub, Claude...) this tab belongs to; null for a custom site.</summary>
-    public string? ServiceId { get; }
+    /// <summary>What pairs the tab with its pill: a known service id (GitHub, Claude...) or the site's address.</summary>
+    public string? ServiceId { get; set; }
 
     public string Title { get => _title; set => Set(ref _title, value); }
     public string Url { get => _url; set => Set(ref _url, value); }

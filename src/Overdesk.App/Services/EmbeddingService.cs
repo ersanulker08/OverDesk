@@ -60,9 +60,9 @@ internal sealed class EmbeddingService : IDisposable
         if (visible && e.Bounds is { } b) e.Window.SetBounds(b);
     }
 
-    /// <summary>Keys of shown programs that still run but whose window has disappeared.</summary>
+    /// <summary>Keys of programs that are gone, hidden ones included, and of shown ones whose window has disappeared.</summary>
     public IReadOnlyList<string> FindLostWindows()
-        => _entries.Where(e => e.Value.Visible == true && e.Value.Window.IsAlive && !e.Value.Window.HasWindow)
+        => _entries.Where(e => !e.Value.Window.IsAlive || (e.Value.Visible == true && !e.Value.Window.HasWindow))
             .Select(e => e.Key).ToList();
 
     /// <summary>What the user did to the window by hand since the last call (drag, resize, full screen), if anything.</summary>

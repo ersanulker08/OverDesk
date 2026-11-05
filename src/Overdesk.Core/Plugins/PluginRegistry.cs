@@ -81,6 +81,8 @@ public sealed class PluginRegistry
                 Problems.Add($"{manifestFile}: duplicate id \"{manifest.Id}\"");
                 return;
             }
+            if (manifest.Ai && manifest.Run == PluginRunMode.Process)
+                Problems.Add($"{manifestFile}: \"ai\" only works for in-process plugins and is ignored here");
             Tools.Add(manifest);
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)

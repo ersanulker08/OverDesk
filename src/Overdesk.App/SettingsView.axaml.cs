@@ -67,6 +67,18 @@ public partial class SettingsView : UserControl
     /// <summary>Shown under "Data" so people can find their settings.</summary>
     public string SettingsFilePath { set => DataPath.Text = value; }
 
+    /// <summary>Why plugins could not be loaded, one line per problem; the card stays hidden when there are none.</summary>
+    public IReadOnlyList<string> PluginProblems
+    {
+        set
+        {
+            PluginProblemsCard.IsVisible = value.Count > 0;
+            PluginProblemList.Children.Clear();
+            foreach (var problem in value)
+                PluginProblemList.Children.Add(new SelectableTextBlock { Text = problem, Classes = { "mono" }, FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Foreground = Res.Brush("MutedBrush") });
+        }
+    }
+
     /// <summary>Save everything that is still in memory (settings, works) before a backup is made.</summary>
     internal Action? BeforeBackup { get; set; }
 
@@ -151,6 +163,7 @@ public partial class SettingsView : UserControl
     {
         if (!IsVisible) return;
         LoadToggles();
+        BuildThemeCards();
         BuildGaugeChips();
         UpdatePermission();
     }
@@ -380,7 +393,9 @@ public partial class SettingsView : UserControl
         var list = new (string Keys, string What)[]
         {
             ($"{mod}T", "Add a program"), ($"{mod}W", "Close the tab"),
-            ($"{mod}1 – 9", "Jump to a tab"), ($"{mod}Tab", "Next tab"),
+            ($"{mod}1 – 9", "Jump to a tab or open site"), ("Ctrl+Tab", "Next tab or open site"),
+            ("Ctrl+Shift+Tab", "Previous tab or open site"), (OperatingSystem.IsMacOS() ? "⌘⌥1 – 9" : "Ctrl+Alt+1 – 9", "Switch workspace"),
+            ($"{mod}R", "Reload the site"), ($"{mod}L", "Address bar"),
             ($"{mod}P", "Command palette"), ($"{mod}K", "Search programs"),
             ($"{mod}B", "Side dock"), ($"{mod},", "Settings"),
             ($"{mod}{shift}H", "Home"), ($"{mod}J", "AI panel"),

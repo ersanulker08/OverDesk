@@ -49,10 +49,15 @@
                     </Button>
                 </StackPanel>
 
-                <ScrollViewer x:Name="TabScroller" Grid.Column="4" HorizontalScrollBarVisibility="Hidden"
-                              VerticalScrollBarVisibility="Disabled">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <ItemsControl x:Name="TabStrip" chrome:WindowDecorationProperties.ElementRole="User">
+                <!-- The row scrolls, the "+" right after it does not: see FitTabs -->
+                <Grid x:Name="TabRow" Grid.Column="4" ColumnDefinitions="Auto,*">
+                    <ScrollViewer x:Name="TabScroller" HorizontalScrollBarVisibility="Hidden"
+                                  VerticalScrollBarVisibility="Disabled">
+                        <ItemsControl x:Name="TabStrip" VerticalAlignment="Center" chrome:WindowDecorationProperties.ElementRole="User">
+                            <ItemsControl.Resources>
+                                <x:Double x:Key="TabMinWidth">128</x:Double>
+                                <x:Double x:Key="TabMaxWidth">230</x:Double>
+                            </ItemsControl.Resources>
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <StackPanel Orientation="Horizontal"/>
@@ -98,12 +103,12 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <Button x:Name="AddTabButton" Classes="icon" Width="34" Height="34"
-                                chrome:WindowDecorationProperties.ElementRole="User">
-                            <Path Classes="icon" Data="{StaticResource IconPlus}"/>
-                        </Button>
-                    </StackPanel>
-                </ScrollViewer>
+                    </ScrollViewer>
+                    <Button x:Name="AddTabButton" Grid.Column="1" Classes="icon" Width="34" Height="34" HorizontalAlignment="Left"
+                            chrome:WindowDecorationProperties.ElementRole="User">
+                        <Path Classes="icon" Data="{StaticResource IconPlus}"/>
+                    </Button>
+                </Grid>
 
                 <Button x:Name="SettingsButton" Grid.Column="5" Classes="icon" Margin="6,0,10,0"
                         chrome:WindowDecorationProperties.ElementRole="User">
@@ -142,15 +147,15 @@
                     <Path Classes="icon accent" Data="{StaticResource IconGlobe}" Height="13"/>
                     <TextBlock Classes="eyebrow" Text="WEB" FontSize="9.5" VerticalAlignment="Center"/>
                 </StackPanel>
-                <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <StackPanel x:Name="WebPills" Orientation="Horizontal" Spacing="6"/>
-                        <Button x:Name="AddSiteButton" Classes="icon" Width="28" Height="28" Margin="6,0,0,0"
-                                ToolTip.Tip="Add a website or service">
-                            <Path Classes="icon small" Data="{StaticResource IconPlus}"/>
-                        </Button>
-                    </StackPanel>
-                </ScrollViewer>
+                <Grid x:Name="WebRow" Grid.Column="1" ColumnDefinitions="Auto,*">
+                    <ScrollViewer x:Name="WebScroller" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+                        <StackPanel x:Name="WebPills" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"/>
+                    </ScrollViewer>
+                    <Button x:Name="AddSiteButton" Grid.Column="1" Classes="icon" Width="28" Height="28" Margin="6,0,0,0"
+                            HorizontalAlignment="Left" ToolTip.Tip="Add a website or service">
+                        <Path Classes="icon small" Data="{StaticResource IconPlus}"/>
+                    </Button>
+                </Grid>
             </Grid>
         </Border>
 

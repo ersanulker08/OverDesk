@@ -171,8 +171,8 @@
         <Setter Property="CornerRadius" Value="10"/>
         <Setter Property="Padding" Value="10,0,5,0"/>
         <Setter Property="Height" Value="34"/>
-        <Setter Property="MinWidth" Value="128"/>
-        <Setter Property="MaxWidth" Value="230"/>
+        <Setter Property="MinWidth" Value="{DynamicResource TabMinWidth}"/>
+        <Setter Property="MaxWidth" Value="{DynamicResource TabMaxWidth}"/>
         <Setter Property="Margin" Value="0,0,4,0"/>
         <Setter Property="Transitions">
             <Transitions>
@@ -221,9 +221,6 @@
         <Setter Property="LetterSpacing" Value="0.6"/>
         <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
     </Style>
-    <Style Selector="Border.tab.internal">
-        <Setter Property="MinWidth" Value="120"/>
-    </Style>
     <Style Selector="Border.tab TextBlock.title">
         <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
@@ -246,6 +243,10 @@
     </Style>
     <Style Selector="Border.tab:pointerover Button.tabclose, Border.tab.active Button.tabclose">
         <Setter Property="Opacity" Value="1"/>
+    </Style>
+    <!-- A crowded row keeps the room for the title; only the tab in use has its x -->
+    <Style Selector="ItemsControl.crowded Border.tab:not(.active):not(:pointerover) Button.tabclose">
+        <Setter Property="IsVisible" Value="False"/>
     </Style>
 
     <!-- Unread badge on a program tab (macOS reads the Dock's badges) -->

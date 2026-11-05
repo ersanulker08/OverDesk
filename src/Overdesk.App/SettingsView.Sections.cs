@@ -369,7 +369,7 @@ public partial class SettingsView
             Row(2, "Start with", commands);
 
             var url = new TextBox { Text = project.Url, Classes = { "mono" }, PlaceholderText = "http://localhost:5173  (opened in a web tab)" };
-            url.LostFocus += (_, _) => { project.Url = WebServices.NormalizeUrl(url.Text) ?? (string.IsNullOrWhiteSpace(url.Text) ? null : project.Url); Changed?.Invoke(); };
+            url.LostFocus += (_, _) => { project.Url = Overdesk.Core.Tabs.WebUrl.Normalize(url.Text) ?? (string.IsNullOrWhiteSpace(url.Text) ? null : project.Url); Changed?.Invoke(); };
             Row(3, "Open", url);
 
             var bottom = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };

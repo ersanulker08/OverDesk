@@ -55,9 +55,13 @@ public partial class CommandPaletteView : UserControl
         Dispatcher.UIThread.Post(() => SearchBox.Focus(), DispatcherPriority.Background);
     }
 
+    /// <summary>On its way out: it no longer counts as covering the window, so what it runs can open dialogs and tabs.</summary>
+    public bool IsClosing { get; private set; }
+
     public void Hide(Action? done = null)
     {
-        if (!IsVisible) return;
+        if (!IsVisible || IsClosing) return;
+        IsClosing = true;
         Animator.Run(this, 0.14, t =>
         {
             Backdrop.Opacity = 1 - t;
@@ -66,6 +70,7 @@ public partial class CommandPaletteView : UserControl
         {
             done?.Invoke();
             IsVisible = false;
+            IsClosing = false;
         });
     }
 
@@ -164,4 +169,6 @@ public partial class CommandPaletteView : UserControl
     }
 
     private void Run(PaletteItem item) => Hide(item.Run);
+
+    internal void DevRun(string title) => Run(_items.First(i => i.Title == title));
 }

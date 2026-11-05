@@ -36,13 +36,4 @@ internal static class WebServices
             ? null
             : installed.FirstOrDefault(p => service.AppNames.Any(n =>
                 string.Equals(Path.GetFileNameWithoutExtension(p.TrimEnd('/', '\\')), n, StringComparison.OrdinalIgnoreCase)));
-
-    /// <summary>Normalize what the user typed into a URL ("github.com" → "https://github.com").</summary>
-    public static string? NormalizeUrl(string? text)
-    {
-        text = text?.Trim();
-        if (string.IsNullOrEmpty(text)) return null;
-        if (!text.Contains("://", StringComparison.Ordinal)) text = "https://" + text;
-        return Uri.TryCreate(text, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" ? uri.ToString() : null;
-    }
 }

@@ -149,6 +149,7 @@ public partial class MainWindow
         _lastForward = DateTime.UtcNow;
         var point = e.GetCurrentPoint(this);
         var screen = this.PointToScreen(point.Position);
+        _handingToProgram = true;
         _ = _embedding.FocusAndClickAsync(key, screen.X, screen.Y, point.Properties.IsRightButtonPressed);
     }
 }

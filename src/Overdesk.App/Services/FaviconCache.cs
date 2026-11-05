@@ -1,5 +1,6 @@
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Overdesk.Core.Tabs;
 
 namespace Overdesk.App.Services;
 
@@ -8,6 +9,7 @@ internal static class FaviconCache
 {
     private static readonly Dictionary<string, Bitmap?> Memory = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Dictionary<string, List<Action<Bitmap?>>> Waiting = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, DateTime> RetryAt = new(StringComparer.OrdinalIgnoreCase);
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(8) };
 
     public static string Directory { get; set; } = Path.Combine(Path.GetTempPath(), "overdesk-favicons");
@@ -17,7 +19,10 @@ internal static class FaviconCache
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return null;
         var host = uri.Host;
+        // Local and intranet names stay on this machine: the public service could not know their icon anyway.
+        if (WebUrl.IsPrivateHost(host)) return null;
         if (Memory.TryGetValue(host, out var known)) return known;
+        if (RetryAt.TryGetValue(host, out var retry) && DateTime.UtcNow < retry) return null;
         if (Waiting.TryGetValue(host, out var list))
         {
             list.Add(loaded);
@@ -50,7 +55,8 @@ internal static class FaviconCache
 
         Dispatcher.UIThread.Post(() =>
         {
-            Memory[host] = bitmap;
+            if (bitmap is null) RetryAt[host] = DateTime.UtcNow.AddMinutes(1);
+            else Memory[host] = bitmap;
             if (Waiting.Remove(host, out var callbacks))
                 foreach (var callback in callbacks) callback(bitmap);
         });

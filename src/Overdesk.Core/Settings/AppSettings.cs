@@ -17,7 +17,7 @@ public sealed class Workspace
 
     public List<string> Tabs { get; set; } = new();
 
-    /// <summary>Index into <see cref="Tabs"/> of the active tab; -1 means home.</summary>
+    /// <summary>Index into <see cref="Tabs"/> as saved (programs that went missing still count); -1 means home.</summary>
     public int ActiveTab { get; set; } = -1;
 }
 
@@ -30,6 +30,14 @@ public sealed class WebPin
 
     /// <summary>When the service also exists as an installed app, open the website anyway.</summary>
     public bool PreferWebsite { get; set; }
+}
+
+/// <summary>A website left open in a web tab. Key pairs it with its pin.</summary>
+public sealed class OpenWebTab
+{
+    public string Url { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Key { get; set; } = "";
 }
 
 /// <summary>A code project: a folder, the commands that start it, and what to open once it runs.</summary>
@@ -78,6 +86,10 @@ public sealed class AppSettings
     public List<UserTool> UserTools { get; set; } = new();
 
     public bool ToolsPanelOpen { get; set; } = true;
+
+    /// <summary>Id of the tool last open in the side panel.</summary>
+    public string? ActiveTool { get; set; }
+
     public double ToolsPanelWidth { get; set; } = 380;
 
     public double WindowWidth { get; set; } = 1280;
@@ -114,6 +126,12 @@ public sealed class AppSettings
         new() { Service = "github" }, new() { Service = "chatgpt" }, new() { Service = "codex" },
         new() { Service = "claude" }, new() { Service = "claude-code" }, new() { Service = "gemini" },
     };
+
+    /// <summary>Websites open in web tabs, restored with the program tabs.</summary>
+    public List<OpenWebTab> OpenWebTabs { get; set; } = new();
+
+    /// <summary>Index into <see cref="OpenWebTabs"/> of the site on stage; -1 means none.</summary>
+    public int ActiveWebTab { get; set; } = -1;
 
     /// <summary>Show the web strip under the program tabs.</summary>
     public bool ShowWebStrip { get; set; } = true;
